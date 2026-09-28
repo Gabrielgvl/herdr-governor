@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Edit(/clippy.toml)",
+      "Edit(/rustfmt.toml)",
+      "Edit(/deny.toml)",
+      "Edit(/rust-toolchain.toml)",
+      "Edit(/tombi.toml)",
+      "Edit(/_typos.toml)",
+      "Edit(/justfile)",
+      "Edit(/AGENTS.md)",
+      "Edit(/CLAUDE.md)",
+      "Edit(/CONTEXT.md)",
+      "Edit(/.gitignore)",
+      "Edit(/.gitattributes)",
+      "Edit(**/.gitattributes)",
+      "Edit(/Cargo.lock)",
+      "Edit(/.claude/**)",
+      "Edit(/.codex/**)",
+      "Edit(/.devin/**)",
+      "Edit(/.pi/**)",
+      "Edit(/.githooks/**)",
+      "Edit(/scripts/**)",
+      "Edit(/docs/guardrails.md)",
+      "Edit(/.github/**)",
+      "Edit(/.config/nextest.toml)",
+      "Edit(/.cargo/**)",
+      "Edit(/build.rs)",
+      "Edit(**/build.rs)",
+      "Edit(/release-digests.txt)",
+      "Edit(/tests/fixtures/**)",
+      "Edit(**/tests/fixtures/**)",
+      "Edit(/tests/support/**)",
+      "Edit(**/tests/support/**)",
+      "Edit(/strategies/**)",
+      "Edit(**/strategies/**)",
+      "Edit(*_strategies.rs)",
+      "Edit(**/*_strategies.rs)",
+      "Bash(cargo insta accept:*)",
+      "Bash(cargo insta test --accept:*)",
+      "Bash(cargo insta * --accept *)",
+      "Bash(cargo insta * --accept)",
+      "Bash(INSTA_UPDATE=always:*)",
+      "Bash(INSTA_UPDATE=force:*)",
+      "Bash(git push:*)",
+      "Bash(git config core.hooksPath:*)",
+      "Bash(git update-index --skip-worktree:*)",
+      "Bash(git update-index --assume-unchanged:*)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(git tag --no-verify:*)",
+      "Bash(git * --no-verify *)",
+      "Bash(git * --no-verify)",
+      "Bash(git rm *test*)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -d*f*)",
+      "Bash(GOV_PROTECTED_OK:*)",
+      "Bash(*GOV_PROTECTED_OK*)",
+      "Bash(*owner-approved*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh pr * merge*)",
+      "Bash(gh */merg*)",
+      "Bash(*mergePullRequest*)",
+      "Bash(git -c core.hooksPath:*)",
+      "Bash(git -c core.hooksPath=*)",
+      "Bash(git * -c *core.hooksPath*)",
+      "Bash(git --config *core.hooksPath*)",
+      "Bash(git --config-env *core.hooksPath*)",
+      "Bash(git * --config* *core.hooksPath*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/agent-gate.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/fmt-on-edit.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

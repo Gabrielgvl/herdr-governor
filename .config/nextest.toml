@@ -1,0 +1,11 @@
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 4, grace-period = "10s" }
+
+[profile.ci]
+inherits = "default"
+fail-fast = false
+retries = 1
+flaky-result = "fail"  # a flake that passes on retry still fails the run
+
+[profile.ci.junit]
+path = "junit.xml"  # test inventory artifact — diff vs baseline to catch deletions

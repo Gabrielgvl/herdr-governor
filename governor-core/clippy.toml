@@ -1,0 +1,155 @@
+# Governor-core lint configuration. Clippy takes the NEAREST clippy.toml
+# walking up from the package manifest dir — this file shadows the
+# workspace-root clippy.toml for this crate alone, so every shared policy
+# entry above the purity block mirrors ../clippy.toml verbatim (lint-policy.txt
+# pins the required ones; keep them in sync when the root file changes).
+#
+# The purity block is the compiler-enforced half of the core purity boundary
+# (spec §9: inputs are values, including time): disallowed-*, resolve the
+# canonical path, so grouped imports and aliases cannot dodge them the way a
+# token scan can be dodged. The lexical half lives in
+# scripts/check-core-purity.sh. Files under governor-core/tests/ that legitimately
+# touch the filesystem opt out per-file with a reasoned inner attribute —
+# #![expect(clippy::disallowed_methods, reason = "test fixture I/O")] — which
+# unfulfilled_lint_expectations keeps honest.
+
+# thresholds (defaults in comments)
+cognitive-complexity-threshold = 20  # default 25; state machines cluster complexity — keep tight early
+too-many-lines-threshold = 100  # default 100; functions longer than this should be split before review
+too-many-arguments-threshold = 7  # default 7; herdr upstream raises to 11 — keep 7 here, agents will grow 12-arg fns otherwise
+type-complexity-threshold = 250  # default 250
+stack-size-threshold = 512000  # default; affects nursery large_stack_frames
+array-size-threshold = 16384  # default; daemon has no big fixed buffers — catches stray big stack buffers
+
+# test ergonomics — lints still fire in non-test code
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = true
+allow-indexing-slicing-in-tests = true
+# NOTE: the *-in-tests options apply to #[test] fns and #[cfg(test)] items; helpers in tests/ without
+# #[test] may still be linted — verify after adopting.
+
+# project policy hooks (paths are resolved types/functions; entries support { path, reason, replacement })
+disallowed-methods = [
+  { path = "std::process::exit", reason = "return ExitCode/Result from main; exit() skips destructors — store connection, daemon lock file, write-ahead ledger" },
+  { path = "std::time::SystemTime::now", reason = "deadlines/intervals must use Instant; SystemTime jumps under NTP. If wall-clock display is needed, scope #[expect] to the renderer" },
+  { path = "std::env::set_var", reason = "mutating the environment mid-process is unsound (edition 2024: unsafe); pass config explicitly" },
+  { path = "std::env::remove_var", reason = "see set_var" },
+  { path = "std::thread::sleep", reason = "no sleeping retries; use the backoff loop with deadlines from the spec" },
+  # --- purity: filesystem entry points ---
+  { path = "std::fs::canonicalize", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::copy", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::create_dir", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::create_dir_all", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::exists", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::hard_link", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::metadata", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::read", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::read_dir", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::read_link", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::read_to_string", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::remove_dir", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::remove_dir_all", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::remove_file", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::rename", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::set_permissions", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::soft_link", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::symlink_metadata", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::fs::write", reason = "governor-core is pure — inputs are values; no filesystem" },
+  # Path methods perform real filesystem I/O without ever spelling std::fs.
+  { path = "std::path::Path::canonicalize", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::exists", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::is_dir", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::is_file", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::is_symlink", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::metadata", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::read_link", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::symlink_metadata", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::path::Path::try_exists", reason = "governor-core is pure — inputs are values; no filesystem" },
+  # --- purity: process environment ---
+  { path = "std::env::args", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::args_os", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::current_dir", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::current_exe", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::home_dir", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::join_paths", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::set_current_dir", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::split_paths", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::temp_dir", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::var", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::var_os", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::vars", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::env::vars_os", reason = "governor-core is pure — inputs are values; no process environment" },
+  # --- purity: process control ---
+  { path = "std::process::abort", reason = "governor-core is pure — inputs are values; no process control" },
+  { path = "std::process::id", reason = "governor-core is pure — inputs are values; no process control" },
+  # --- purity: clock reads (time is an input parameter) ---
+  { path = "std::time::Instant::now", reason = "governor-core is pure — time arrives as a value" },
+  { path = "std::time::Instant::elapsed", reason = "governor-core is pure — time arrives as a value" },
+  { path = "std::time::SystemTime::elapsed", reason = "governor-core is pure — time arrives as a value" },
+  # --- purity: stdio / network / platform extensions / stack inspection ---
+  { path = "std::io::stderr", reason = "governor-core is pure — inputs are values; no stdio" },
+  { path = "std::io::stdin", reason = "governor-core is pure — inputs are values; no stdio" },
+  { path = "std::io::stdout", reason = "governor-core is pure — inputs are values; no stdio" },
+  { path = "std::net::ToSocketAddrs::to_socket_addrs", reason = "governor-core is pure — inputs are values; no network/DNS" },
+  { path = "std::os::unix::fs::symlink", reason = "governor-core is pure — inputs are values; no filesystem" },
+  { path = "std::os::unix::process::parent_id", reason = "governor-core is pure — inputs are values; no process environment" },
+  { path = "std::backtrace::Backtrace::capture", reason = "governor-core is pure — no stack introspection" },
+  { path = "std::backtrace::Backtrace::force_capture", reason = "governor-core is pure — no stack introspection" },
+]
+disallowed-types = [
+  # banned types resolve canonically: `use std::net::TcpListener as X`,
+  # `use std::{net::TcpStream}` and fully-qualified spellings all hit here
+  { path = "std::fs::DirBuilder", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::DirEntry", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::File", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::FileTimes", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::FileType", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::Metadata", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::OpenOptions", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::Permissions", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::fs::ReadDir", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::io::Stderr", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::io::StderrLock", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::io::Stdin", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::io::StdinLock", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::io::Stdout", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::io::StdoutLock", reason = "governor-core is pure — no stdio handles" },
+  { path = "std::net::TcpListener", reason = "governor-core is pure — no network sockets" },
+  { path = "std::net::TcpStream", reason = "governor-core is pure — no network sockets" },
+  { path = "std::net::ToSocketAddrs", reason = "governor-core is pure — no network/DNS" },
+  { path = "std::net::UdpSocket", reason = "governor-core is pure — no network sockets" },
+  { path = "std::os::unix::fs::FileExt", reason = "governor-core is pure — no filesystem handles" },
+  { path = "std::os::unix::net::UnixDatagram", reason = "governor-core is pure — no network sockets" },
+  { path = "std::os::unix::net::UnixListener", reason = "governor-core is pure — no network sockets" },
+  { path = "std::os::unix::net::UnixStream", reason = "governor-core is pure — no network sockets" },
+  { path = "std::os::unix::process::CommandExt", reason = "governor-core is pure — no process control" },
+  { path = "std::process::Child", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ChildStderr", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ChildStdin", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ChildStdout", reason = "governor-core is pure — no process control" },
+  { path = "std::process::Command", reason = "governor-core is pure — no process control" },
+  { path = "std::process::CommandArgs", reason = "governor-core is pure — no process control" },
+  { path = "std::process::CommandEnvs", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ExitCode", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ExitStatus", reason = "governor-core is pure — no process control" },
+  { path = "std::process::ExitStatusError", reason = "governor-core is pure — no process control" },
+  { path = "std::process::Output", reason = "governor-core is pure — no process control" },
+  { path = "std::process::Stdio", reason = "governor-core is pure — no process control" },
+  { path = "std::backtrace::Backtrace", reason = "governor-core is pure — no stack introspection" },
+]
+disallowed-macros = [
+  # Under #![no_std] these macros resolve through core:: — the std:: spellings
+  # are dead entries and would never fire. include!/#[path] resist this layer
+  # either way (built-in macros expand before lint resolution) — the lexical
+  # scan rejects them; keep the ban list honest.
+  { path = "core::env", reason = "governor-core is pure — build-time env reads make values depend on the build host" },
+  { path = "core::option_env", reason = "governor-core is pure — build-time env reads make values depend on the build host" },
+  { path = "core::include_bytes", reason = "governor-core is pure — no file content smuggled past the src scan" },
+  { path = "core::include_str", reason = "governor-core is pure — no file content smuggled past the src scan" },
+]
+# disallowed-macros exists too ({ path, reason, replacement }); the panic/dbg/print lints above
+# already cover the usual suspects — add entries only when a real pattern recurs.
+disallowed-names = ["..", "tmp", "tmp2", "data2", "flag2"]  # ".." appends to clippy's default ["foo","baz","quux"]

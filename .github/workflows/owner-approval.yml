@@ -1,0 +1,85 @@
+name: owner-approval
+
+on:
+  pull_request_target:
+    types: [labeled, unlabeled, synchronize]
+
+permissions: {}
+
+# No concurrency group: every revocation must run. Even with
+# cancel-in-progress: false, Actions replaces an already-pending job.
+# Unrelated label events are filtered at the job and in the shell below.
+
+# Binds the `owner-approved` label to the exact head SHA it was applied
+# under, as an `owner-approval` check run on that commit. pull_request_target
+# always runs the BASE branch's copy of this file, so a PR can neither edit
+# this logic for its own run nor execute its own code here — the PR tree is
+# never materialized and nothing from it is read; the job consumes event
+# metadata and the GitHub API only, and its writes are limited to the PR's
+# label list and check runs on the event's head SHA. That is what makes the
+# check a trustworthy signal: scripts/check-owner-approval.sh requires an
+# `owner-approval` check run with conclusion `success` on the current HEAD
+# SHA before any gate may honor the label. zizmor: dangerous-triggers is
+# accepted here because the privileged trigger is the entire point — no PR
+# code runs, ever.
+jobs:
+  bind:
+    if: >-
+      github.event.action == 'synchronize' ||
+      (github.event.label.name == 'owner-approved' &&
+       (github.event.action == 'labeled' || github.event.action == 'unlabeled'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write # stamp the verdict check run on the event's head SHA
+      issues: write # revoke owner-approved when the head moves
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      ACTION: ${{ github.event.action }}
+      EVENT_LABEL: ${{ github.event.label.name }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Bind owner-approval to the exact head SHA
+        run: |
+          set -euo pipefail
+          case "$ACTION:$EVENT_LABEL" in
+            synchronize:* | labeled:owner-approved | unlabeled:owner-approved) ;;
+            *) echo "unrelated label event: no approval change"; exit 0 ;;
+          esac
+          label_present() {
+            # no `grep -q`: it would close the pipe early and pipefail
+            # would read gh's SIGPIPE as "label absent"
+            gh api "repos/$REPO/issues/$PR/labels" --paginate \
+              --jq '.[].name' | grep -Fx 'owner-approved' >/dev/null
+          }
+          record_verdict() { # conclusion, summary
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name='owner-approval' \
+              -f head_sha="$HEAD_SHA" \
+              -f status='completed' \
+              -f conclusion="$1" \
+              -f details_url="$RUN_URL" \
+              -f "output[title]=owner-approval: $1" \
+              -f "output[summary]=$2" >/dev/null
+            echo "owner-approval check on $HEAD_SHA: $1"
+          }
+          if [ "$ACTION" = "synchronize" ]; then
+            # A moved head invalidates the label. Revoke it — a failed
+            # DELETE must fail this job loudly, never warn-and-continue:
+            # a stale label plus an unbound head is exactly the forged
+            # window the label alone cannot close. Deletion via this
+            # workflow's own GITHUB_TOKEN does not fire a fresh unlabeled
+            # run, so the moved head gets its failure check right here.
+            if label_present; then
+              gh api -X DELETE "repos/$REPO/issues/$PR/labels/owner-approved"
+              echo "owner-approved revoked: head moved past the reviewed commit"
+            fi
+            record_verdict failure "head moved after approval; owner must re-apply the label"
+          elif [ "$ACTION" = "labeled" ] && label_present; then
+            record_verdict success "owner-approved labeled event bound to this head SHA"
+          else
+            record_verdict failure "owner-approved label removed or absent at this head SHA"
+          fi

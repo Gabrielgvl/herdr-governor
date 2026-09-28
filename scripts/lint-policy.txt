@@ -1,0 +1,46 @@
+# Lint-integrity policy (guardrails plan section 3, rule I2).
+# Format: <file><TAB><required ERE regex>. check-lint-integrity.sh fails for
+# every pair whose regex does not match somewhere in <file>.
+Cargo.toml	^unsafe_code[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^unwrap_used[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^expect_used[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^panic[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^print_stdout[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^print_stderr[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^indexing_slicing[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^as_conversions[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^as_underscore[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^host_endian_bytes[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^wildcard_enum_match_arm[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^exit[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^mem_forget[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^map_err_ignore[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^undocumented_unsafe_blocks[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^allow_attributes[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^allow_attributes_without_reason[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^get_unwrap[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^string_slice[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^unimplemented[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^todo[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^dbg_macro[[:space:]]*=[[:space:]]*"deny"
+Cargo.toml	^edition[[:space:]]*=[[:space:]]*"2024"
+Cargo.toml	^rust-version[[:space:]]*=[[:space:]]*"1\.98\.1"
+clippy.toml	^allow-unwrap-in-tests[[:space:]]*=[[:space:]]*true
+clippy.toml	^allow-panic-in-tests[[:space:]]*=[[:space:]]*true
+clippy.toml	^disallowed-methods[[:space:]]*=
+# governor-core/clippy.toml shadows the root config for that crate — it must
+# carry the shared test-ergonomics options AND the purity disallowed-* bans.
+governor-core/clippy.toml	^allow-unwrap-in-tests[[:space:]]*=[[:space:]]*true
+governor-core/clippy.toml	^allow-panic-in-tests[[:space:]]*=[[:space:]]*true
+governor-core/clippy.toml	^disallowed-methods[[:space:]]*=
+governor-core/clippy.toml	^disallowed-types[[:space:]]*=
+governor-core/clippy.toml	^disallowed-macros[[:space:]]*=
+governor-core/clippy.toml	std::fs::read_to_string
+governor-core/clippy.toml	std::net::TcpListener
+governor-core/clippy.toml	std::process::Command
+governor-core/clippy.toml	std::time::Instant::now
+governor-core/clippy.toml	std::env::var
+governor-core/clippy.toml	core::include_str
+governor-core/clippy.toml	core::env
+governor-core/src/lib.rs	^#!\[no_std\]
+rust-toolchain.toml	^channel[[:space:]]*=[[:space:]]*"

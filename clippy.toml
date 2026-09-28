@@ -1,0 +1,29 @@
+# thresholds (defaults in comments)
+cognitive-complexity-threshold = 20     # default 25; state machines cluster complexity — keep tight early
+too-many-lines-threshold      = 100     # default 100; functions longer than this should be split before review
+too-many-arguments-threshold  = 7       # default 7; herdr upstream raises to 11 — keep 7 here, agents will grow 12-arg fns otherwise
+type-complexity-threshold     = 250     # default 250
+stack-size-threshold          = 512000  # default; affects nursery large_stack_frames
+array-size-threshold          = 16384   # default; daemon has no big fixed buffers — catches stray big stack buffers
+
+# test ergonomics — lints still fire in non-test code
+allow-unwrap-in-tests        = true
+allow-expect-in-tests        = true
+allow-panic-in-tests         = true
+allow-print-in-tests         = true
+allow-dbg-in-tests           = true
+allow-indexing-slicing-in-tests = true
+# NOTE: the *-in-tests options apply to #[test] fns and #[cfg(test)] items; helpers in tests/ without
+# #[test] may still be linted — verify after adopting.
+
+# project policy hooks (paths are resolved types/functions; entries support { path, reason, replacement })
+disallowed-methods = [
+    { path = "std::process::exit",          reason = "return ExitCode/Result from main; exit() skips destructors — store connection, daemon lock file, write-ahead ledger" },
+    { path = "std::time::SystemTime::now",  reason = "deadlines/intervals must use Instant; SystemTime jumps under NTP. If wall-clock display is needed, scope #[expect] to the renderer" },
+    { path = "std::env::set_var",           reason = "mutating the environment mid-process is unsound (edition 2024: unsafe); pass config explicitly" },
+    { path = "std::env::remove_var",        reason = "see set_var" },
+    { path = "std::thread::sleep",          reason = "no sleeping retries; use the backoff loop with deadlines from the spec" },
+]
+# disallowed-macros exists too ({ path, reason, replacement }); the panic/dbg/print lints above
+# already cover the usual suspects — add entries only when a real pattern recurs.
+disallowed-names = ["..", "tmp", "tmp2", "data2", "flag2"]   # ".." appends to clippy's default ["foo","baz","quux"]

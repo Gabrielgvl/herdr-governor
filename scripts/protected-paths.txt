@@ -1,0 +1,50 @@
+# Protected-path policy (guardrails plan section 3). Single source consumed by
+# agent-gate.sh, check-protected-diff.sh, check-lint-integrity.sh, docs/guardrails.md.
+# Format: <mode><TAB><pattern>[<TAB>!]   patterns are repo-relative globs (** = subtree).
+#   hard        always protected: gate denies writes; diff gate fails on change
+#   conditional protected once the path exists
+#   section     diff gate applies Cargo.toml section rules R4/R4b/R5
+#   report      agent-writable: changes listed, not blocked
+#   !           required: must exist and be non-empty (integrity rule I1)
+# Matching is by suffix: `tests/support/**` already covers every member's
+# `*/tests/support/**` (the (?:^|/) anchor), so per-member dirs need no `**/`
+# prefix — the bare forms below also cover a root-level dir if one appears.
+hard	clippy.toml	!
+hard	rustfmt.toml	!
+hard	deny.toml	!
+hard	rust-toolchain.toml	!
+hard	tombi.toml
+hard	_typos.toml
+hard	justfile	!
+hard	AGENTS.md	!
+hard	CLAUDE.md
+hard	CONTEXT.md
+hard	.gitignore
+hard	.gitattributes
+hard	**/.gitattributes
+hard	.claude/**
+hard	.codex/**
+hard	.devin/**
+hard	.pi/**
+hard	.githooks/**
+hard	scripts/**
+hard	scripts/agent-gate.sh	!
+hard	scripts/check-*.sh	!
+hard	docs/guardrails.md
+hard	Cargo.lock
+hard	build.rs
+hard	.github/**
+hard	.config/nextest.toml	!
+hard	.cargo/**
+conditional	release-digests.txt
+conditional	tests/fixtures/**
+conditional	tests/support/**
+conditional	strategies/**
+conditional	*_strategies.rs
+section	Cargo.toml	!
+report	docs/spec/**
+report	docs/adr/**
+report	docs/plan/**
+report	docs/research/**
+report	docs/reviews/**
+report	docs/operations.md

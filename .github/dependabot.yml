@@ -1,0 +1,22 @@
+version: 2
+# Weekly, grouped into one PR per ecosystem. Dep bumps still hit the hard
+# Cargo.lock path plus the owner-approved label gate, so automation cannot
+# merge itself (guardrails plan §10, spec dependency policy).
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"

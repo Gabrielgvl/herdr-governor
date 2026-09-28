@@ -1,0 +1,26 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "exec|edit|write|apply_patch|notebook_edit|write_to_process",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"${DEVIN_PROJECT_DIR:-.}/scripts/agent-gate.sh\"",
+          "timeout": 10
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "edit|write|apply_patch|notebook_edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"${DEVIN_PROJECT_DIR:-.}/scripts/fmt-on-edit.sh\"",
+          "timeout": 15
+        }
+      ]
+    }
+  ]
+}

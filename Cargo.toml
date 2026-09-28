@@ -1,0 +1,127 @@
+[workspace]
+members = ["governor-core", "herdr-governor"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98.1"
+license = "MIT OR Apache-2.0"
+publish = false
+repository = "https://github.com/Gabrielgvl/herdr-governor"
+
+[workspace.lints.rust]
+# --- soundness / FFI ---
+unsafe_code            = "deny"   # scoped back on ONLY in FFI modules via #[expect(unsafe_code, reason = "...")]
+unsafe_op_in_unsafe_fn = "deny"
+missing_abi            = "deny"
+ffi_unwind_calls       = "deny"
+# --- hygiene ---
+rust_2018_idioms       = { level = "deny", priority = -1 }  # group: includes elided_lifetimes_in_paths
+let_underscore         = { level = "deny", priority = -1 }   # group: let_underscore_drop + let_underscore_lock (dropped-guard deadlocks)
+unused_qualifications  = "deny"
+trivial_casts          = "deny"
+trivial_numeric_casts  = "deny"
+non_ascii_idents       = "deny"
+unexpected_cfgs        = "warn"
+# --- visibility / docs (binary-appropriate levels) ---
+unreachable_pub                = "warn"
+missing_debug_implementations  = "warn"
+# deliberately NOT set: missing_docs (binary), unused_results (too noisy), single_use_lifetimes,
+# missing_copy_implementations, variant_size_differences, redundant_lifetimes
+
+[workspace.lints.clippy]
+# groups at lower priority than the individuals below (lint_groups_priority enforces this)
+all         = { level = "deny",  priority = -1 }  # correctness/suspicious/style/perf/complexity defaults
+pedantic    = { level = "warn",  priority = -2 }
+cargo       = { level = "warn",  priority = -2 }
+nursery     = { level = "allow", priority = -3 }  # group off; enable specific nursery lints at warn
+restriction = { level = "allow", priority = -3 }
+
+# --- hard denials: agent failure modes ---
+unwrap_used          = "deny"
+expect_used          = "deny"
+panic                = "deny"
+panic_in_result_fn   = "deny"
+unwrap_in_result     = "deny"
+unreachable          = "deny"
+todo                 = "deny"
+unimplemented        = "deny"
+dbg_macro            = "deny"
+print_stdout         = "deny"   # stdout is the wire in `receive`; output lives in one UI module
+print_stderr         = "deny"
+exit                 = "deny"
+mem_forget           = "deny"
+map_err_ignore       = "deny"
+let_underscore_must_use = "deny"
+missing_assert_message  = "deny"
+
+# --- parsing / wire safety ---
+indexing_slicing        = "deny"
+string_slice            = "deny"
+deref_by_slicing        = "deny"
+get_unwrap              = "deny"
+as_conversions          = "deny"
+as_underscore           = "deny"
+host_endian_bytes       = "deny"   # to_ne_bytes/from_ne_bytes never belong on the wire
+suspicious_xor_used_as_pow = "deny"
+missing_asserts_for_indexing = "warn"
+precedence_bits         = "warn"
+integer_division_remainder_used = "warn"
+arithmetic_side_effects = "warn"   # deny would drown audio math; warn + per-type allows in clippy.toml
+
+# --- state machines / enums / patterns ---
+wildcard_enum_match_arm          = "deny"
+rest_pat_in_fully_bound_structs  = "deny"
+else_if_without_else             = "warn"
+assertions_on_result_states      = "warn"
+iter_over_hash_type              = "warn"
+
+# --- unsafe discipline ---
+undocumented_unsafe_blocks    = "deny"
+multiple_unsafe_ops_per_block = "warn"
+missing_safety_doc            = "deny"
+unnecessary_safety_comment    = "warn"
+macro_metavars_in_unsafe      = "warn"
+
+# --- suppression policy (the meta-rule) ---
+allow_attributes               = "deny"   # use #[expect(lint, reason = "...")]
+allow_attributes_without_reason= "deny"
+
+# --- misc slop ---
+shadow_unrelated       = "deny"
+shadow_reuse           = "warn"
+shadow_same            = "warn"
+wildcard_imports       = "warn"
+enum_glob_use          = "warn"
+use_debug              = "warn"
+redundant_test_prefix  = "deny"
+tests_outside_test_module = "deny"
+partial_pub_fields     = "warn"
+field_scoped_visibility_modifiers = "warn"
+unused_trait_names     = "warn"
+large_stack_arrays     = "deny"
+create_dir             = "warn"
+verbose_file_reads     = "warn"
+disallowed_script_idents = "deny"
+cargo_common_metadata  = "warn"
+wildcard_dependencies  = "deny"
+
+# nursery picks (warn)
+or_fun_call                  = "warn"
+significant_drop_tightening  = "warn"
+significant_drop_in_scrutinee= "warn"
+redundant_pub_crate          = "warn"
+non_send_fields_in_send_ty   = "warn"
+branches_sharing_code        = "warn"
+equatable_if_let             = "warn"
+# pedantic allows to pre-empt churn (adjust after first real run):
+similar_names            = "allow"
+module_name_repetitions  = "allow"
+missing_errors_doc       = "allow"
+missing_panics_doc       = "allow"
+doc_markdown             = "allow"
+uninlined_format_args    = "allow"   # or keep warn — modern style anyway
+cast_precision_loss      = "allow"   # resampling code; revisit if conversions get sloppy
+cast_possible_truncation = "allow"   # covered more strongly by as_conversions=deny anyway
+cast_sign_loss           = "allow"
+cast_possible_wrap       = "allow"
