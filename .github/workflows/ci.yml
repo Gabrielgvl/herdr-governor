@@ -129,13 +129,14 @@ jobs:
       - name: Install Rust tools
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
         with:
-          tool: just@1.57.0,typos-cli@1.50.3,cargo-sort@2.1.4,cargo-shear@1.14.0,shellcheck@0.11.0,shfmt@3.14.1
+          tool: just@1.57.0,typos-cli@1.50.3,cargo-sort@2.1.4,cargo-shear@1.14.0,shellcheck@0.11.0
 
-      # tombi ships as a Python package; install-action has no asset for the
-      # pinned 1.5.5 and fails hard. Same pinned path as the justfile `tools`
-      # recipe (pipx first, uv as the PEP 668-safe fallback), with the same
-      # version assertion — a wrong-version install fails the job.
-      - name: Install tombi (pinned, via pipx)
+      # tombi ships as a Python package and shfmt as a Go binary; install-action
+      # has no asset for either pinned version and fails hard. Same pinned
+      # paths as the justfile `tools` recipe (tombi: pipx first, uv as the PEP
+      # 668-safe fallback; shfmt: pinned go install), each with its version
+      # assertion — a wrong-version install fails the job.
+      - name: Install tombi + shfmt (pinned, via pipx/go)
         run: |
           set -euo pipefail
           if command -v pipx >/dev/null 2>&1; then
@@ -144,6 +145,9 @@ jobs:
             uv tool install --force tombi==1.5.5
           fi
           tombi --version | grep -q 'tombi 1\.5\.5'
+          GOBIN="$HOME/.local/bin" go install mvdan.cc/sh/v3/cmd/shfmt@v3.14.1
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/shfmt" --version | grep -Eqx 'v?3\.14\.1'
 
       - name: hygiene
         run: just hygiene
@@ -318,7 +322,11 @@ jobs:
 
   guard-selftest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The suite's compiled-include case builds a real fixture workspace and
+    # runs `just fmt lint test` + `just mutants-diff` in it (cold cargo cache,
+    # real cargo-mutants over 2 mutants) — 10 minutes was not enough on the
+    # first real CI run. Budget only; the tests are unchanged.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -331,10 +339,14 @@ jobs:
       - name: Install Rust (rust-toolchain.toml)
         run: rustup show
 
-      - name: Install just
+      # just alone is not enough: the suite's compiled-include case runs the
+      # fixture's `just test` and `just mutants-diff`, which shell out to
+      # cargo-nextest and cargo-mutants. Without them that case fails 101 on
+      # a bare runner and the case-health check rejects the red row.
+      - name: Install just, ripgrep, nextest, mutants
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
         with:
-          tool: just@1.57.0,ripgrep@14.1.1
+          tool: just@1.57.0,ripgrep@14.1.1,cargo-nextest@0.9.146,cargo-mutants@27.1.0
 
       - name: Materialize trusted BASE tree
         env:
