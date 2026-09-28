@@ -125,7 +125,7 @@ cov:
 tools:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo install --locked cargo-deny@0.20.2 cargo-nextest@0.9.146 cargo-sort@2.1.4 typos-cli@1.50.3 cargo-shear@1.14.0 cargo-llvm-cov@0.9.1 cargo-mutants@27.1.0 zizmor@1.30.1
+    cargo install --locked cargo-deny@0.20.2 cargo-nextest@0.9.146 cargo-sort@2.1.4 typos-cli@1.50.3 cargo-shear@1.14.0 cargo-llvm-cov@0.9.1 cargo-mutants@27.1.0 zizmor@1.30.1 ripgrep@14.1.1
     # tombi==1.5.5 — pipx is the plan path; `uv tool install` is the PEP
     # 668-safe fallback when pipx is absent (`pip --user` is blocked there)
     if ! tombi --version 2>/dev/null | grep -q 'tombi 1\.5\.5'; then
