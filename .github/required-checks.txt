@@ -1,0 +1,10 @@
+deny
+doc
+guard
+guard-selftest
+hygiene
+lint
+mutants-diff
+test (ubuntu-latest)
+test-inventory
+wf

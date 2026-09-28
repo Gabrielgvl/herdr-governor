@@ -1,0 +1,12 @@
+# Domain vocabulary and known false positives for typos-cli.
+# Policy: extend this list, never weaken the scan.
+[default.extend-words]
+herdr = "herdr"
+governor = "governor"
+jev = "jev"
+typesafe = "typesafe"
+agy = "agy"
+rusqlite = "rusqlite"
+demand = "demand"
+ser = "ser"
+mis = "mis"

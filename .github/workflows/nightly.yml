@@ -1,0 +1,101 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '33 4 * * 1' # weekly, Monday 04:33 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every job is continue-on-error (informational) and self-skips when its targets
+# do not exist yet, so the file is correct today and activates as code lands
+# (guardrails-plan §4.7, decision D5).
+jobs:
+  mutants-scoped:
+    name: mutants (scoped)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants@27.1.0
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      # `just mutants` owns the target package (-p governor-core — the pure
+      # crate holds the decision logic worth mutating) — one rule for local
+      # and CI, the same contract as the fuzz/miri jobs.
+      - name: Scoped mutation testing (300 s per mutant)
+        run: just mutants
+
+  fuzz:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      # `just fuzz` owns detection (a `fn|mod *fuzz*` embedded #[test] target
+      # under a member's src/ or tests/) and the run — one rule for local and
+      # CI, so the job self-skips exactly when the recipe does. Bounded at
+      # 10 min per D5.
+      - name: Run fuzz targets (10 min cap)
+        run: just fuzz
+
+  miri:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # Miri needs nightly; the repo's pinned toolchain is not used here.
+      - name: Install nightly + miri
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: nightly
+          components: miri,rust-src
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      # `just miri` owns the `miri_`-named pure-logic subset filter and the
+      # skip rule — it scopes to governor-core: the binary crate's I/O
+      # dependencies (rusqlite, daemon glue) can never run under Miri.
+      # Bounded at 15 min per D5.
+      - name: Run Miri on pure-logic tests (15 min cap)
+        run: just miri

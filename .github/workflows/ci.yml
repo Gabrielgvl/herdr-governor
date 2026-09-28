@@ -1,0 +1,528 @@
+name: CI
+
+on:
+  push:
+  # labeled/unlabeled must retrigger: the guard and test-inventory jobs read
+  # the `owner-approved` label state — without these types an added label
+  # could never un-red the gate and a removed one would leave a stale
+  # approval.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Job ids are the required-check names; keep in sync with .github/required-checks.txt.
+# Jobs are the `just ci` stages as parallel legs plus the PR boundary gates
+# (guardrails-plan §4.7, spec §10).
+# Rust comes from rust-toolchain.toml via `rustup show` (single source of truth);
+# dtolnay/rust-toolchain does not read rust-toolchain.toml, so it is not used here.
+#
+# Trusted BASE (guard, guard-selftest, test-inventory, mutants-diff): on
+# pull_request the gate scripts run from the merge-base revision against
+# origin/main, materialized via `git archive`, not from the PR's own tree — a
+# PR that neuters a gate is still judged by the reviewed revision's copy. The
+# extract lands under .base-gates/ inside the workspace so script_dir-relative
+# policy lookups (protected-paths.txt, lint-policy.txt) resolve to BASE's
+# copies and git-toplevel detection still finds the repo. guard-selftest
+# archives the FULL BASE tree, not just scripts/: the test module resolves
+# ROOT from its own location and reads manifests, member sources, fixtures
+# and harness config dirs. A BASE that predates the scripts (the scaffold PR
+# itself) falls back to the HEAD copies, loudly — that bootstrap window is
+# closed by the head-bound owner approval (owner-approval.yml stamps an
+# `owner-approval` check run on exactly the labeled head SHA) plus
+# CODEOWNERS review of the new scripts themselves.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      - name: fmt + clippy
+        run: just lint
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux-only CI (owner decision): governor ships no macOS leg, so there
+        # is no `test (macos-14)` required check.
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      NEXTEST_PROFILE: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install Rust tools
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0,cargo-nextest@0.9.146
+
+      - name: nextest
+        run: just test
+
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install Rust tools
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0,cargo-deny@0.20.2
+
+      - name: Cache RustSec advisory DB
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/advisory-dbs
+          key: rustsec-advisory-db-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            rustsec-advisory-db-${{ runner.os }}-
+
+      - name: cargo deny
+        run: just deny
+
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install Rust tools
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0,typos-cli@1.50.3,tombi@1.5.5,cargo-sort@2.1.4,cargo-shear@1.14.0,shellcheck@0.11.0,shfmt@3.14.1
+
+      - name: hygiene
+        run: just hygiene
+
+  wf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor + just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0,zizmor@1.30.1
+
+      # actionlint is not in taiki-e/install-action's manifest; pin the release
+      # and verify it against the release's own checksums file.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          ver=1.7.12
+          asset="actionlint_${ver}_linux_amd64.tar.gz"
+          base="https://github.com/rhysd/actionlint/releases/download/v${ver}"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "$tmp/$asset" "$base/$asset"
+          curl -fsSL -o "$tmp/checksums.txt" "$base/actionlint_${ver}_checksums.txt"
+          (cd "$tmp" && grep "linux_amd64" checksums.txt | sha256sum -c --strict -)
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "$tmp/$asset" -C "$HOME/.local/bin" actionlint
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: actionlint + zizmor
+        run: just wf
+
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+      # check-owner-approval.sh reads the PR label list and the head's
+      # check runs via `gh api`. On a public repo those endpoints are
+      # world-readable anyway; the read scopes keep the job correct if the
+      # repo ever goes private.
+      checks: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # merge-base HEAD origin/main and `git archive $BASE` need history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # check-core-purity.sh runs `cargo metadata`; the pinned toolchain is
+      # also what the other gates assume when they inspect the tree.
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Materialize BASE gate scripts
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # On push/workflow_dispatch there is no BASE — the worktree's own
+          # copies run (same as `just guard` locally; documented difference).
+          echo "GATES_DIR=scripts" >> "$GITHUB_ENV"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$(git merge-base HEAD origin/main)"
+            echo "BASE_SHA=$base" >> "$GITHUB_ENV"
+            mkdir -p "$GITHUB_WORKSPACE/.base-gates"
+            if git archive "$base" scripts | tar -x -C "$GITHUB_WORKSPACE/.base-gates"; then
+              echo "GATES_DIR=$GITHUB_WORKSPACE/.base-gates/scripts" >> "$GITHUB_ENV"
+              echo "guard: gate scripts taken from BASE $base"
+            else
+              # Bootstrap: BASE predates the gate scripts (the scaffold PR
+              # itself) — HEAD copies apply, bounded by the commit-bound
+              # owner approval below.
+              echo "::warning::BASE $base has no scripts/ — HEAD gate copies in use (bootstrap)"
+            fi
+          fi
+          cat > "$RUNNER_TEMP/gate" <<'GATE_EOF'
+          #!/usr/bin/env bash
+          # resolve a gate to its BASE copy; HEAD copy only when BASE lacks it
+          set -euo pipefail
+          name="$(basename -- "$1")"
+          shift
+          if [ -f "$GATES_DIR/$name" ]; then
+          	src="$GATES_DIR/$name"
+          elif [ -f "scripts/$name" ]; then
+          	echo "::warning::$name absent at BASE — running the HEAD copy (bootstrap)"
+          	src="scripts/$name"
+          else
+          	echo "::error::$name missing at BASE and HEAD" >&2
+          	exit 1
+          fi
+          case "$name" in
+          *.py) exec python3 "$src" "$@" ;;
+          *) exec "$src" "$@" ;;
+          esac
+          GATE_EOF
+          chmod +x "$RUNNER_TEMP/gate"
+          echo "GATE=$RUNNER_TEMP/gate" >> "$GITHUB_ENV"
+
+      # Head-bound owner approval: APPROVED only when the PR carries
+      # `owner-approved` AND the exact HEAD_SHA holds a successful
+      # `owner-approval` check run, which only the base-defined
+      # pull_request_target workflow (owner-approval.yml) can write. A label
+      # applied before the latest push is STALE — the bind run revokes it
+      # and stamps `failure` on the moved head. rc=1 (STALE/ABSENT) is a
+      # verdict, not an error; rc=2 (transport/usage) fails closed.
+      # Evaluated on every PR — the env only matters to gates that consume
+      # it (diff gate, test ratchet).
+      - name: Owner-approval verdict (head-bound)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # A `labeled` event starts this job and the pull_request_target
+          # bind run together; a STALE verdict (label present, status not
+          # yet on this head) gets a bounded wait for the bind run to land.
+          rc=0
+          verdict=ABSENT
+          for attempt in 1 2 3 4 5 6; do
+            rc=0
+            verdict="$("$GATE" check-owner-approval.sh "$REPO" "$PR" "$HEAD_SHA" owner-approved)" || rc=$?
+            if [ "$rc" -ne 1 ] || [ "$verdict" != "STALE" ] || [ "$attempt" -eq 6 ]; then
+              break
+            fi
+            sleep 15
+          done
+          echo "owner-approval: $verdict (rc=$rc)"
+          if [ "$rc" -eq 0 ]; then
+            echo "GOV_PROTECTED_OK=1" >> "$GITHUB_ENV"
+          elif [ "$rc" -eq 2 ]; then
+            echo "::error::owner-approval verdict could not be computed — failing closed"
+            exit 1
+          fi
+
+      - name: Lint-content integrity
+        run: '"$GATE" check-lint-integrity.sh'
+
+      - name: Core purity
+        run: '"$GATE" check-core-purity.sh'
+
+      - name: Herdr schema fixture
+        run: '"$GATE" check-herdr-schema.sh'
+
+      # Diff-guard runs on pull_request only: on push/workflow_dispatch there
+      # is no review boundary to diff against, and HEAD~1...HEAD would stay
+      # red forever after an owner-approved protected merge. The required PR
+      # check + CODEOWNERS review are the enforcement on that path; the
+      # integrity steps above still run on every event.
+      - name: Protected-diff gate (CI mode)
+        if: github.event_name == 'pull_request'
+        run: '"$GATE" check-protected-diff.sh "$BASE_SHA"'
+
+  guard-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The suite has rustfmt-gated cases (fmt-on-edit.sh); rustup installs
+      # the pinned toolchain so they run instead of skipping.
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      - name: Materialize trusted BASE tree
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          echo "GATES_DIR=scripts" >> "$GITHUB_ENV"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$(git merge-base HEAD origin/main)"
+            echo "BASE_SHA=$base" >> "$GITHUB_ENV"
+            mkdir -p "$GITHUB_WORKSPACE/.base-gates"
+            # The selftest needs the COMPLETE BASE tree: it resolves ROOT
+            # from its own file location and reads Cargo.toml, member
+            # manifests/sources, fixtures and the harness config dirs.
+            # A scripts-only archive (the guard job's layout) starves it —
+            # the gate wrapper below still falls back, loudly, for a BASE
+            # that predates the scripts entirely (the scaffold PR itself).
+            git archive "$base" | tar -x -C "$GITHUB_WORKSPACE/.base-gates"
+            echo "GATES_DIR=$GITHUB_WORKSPACE/.base-gates/scripts" >> "$GITHUB_ENV"
+            echo "guard-selftest: trusted BASE tree materialized from $base"
+          fi
+          cat > "$RUNNER_TEMP/gate" <<'GATE_EOF'
+          #!/usr/bin/env bash
+          # resolve a gate to its BASE copy; HEAD copy only when BASE lacks it
+          set -euo pipefail
+          name="$(basename -- "$1")"
+          shift
+          if [ -f "$GATES_DIR/$name" ]; then
+          	src="$GATES_DIR/$name"
+          elif [ -f "scripts/$name" ]; then
+          	echo "::warning::$name absent at BASE — running the HEAD copy (bootstrap)"
+          	src="scripts/$name"
+          else
+          	echo "::error::$name missing at BASE and HEAD" >&2
+          	exit 1
+          fi
+          case "$name" in
+          *.py) exec python3 "$src" "$@" ;;
+          *) exec "$src" "$@" ;;
+          esac
+          GATE_EOF
+          chmod +x "$RUNNER_TEMP/gate"
+          echo "GATE=$RUNNER_TEMP/gate" >> "$GITHUB_ENV"
+
+      # Not `just guard-selftest`: the recipe would run the PR's copy of the
+      # suite. The BASE copy resolves its gates via
+      # Path(__file__).parents[1]/scripts, i.e. it selftests the BASE scripts —
+      # the point of trusted-BASE.
+      - name: guardrails self-test (BASE copy)
+        run: '"$GATE" test_guardrails.py'
+
+  doc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install just
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: just@1.57.0
+
+      - name: cargo doc
+        run: just doc
+
+  # PR-only below: like the diff gate, both need a review boundary (a BASE) —
+  # on push there is nothing to ratchet or diff against. Both resolve
+  # BASE=merge-base HEAD origin/main (owner decision; same rule as the local
+  # recipes, so CI and `just ci` agree on what "the base" is).
+
+  test-inventory:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: read # check-owner-approval.sh: gh api check-runs on the head
+      issues: read # check-owner-approval.sh: gh api PR label list
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-nextest@0.9.146
+
+      # Mirror of `just test-inventory` exactly — same empty-document plus
+      # --allow-empty-base bootstrap handling — except the comparator (and
+      # the approval verdict) run from the BASE worktree, not the PR's
+      # copies (trusted-BASE). A BASE without a Cargo workspace yields a
+      # well-formed empty inventory; without the flag the comparator's
+      # "nothing to check" FAIL still applies, downgradable only by the
+      # head-bound approval.
+      - name: Build BASE and HEAD test inventories
+        run: |
+          set -euo pipefail
+          base="$(git merge-base HEAD origin/main)"
+          echo "BASE_SHA=$base" >> "$GITHUB_ENV"
+          git worktree add --detach "$RUNNER_TEMP/base" "$base"
+          inv_args=""
+          if [ -f "$RUNNER_TEMP/base/Cargo.toml" ]; then
+            (cd "$RUNNER_TEMP/base" && cargo nextest list --locked --message-format json > "$RUNNER_TEMP/base.jsonl")
+          else
+            echo "::warning::BASE $base has no Cargo.toml — empty inventory (bootstrap)"
+            printf '{"rust-suites":{}}\n' > "$RUNNER_TEMP/base.jsonl"
+            inv_args="--allow-empty-base"
+          fi
+          echo "INV_ARGS=$inv_args" >> "$GITHUB_ENV"
+          cargo nextest list --locked --message-format json > "$RUNNER_TEMP/head.jsonl"
+
+      - name: Owner-approval verdict (head-bound)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          s="$RUNNER_TEMP/base/scripts/check-owner-approval.sh"
+          if [ ! -f "$s" ]; then
+            echo "::warning::check-owner-approval.sh absent at BASE — running the HEAD copy (bootstrap)"
+            s="scripts/check-owner-approval.sh"
+          fi
+          # Same bounded wait as the guard job: a `labeled` event races the
+          # pull_request_target bind run that stamps the head status.
+          rc=0
+          verdict=ABSENT
+          for attempt in 1 2 3 4 5 6; do
+            rc=0
+            verdict="$("$s" "$REPO" "$PR" "$HEAD_SHA" owner-approved)" || rc=$?
+            if [ "$rc" -ne 1 ] || [ "$verdict" != "STALE" ] || [ "$attempt" -eq 6 ]; then
+              break
+            fi
+            sleep 15
+          done
+          echo "owner-approval: $verdict (rc=$rc)"
+          if [ "$rc" -eq 0 ]; then
+            echo "GOV_PROTECTED_OK=1" >> "$GITHUB_ENV"
+          elif [ "$rc" -eq 2 ]; then
+            echo "::error::owner-approval verdict could not be computed — failing closed"
+            exit 1
+          fi
+
+      - name: Test-inventory ratchet (BASE comparator)
+        run: |
+          set -euo pipefail
+          s="$RUNNER_TEMP/base/scripts/check-test-inventory.sh"
+          if [ ! -f "$s" ]; then
+            echo "::warning::check-test-inventory.sh absent at BASE — running the HEAD copy (bootstrap)"
+            s="scripts/check-test-inventory.sh"
+          fi
+          inv_args=()
+          if [ -n "$INV_ARGS" ]; then
+            inv_args+=("$INV_ARGS")
+          fi
+          "$s" "${inv_args[@]}" "$RUNNER_TEMP/base.jsonl" "$RUNNER_TEMP/head.jsonl"
+
+  mutants-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # mutation testing is the expensive gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants@27.1.0
+
+      # `just mutants-diff` equivalent running the BASE copy of the script.
+      # No approval verdict: the zero-mutant FAIL is a content rule that
+      # GOV_PROTECTED_OK cannot downgrade, so the label is irrelevant here.
+      - name: Diff-scoped mutation gate (BASE script)
+        run: |
+          set -euo pipefail
+          base="$(git merge-base HEAD origin/main)"
+          mkdir -p "$RUNNER_TEMP/base-gates"
+          if git archive "$base" scripts/mutants-diff.sh | tar -x -C "$RUNNER_TEMP/base-gates"; then
+            echo "mutants-diff: gate script from BASE $base"
+            s="$RUNNER_TEMP/base-gates/scripts/mutants-diff.sh"
+          else
+            echo "::warning::mutants-diff.sh absent at BASE $base — running the HEAD copy (bootstrap)"
+            s="scripts/mutants-diff.sh"
+          fi
+          "$s" "$base"
+
+  # Label cleanup lives in .github/workflows/owner-approval.yml, a minimal
+  # base-defined pull_request_target workflow: on `synchronize` it revokes
+  # owner-approved (failing loudly on a failed DELETE) and stamps the
+  # `owner-approval` check run that binds the label to the exact head
+  # SHA — what the verdict steps above require. Keeping that logic out of
+  # the PR-defined workflow is what makes it unforgeable by PR code.

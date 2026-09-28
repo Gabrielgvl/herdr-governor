@@ -1,0 +1,48 @@
+[graph]
+# only resolve deps for targets we ship
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]
+all-features = false
+
+[advisories]
+# NOTE (cargo-deny ≥0.18): vulnerability/unsound/notice advisories are always errors — those fields
+# were removed and would now fail config validation. Tunable fields:
+unmaintained = "workspace"  # unmaintained advisories fail only for direct deps
+yanked = "deny"
+ignore = []  # entries should carry { id = "RUSTSEC-...", reason = "..." }
+
+[bans]
+multiple-versions = "warn"  # start at warn; tighten to deny after dedup effort
+wildcards = "deny"  # '*' / branch deps forbidden — spec pins digests anyway
+deny = [
+  # e.g. { crate = "openssl", use-instead = "rustls" },
+  # optional: guard against an agent sneaking in an async runtime:
+  # { crate = "tokio", reason = "binary is synchronous; no async runtime" },
+]
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[licenses]
+# NOTE (cargo-deny ≥0.18.4): deny/copyleft/default/unlicensed fields were removed — anything not in
+# `allow`/`exceptions` is denied by default, including copyleft licenses (GNU licenses are matched
+# pedantically; GPL-anything must be explicitly allowed).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+]
+confidence-threshold = 0.93
+unused-allowed-license = "warn"
+exceptions = []

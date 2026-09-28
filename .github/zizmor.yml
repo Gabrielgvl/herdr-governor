@@ -1,0 +1,14 @@
+# Scoped ignores — per rule, per file. Anything not listed still audits.
+rules:
+  dangerous-triggers:
+    ignore:
+      # owner-approval.yml — the privileged pull_request_target trigger IS
+      # the design: it always runs the BASE branch's copy of the workflow,
+      # so a PR can neither edit the binder for its own run nor execute its
+      # own code there. The job never materializes PR code (no checkout,
+      # no actions) — it reads only event metadata and the GitHub API, and
+      # its writes are limited to the PR's label list and a check run on
+      # the event's head SHA. This is the mechanism that binds the
+      # owner-approved label to the exact reviewed head, closing the
+      # forgeable-committer-date hole it replaced.
+      - owner-approval.yml

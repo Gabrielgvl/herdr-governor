@@ -1,0 +1,29 @@
+toml-version = "v1.0.0"
+
+files.include = ["**/*.toml"]
+files.exclude = ["target/**"]
+
+[format]
+
+[lint]
+
+[schema]
+enabled = true
+strict = true
+
+# Keep the schemastore Cargo.toml schema for linting (bogus manifest keys fail),
+# but disable its auto-sorting: the [lints] tables are curated in semantic groups
+# whose comments would be orphaned by schema/alphabetical key reordering.
+[[schemas]]
+path = "tombi://www.schemastore.org/cargo.json"
+include = ["**/Cargo.toml"]
+format.rules.array-values-order.enabled = false
+format.rules.table-keys-order.enabled = false
+
+# The workspace-root Cargo.toml and clippy.toml pre-date tombi adoption and are
+# hand-formatted (aligned `=`, grouped comments). Formatting them is a one-time
+# normalization decision for the integrator — schema lint still applies to both.
+# Member manifests are plain and are formatted normally.
+[[overrides]]
+files.include = ["Cargo.toml", "clippy.toml"]
+format.enabled = false

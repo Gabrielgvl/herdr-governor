@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fast pre-commit gate. Advisory layer only — `just ci` + review is enforcement.
+# Installed via `just install-hooks` (git config core.hooksPath .githooks).
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Cheap checks on staged content (plan §4.4 recipes; §4.6 decision: lint+guard).
+just lint guard

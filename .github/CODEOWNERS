@@ -1,0 +1,57 @@
+# Guardrails CODEOWNERS — changes to the protected-path set require owner review.
+# Keep in sync with scripts/protected-paths.txt (hard + conditional modes).
+# docs/plan/**, docs/research/** and docs/operations.md are deliberately NOT
+# listed (report-mode, agent-writable). Cargo.toml is section-protected: dep
+# changes still trigger owner review here, which implements the R4b "always
+# listed for review" rule.
+
+# Lint / toolchain / formatting config
+clippy.toml            @Gabrielgvl
+rustfmt.toml           @Gabrielgvl
+deny.toml              @Gabrielgvl
+rust-toolchain.toml    @Gabrielgvl
+tombi.toml             @Gabrielgvl
+_typos.toml            @Gabrielgvl
+.config/               @Gabrielgvl
+.cargo/                @Gabrielgvl
+
+# Manifest, lockfile and build scripts (section rules enforced by
+# check-protected-diff.sh; the bare names match every member manifest and a
+# build.rs at any depth)
+Cargo.toml             @Gabrielgvl
+Cargo.lock             @Gabrielgvl
+**/build.rs            @Gabrielgvl
+
+# Agent-facing policy and automation surface
+justfile               @Gabrielgvl
+AGENTS.md              @Gabrielgvl
+CLAUDE.md              @Gabrielgvl
+CONTEXT.md             @Gabrielgvl
+.gitignore             @Gabrielgvl
+.gitattributes         @Gabrielgvl
+**/.gitattributes      @Gabrielgvl
+release-digests.txt    @Gabrielgvl
+
+# Harness configs and enforcement machinery
+.claude/               @Gabrielgvl
+.codex/                @Gabrielgvl
+.devin/                @Gabrielgvl
+.pi/                   @Gabrielgvl
+.githooks/             @Gabrielgvl
+scripts/               @Gabrielgvl
+
+# CI itself
+.github/               @Gabrielgvl
+
+# Spec and decision records (docs/guardrails.md documents the gates themselves)
+docs/spec/             @Gabrielgvl
+docs/adr/              @Gabrielgvl
+docs/reviews/          @Gabrielgvl
+docs/guardrails.md     @Gabrielgvl
+
+# Test fixtures, helpers and proptest strategies (conditional — protected once
+# they exist; the bare names cover every member's dirs)
+**/tests/fixtures/     @Gabrielgvl
+**/tests/support/      @Gabrielgvl
+**/strategies/         @Gabrielgvl
+*_strategies.rs        @Gabrielgvl
