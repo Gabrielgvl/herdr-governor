@@ -230,14 +230,19 @@ class A1ExecutorTransport(unittest.TestCase):
     def test_a1_non_loopback_requires_https(self):
         self.assertTrue(self.obs["auth"]["non_loopback_http_refused"])
 
-    def test_a1_auth_is_oauth_metadata_discovery(self):
+    def test_a1_auth_round_trip_confirmed_negative(self):
+        """The gateway names the RFC 8414 metadata URL in its error but never
+        issues the request (verified server-side): its OAuth metadata loader
+        is unimplemented, so an authenticated source cannot complete
+        registration. Loopback + no-auth is the only supported shape."""
         on401 = self.obs["auth"]["on_401"]
         self.assertEqual(on401["www_authenticate"], "Bearer")
         self.assertIn("/.well-known/oauth-authorization-server",
-                      on401["triggers"])
-        self.assertEqual(on401["mcp_spec"], "2026-07-28")
-        self.assertTrue(on401["observed_failure_prefix"]
-                        .startswith("HTTP 501 trying to load OAuth metadata"))
+                      on401["named_metadata_url"])
+        self.assertIn("gateway-local", on401["observed_error_template"])
+        self.assertFalse(on401["metadata_request_actually_issued"])
+        self.assertTrue(on401["full_round_trip"].startswith(
+            "confirmed-negative"))
 
     def test_a1_stale_loopback_blocks_reregistration(self):
         auth = self.obs["auth"]

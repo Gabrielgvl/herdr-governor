@@ -34,8 +34,9 @@ arguments, and credential material are excluded by construction.
 
 ## A1 — Executor transport
 
-**Status: confirmed for the trial sub-behaviors below; two open sub-cases
-stay owner-decision material (full OAuth round-trip; typed offline error).**
+**Status: confirmed for the trial sub-behaviors below; the OAuth round-trip
+sub-case is closed confirmed-negative (wave-2 trial); the untyped offline
+error stays a Phase-3 contract requirement.**
 
 The trial registered a purpose-built minimal MCP Streamable HTTP server
 (loopback) through the gateway's install action and drove it over the real
@@ -57,22 +58,30 @@ Confirmed behaviors and their tests:
 | Offline failure surfaces as an **untyped** `Failed to call tool: fetch failed` — no error class separates transport-down from a tool error (FLAG) | `a1_offline_is_untyped_fetch_failure` |
 | No per-caller/per-call process recreation: one persistent server process per run, all traffic from the gateway's in-process fetch client (`undici`), zero child spawns (the feared behavior does not occur) | `a1_no_per_caller_process_recreation` |
 | Non-loopback registration must be HTTPS — a plain-LAN-HTTP source is refused at install | `a1_non_loopback_requires_https` |
-| A 401 source with `WWW-Authenticate: Bearer` triggers OAuth metadata discovery at `/.well-known/oauth-authorization-server` (RFC 8414, MCP spec 2026-07-28) — auth is OAuth-based, not caller-supplied static tokens | `a1_auth_is_oauth_metadata_discovery` |
+| A 401 source with `WWW-Authenticate: Bearer` names `/.well-known/oauth-authorization-server` (RFC 8414, MCP spec 2026-07-28) in its error — but the gateway's OAuth metadata loader is **unimplemented** (gateway-local `HTTP 501`; server-side request log proves no metadata, register, authorize, or token request is ever issued, even against a fully compliant authorization server): authenticated registration is **confirmed-negative**, loopback + no-auth is the only supported source shape | `a1_auth_round_trip_confirmed_negative` |
 | The gateway has **no uninstall verb** and every loopback variant derives the same source name, so a dead loopback source permanently blocks re-registration in this gateway version (FLAG) | `a1_stale_loopback_blocks_reregistration` |
 
 Flags and open sub-cases: the offline error is untyped (callers cannot
 distinguish transport-down from tool failure — the spec should require a
 typed transport-unavailable error from callers; Phase 3 contract work);
-authentication is exercised up to OAuth metadata discovery only — a full
-OAuth round-trip needs a real authorization server and stays owner-decision
-material (§19); the one-way registration surface (no uninstall verb) is
-recorded as-is. An unrelated isolation note: the trial's first port choice
+authentication is **closed confirmed-negative**: the wave-2 OAuth trial
+(compliant loopback AS: RFC 8414 metadata at 200, dynamic client
+registration, PKCE authorize, token endpoints) reproduced the identical
+gateway-local 501 with zero AS requests issued — the wave-1 reading that
+a real authorization server was the remaining sub-case is corrected; the
+one-way registration surface (no uninstall verb) is made harder by the
+write-once loopback name: a stale `local-mcp` blocks every later loopback
+install at a different endpoint (exact refusal recorded; removal required
+a config edit plus a fresh session — the in-session registry does not
+re-read config). An unrelated isolation note: the trial's first port choice
 was already held by another flow's server; the probe moved ports and the
 gateway behavior was unaffected. The spec §9 `relay` fallback question is
 unaffected by this trial and stays open.
 
 Source: `contract-a1.md` (raw probe log `/tmp/mcp-probe-server.log`);
 fixtures `a1-transport-trace.jsonl`, `a1-gateway-observations.json`.
+Wave-2 OAuth trial evidence: `contract-a1-oauth-evidence/`
+(compliant AS source, gateway install logs, AS request log).
 
 ## A2 — Socket concurrency
 
@@ -328,7 +337,7 @@ Jev availability, latency, or judgment shape.
 
 | Item | Status | What unblocks it |
 |---|---|---|
-| A1 full OAuth round-trip | open sub-case — auth proven up to metadata discovery only | trial against a real authorization server (owner-decision material) |
+| A1 OAuth round-trip | confirmed-negative — gateway OAuth loader unimplemented | none (closed); the governor registers loopback no-auth sources only |
 | A1 offline error typing | confirmed untyped transport failure | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
 | A2 Herdr socket: silent stream teardown on malformed input | needs-owner-decision — evidence now complete (zero bytes, RST, `stream_closed` log, re-arm works) | owner adopts the re-arm-and-catch-up contract for unexpected subscription EOF |
 | A3 start/prompt semantics | untested | wave-2 probe of agent start and prompt delivery |

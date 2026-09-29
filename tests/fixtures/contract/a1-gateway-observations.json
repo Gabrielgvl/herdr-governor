@@ -1,5 +1,5 @@
 {
-  "source": "contract-a1.md (A1 Executor transport trial, 2026-09-29) — recorded gateway-side observations; the probe server's own frame record is a1-transport-trace.jsonl",
+  "source": "contract-a1.md (A1 Executor transport trial, 2026-09-29) \u2014 recorded gateway-side observations; the probe server's own frame record is a1-transport-trace.jsonl",
   "install": {
     "result": "Installed and connected",
     "url": "http://127.0.0.1:8877/mcp",
@@ -8,7 +8,12 @@
     "protocol_version_accepted": "2025-06-18"
   },
   "caller_forwarding": {
-    "request": {"text": "caller-forwarding-probe-1", "nested": {"k": 42}},
+    "request": {
+      "text": "caller-forwarding-probe-1",
+      "nested": {
+        "k": 42
+      }
+    },
     "echoed": "byte-identical"
   },
   "sse_validation_get": {
@@ -31,9 +36,10 @@
     "uninstall_verb_present": false,
     "on_401": {
       "www_authenticate": "Bearer",
-      "triggers": "OAuth metadata discovery at /.well-known/oauth-authorization-server (RFC 8414)",
-      "mcp_spec": "2026-07-28",
-      "observed_failure_prefix": "HTTP 501 trying to load OAuth metadata"
+      "named_metadata_url": "/.well-known/oauth-authorization-server (RFC 8414, MCP spec 2026-07-28)",
+      "observed_error_template": "HTTP 501 trying to load OAuth metadata \u2014 gateway-local, not a server response",
+      "metadata_request_actually_issued": false,
+      "full_round_trip": "confirmed-negative: against a compliant AS serving 200 RFC 8414 metadata + register/authorize/token, the gateway still fails identically and issues zero well-known/register/authorize/token requests"
     }
   }
 }
