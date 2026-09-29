@@ -1,0 +1,956 @@
+{
+  "source": "contract-a1-bearer-evidence/reconnect/request-log.jsonl (p0p1 artifact bundle, probe 2026-09-29) \u2014 distilled to kind/method/path/header-name/auth/session/proc/strict/marker-label fields; header values, bodies, timestamps, ports and request ids dropped. proc tags identify the four server processes; session_known is server-side knowledge of the presented Mcp-Session-Id; strict servers 404 unknown session ids. Caller-side strings in observations come from call-*.out, register-*.out and cleanup-*.out.",
+  "observations": {
+    "connection_address": "tools.gov-a1-reconnect-probe.org.govA1ReconnectProbe",
+    "addserver_missing_name_rejected": "invalid_tool_arguments",
+    "server_down_caller_error": "Internal tool error [4fce215a]",
+    "server_down_exit_code": 1,
+    "server_down_error_envelope_typed": false,
+    "teardown_connections_remove": true,
+    "teardown_integrations_remove": true
+  },
+  "records": [
+    {
+      "strict": false,
+      "proc": "26a516",
+      "kind": "listening"
+    },
+    {
+      "kind": "marker",
+      "label": "after-registration"
+    },
+    {
+      "kind": "marker",
+      "label": "after-registration"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-method",
+        "mcp-protocol-version",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "server/discover",
+      "proc": "26a516",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "initialize",
+      "proc": "26a516",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "daf2f65fb9117282",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "notifications/initialized",
+      "proc": "26a516",
+      "session_id": "daf2f65fb9117282",
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "GET",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "daf2f65fb9117282",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "daf2f65fb9117282",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/list",
+      "proc": "26a516",
+      "session_id": "daf2f65fb9117282",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "after-registration"
+    },
+    {
+      "kind": "marker",
+      "label": "call-1-start"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-method",
+        "mcp-protocol-version",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "server/discover",
+      "proc": "26a516",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "initialize",
+      "proc": "26a516",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "9dfe5905fed2ac58",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "notifications/initialized",
+      "proc": "26a516",
+      "session_id": "9dfe5905fed2ac58",
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "GET",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "9dfe5905fed2ac58",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "26a516",
+      "auth_scheme": "bearer",
+      "session_id": "9dfe5905fed2ac58",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "26a516",
+      "session_id": "9dfe5905fed2ac58",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-1-end"
+    },
+    {
+      "kind": "marker",
+      "label": "call-2-start-server-down"
+    },
+    {
+      "kind": "marker",
+      "label": "call-2-end"
+    },
+    {
+      "strict": false,
+      "proc": "3b26cc",
+      "kind": "listening"
+    },
+    {
+      "kind": "marker",
+      "label": "call-3-start"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-method",
+        "mcp-protocol-version",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "server/discover",
+      "proc": "3b26cc",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "initialize",
+      "proc": "3b26cc",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": "a707faa2e5ffc7d4",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "notifications/initialized",
+      "proc": "3b26cc",
+      "session_id": "a707faa2e5ffc7d4",
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "GET",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": "a707faa2e5ffc7d4",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": "a707faa2e5ffc7d4",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b26cc",
+      "session_id": "a707faa2e5ffc7d4",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-3-end"
+    },
+    {
+      "kind": "marker",
+      "label": "call-4-start"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b26cc",
+      "auth_scheme": "bearer",
+      "session_id": "a707faa2e5ffc7d4",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b26cc",
+      "session_id": "a707faa2e5ffc7d4",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-4-end"
+    },
+    {
+      "kind": "marker",
+      "label": "call-2b-start-server-down-debug"
+    },
+    {
+      "kind": "marker",
+      "label": "call-2b-end"
+    },
+    {
+      "strict": true,
+      "proc": "b98b91",
+      "kind": "listening"
+    },
+    {
+      "kind": "marker",
+      "label": "call-5-start-strict"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-method",
+        "mcp-protocol-version",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "server/discover",
+      "proc": "b98b91",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "method": "server/discover",
+      "proc": "b98b91",
+      "session_id": null,
+      "kind": "session_rejected"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "initialize",
+      "proc": "b98b91",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": "04841385c9355c3d",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "notifications/initialized",
+      "proc": "b98b91",
+      "session_id": "04841385c9355c3d",
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "GET",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": "04841385c9355c3d",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": "04841385c9355c3d",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "b98b91",
+      "session_id": "04841385c9355c3d",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-5-end"
+    },
+    {
+      "kind": "marker",
+      "label": "call-6-start-strict"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "b98b91",
+      "auth_scheme": "bearer",
+      "session_id": "04841385c9355c3d",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "b98b91",
+      "session_id": "04841385c9355c3d",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-6-end"
+    },
+    {
+      "strict": true,
+      "proc": "3b8dfb",
+      "kind": "listening"
+    },
+    {
+      "kind": "marker",
+      "label": "call-7-start-strict-silent-restart"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": "04841385c9355c3d",
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b8dfb",
+      "session_id": "04841385c9355c3d",
+      "kind": "mcp_method"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b8dfb",
+      "session_id": "04841385c9355c3d",
+      "kind": "session_rejected"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-method",
+        "mcp-protocol-version",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "server/discover",
+      "proc": "3b8dfb",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "method": "server/discover",
+      "proc": "3b8dfb",
+      "session_id": null,
+      "kind": "session_rejected"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": null,
+      "auth_match": true,
+      "session_known": false,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "initialize",
+      "proc": "3b8dfb",
+      "session_id": null,
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": "7b011ab7e2c2c975",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "notifications/initialized",
+      "proc": "3b8dfb",
+      "session_id": "7b011ab7e2c2c975",
+      "kind": "mcp_method"
+    },
+    {
+      "auth_present": true,
+      "method": "GET",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": "7b011ab7e2c2c975",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": "7b011ab7e2c2c975",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b8dfb",
+      "session_id": "7b011ab7e2c2c975",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-7-end"
+    },
+    {
+      "kind": "marker",
+      "label": "call-8-start-strict"
+    },
+    {
+      "auth_present": true,
+      "method": "POST",
+      "header_names": [
+        "Accept",
+        "Accept-Encoding",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "b3",
+        "mcp-protocol-version",
+        "mcp-session-id",
+        "traceparent"
+      ],
+      "proc": "3b8dfb",
+      "auth_scheme": "bearer",
+      "session_id": "7b011ab7e2c2c975",
+      "auth_match": true,
+      "session_known": true,
+      "kind": "mcp_request"
+    },
+    {
+      "method": "tools/call",
+      "proc": "3b8dfb",
+      "session_id": "7b011ab7e2c2c975",
+      "kind": "mcp_method"
+    },
+    {
+      "kind": "marker",
+      "label": "call-8-end"
+    }
+  ]
+}

@@ -1,0 +1,386 @@
+{
+  "source": "contract-jev.md probe fixture jev-contract-probe.json (artifact bundle), secret-scrubbed at capture",
+  "probe_at": "2026-09-29T08:11:34.571Z",
+  "sdk_version": "0.6.0",
+  "calls": [
+    {
+      "id": "no-edit-explore",
+      "request_bytes": {
+        "questions": 3,
+        "bytes": 7219
+      },
+      "wire": {
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer <redacted>",
+          "Accept": "application/json",
+          "User-Agent": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-SDK": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-Runtime": "node/24.19.0 (linux; x64)",
+          "Content-Type": "application/json"
+        }
+      },
+      "result": {
+        "kind": "response",
+        "response": {
+          "quality": {
+            "done_when_verifiable": 0.83
+          },
+          "intent": {
+            "value": "explore",
+            "confidence": 1,
+            "probabilities": {
+              "explore": 1,
+              "reason": 0,
+              "implement": 0,
+              "debug": 0,
+              "verify": 0,
+              "review": 0,
+              "coordinate": 0
+            }
+          },
+          "tier": {
+            "value": "utility",
+            "confidence": 0.63,
+            "probabilities": {
+              "utility": 0.69,
+              "economy": 0.04,
+              "standard": 0.25,
+              "strong": 0.01,
+              "frontier": 0.01,
+              "max": 0
+            }
+          },
+          "uncertainDimensions": []
+        }
+      },
+      "latency_ms": 409
+    },
+    {
+      "id": "small-edit",
+      "request_bytes": {
+        "questions": 3,
+        "bytes": 7153
+      },
+      "wire": {
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer <redacted>",
+          "Accept": "application/json",
+          "User-Agent": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-SDK": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-Runtime": "node/24.19.0 (linux; x64)",
+          "Content-Type": "application/json"
+        }
+      },
+      "result": {
+        "kind": "response",
+        "response": {
+          "quality": {
+            "done_when_verifiable": 0.56
+          },
+          "intent": {
+            "value": "implement",
+            "confidence": 1,
+            "probabilities": {
+              "explore": 0,
+              "reason": 0,
+              "implement": 1,
+              "debug": 0,
+              "verify": 0,
+              "review": 0,
+              "coordinate": 0
+            }
+          },
+          "tier": {
+            "value": "economy",
+            "confidence": 0.95,
+            "probabilities": {
+              "utility": 0,
+              "economy": 0.96,
+              "standard": 0.04,
+              "strong": 0,
+              "frontier": 0,
+              "max": 0
+            }
+          },
+          "uncertainDimensions": []
+        }
+      },
+      "latency_ms": 267
+    },
+    {
+      "id": "security-boundary",
+      "request_bytes": {
+        "questions": 3,
+        "bytes": 7260
+      },
+      "wire": {
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer <redacted>",
+          "Accept": "application/json",
+          "User-Agent": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-SDK": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-Runtime": "node/24.19.0 (linux; x64)",
+          "Content-Type": "application/json"
+        }
+      },
+      "result": {
+        "kind": "response",
+        "response": {
+          "quality": {
+            "done_when_verifiable": 0.79
+          },
+          "intent": {
+            "value": "reason",
+            "confidence": 0.25,
+            "probabilities": {
+              "explore": 0.15,
+              "reason": 0.36,
+              "implement": 0,
+              "debug": 0,
+              "verify": 0.24,
+              "review": 0.25,
+              "coordinate": 0
+            }
+          },
+          "tier": {
+            "value": "frontier",
+            "confidence": 0.84,
+            "probabilities": {
+              "utility": 0,
+              "economy": 0,
+              "standard": 0.06,
+              "strong": 0.07,
+              "frontier": 0.86,
+              "max": 0.01
+            }
+          },
+          "uncertainDimensions": []
+        }
+      },
+      "latency_ms": 287
+    },
+    {
+      "id": "web-access",
+      "request_bytes": {
+        "questions": 3,
+        "bytes": 7239
+      },
+      "wire": {
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer <redacted>",
+          "Accept": "application/json",
+          "User-Agent": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-SDK": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-Runtime": "node/24.19.0 (linux; x64)",
+          "Content-Type": "application/json"
+        }
+      },
+      "result": {
+        "kind": "response",
+        "response": {
+          "quality": {
+            "done_when_verifiable": 0.78
+          },
+          "intent": {
+            "value": "verify",
+            "confidence": 0.96,
+            "probabilities": {
+              "explore": 0.03,
+              "reason": 0,
+              "implement": 0.01,
+              "debug": 0,
+              "verify": 0.96,
+              "review": 0,
+              "coordinate": 0
+            }
+          },
+          "tier": {
+            "value": "standard",
+            "confidence": 0.45,
+            "probabilities": {
+              "utility": 0.35,
+              "economy": 0.1,
+              "standard": 0.55,
+              "strong": 0,
+              "frontier": 0,
+              "max": 0
+            }
+          },
+          "uncertainDimensions": []
+        }
+      },
+      "latency_ms": 267
+    },
+    {
+      "id": "long-running",
+      "request_bytes": {
+        "questions": 3,
+        "bytes": 7291
+      },
+      "wire": {
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer <redacted>",
+          "Accept": "application/json",
+          "User-Agent": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-SDK": "typesafe-sdk/0.6.0",
+          "X-TypeSafe-Runtime": "node/24.19.0 (linux; x64)",
+          "Content-Type": "application/json"
+        }
+      },
+      "result": {
+        "kind": "response",
+        "response": {
+          "quality": {
+            "done_when_verifiable": 0.4
+          },
+          "intent": {
+            "value": "coordinate",
+            "confidence": 0.99,
+            "probabilities": {
+              "explore": 0,
+              "reason": 0,
+              "implement": 0,
+              "debug": 0,
+              "verify": 0,
+              "review": 0,
+              "coordinate": 1
+            }
+          },
+          "tier": {
+            "value": "max",
+            "confidence": 0.36,
+            "probabilities": {
+              "utility": 0,
+              "economy": 0,
+              "standard": 0,
+              "strong": 0.23,
+              "frontier": 0.3,
+              "max": 0.47
+            }
+          },
+          "uncertainDimensions": []
+        }
+      },
+      "latency_ms": 267
+    }
+  ],
+  "errors": [
+    {
+      "probe": "bad-key",
+      "name": "AuthenticationError",
+      "status": 401,
+      "request_id": "req_<redacted>",
+      "body": {
+        "detail": {
+          "error_type": "authentication_error",
+          "message": "Cannot authenticate with the server. Please check your API key and try again."
+        }
+      }
+    },
+    {
+      "probe": "malformed-question",
+      "status": 400,
+      "request_id": "req_<redacted>",
+      "body": {
+        "detail": {
+          "error_type": "api_usage_error",
+          "message": "Invalid request."
+        }
+      }
+    },
+    {
+      "probe": "oversize-client-side",
+      "result": {
+        "kind": "abstained",
+        "reason": "invalid_response",
+        "component": "request_too_large",
+        "requestSize": {
+          "questions": 3,
+          "bytes": 211804
+        }
+      }
+    },
+    {
+      "probe": "oversize-256KB-raw",
+      "status": 400,
+      "request_id": "req_<redacted>",
+      "body_prefix": "{\"detail\":{\"error_type\":\"max_tokens_exceeded\"}}"
+    },
+    {
+      "probe": "timeout-1ms",
+      "name": "APITimeoutError",
+      "timeout_ms": 1,
+      "message": "Request timed out after 1ms."
+    },
+    {
+      "probe": "pre-abort",
+      "name": "APIUserAbortError",
+      "message": "Request was aborted."
+    },
+    {
+      "probe": "empty-questions",
+      "name": "TypeSafeError",
+      "message": "At least one question is required."
+    }
+  ],
+  "models": [
+    {
+      "name": "jev-latest",
+      "description": "The latest iteration of TypeSafe's System One Model: Jev",
+      "release_date": "2026-09-10T18:38:01.391457+00:00"
+    },
+    {
+      "name": "jev-preview",
+      "description": "A preview version of `jev-latest`: should be better in most ways",
+      "release_date": "2026-09-10T18:39:06.057655+00:00"
+    }
+  ],
+  "key_seam": {
+    "resolved": true,
+    "length": 108
+  },
+  "code_cited_gates": {
+    "source": "contract-jev.md client-gate and retry citations (typesafe-spec.ts / SDK dist); recorded constants, not live-triggered behavior",
+    "max_spec_request_bytes": 98304,
+    "sdk_default_timeout_ms": 10000,
+    "router_retry_max_retries": 0,
+    "unresolvable_key_abstain": {
+      "reason": "authentication_unavailable",
+      "component": "api_key"
+    },
+    "error_component_rule": {
+      "template": "http_<status>_<error_type>",
+      "fallback": "http_<status>",
+      "error_type_pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "non_api_transport_component": "transport"
+    }
+  },
+  "auth_resolution": {
+    "source": "contract-jev.md credential-seam section (code citations + presence enumeration; no key value captured)",
+    "order": [
+      "explicit_option",
+      "auth_store_typesafe_api_key",
+      "env_TYPESAFE_API_KEY"
+    ],
+    "store_file": "~/.pi/agent/auth.json (default; $PI_CODING_AGENT_DIR/auth.json)",
+    "store_observed": {
+      "exists": true,
+      "mode": "0600",
+      "typesafe_entry_type": "api_key"
+    },
+    "env_typesafe_api_key_set": true,
+    "store_wins_over_env": true,
+    "indirected_key_passed_verbatim_never_executed": true,
+    "key_material_logged": false
+  }
+}

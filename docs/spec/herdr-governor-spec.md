@@ -790,6 +790,18 @@ The DoD is stated in each phase in §10. It must hold on a merged `main` commit,
 - **m2:** F27, N8.
 - **Deletions:** the `outcomes` view (Appendix B), structural Jev fixtures (Phase 2), Phase 1 no longer blocked on Phase 0's deploy, and the unsupervised rollback and causal claims removed.
 
+**Decided by the owner (Phase 2, 2026-09-28/29):**
+- **A1 (Executor transport):** measured on the real caller gateway (Executor catalog daemon, 2026-09-29): `mcp.addServer` registration is declarative, a static bearer via an apiKey `headers` authenticationTemplate + credential-provider item is sent on every request with OAuth never engaging, an unauthenticated 401 still triggers RFC 8414/OIDC discovery, restart and stale-`Mcp-Session-Id` recovery re-initialize transparently, warm calls reuse the session, and a down server surfaces an untyped `Internal tool error [<id>]`; the earlier "loopback no-auth only" result measured pi's MCP adapter (retired in pi 0.99), not Executor. Transport re-decision in progress (owner direction 2026-09-29: native per-session stdio relay; ADR and A1' evidence pending).
+- **A2 (subscription EOF):** an unexpected subscription EOF is re-armed with a state catch-up (`pane.read`/`session.snapshot`); "server gone" is declared only when the re-arm cannot connect; every teardown emits a typed event.
+- **A3 (readiness):** readiness is advisory — the identity-matched acknowledgement (F16) plus F26 qualification are the signals; the Herdr detection gap is a non-blocking follow-up. The acknowledgement proves delivery to the pane, not consumption: a first-run gate that Herdr reports `idle` can swallow the Task, and the Run then settles `no_handoff` via F25 (bounded). Mitigations: catalog arguments that disable the gate (Devin `--respect-workspace-trust false`), Claude's gate reported `blocked` as an owner notice, and F26 qualification — which detects gates only in its own qualification directory.
+- **A3 (start failures):** the typed pre-interactive error assumption is confirmed-negative for runtime startup failures — a missing binary, rejected agent args, and mid-start death all return one untyped `timeout` after the full `--timeout`. A runtime start timeout is F15's "any other outcome": stop falling back, record `failed {effectCertainty}`, and the Run settles by the transition rules. Fallback happens only on typed pre-flight errors (`agent_pane_busy`); typed runtime startup errors are a non-blocking Herdr gap.
+- **A4/A6 (identity):** native-session re-proof — after any server discontinuity, Runs re-prove identity through the unique native session.
+- **A6 (pane tagging):** the F8 unconfirmed/no-adoption fallback — an interrupted topology effect is reported `unconfirmed` and never adopted; the F14 right-split stays; a labelled `layout.apply` is rejected.
+- **Herdr gap, case 4 (Claude repository trust):** rely on Claude's native once-per-repository trust; when a child is blocked at startup, one actionable owner notice names the pane; no Claude-specific code.
+- **Schema surface:** the Herdr schema doc is not the exhaustive request surface — `pane.graphics.stream` exists at runtime while absent from the doc.
+- **Core purity:** `governor-core` is `#![no_std]` with `alloc`.
+- **AGY supervision (A3/A5):** AGY is terminal-only — supervision uses terminal evidence (`agent.read`); there is no out-of-band transcript/uuid discovery (a presence lock cannot be proven to belong to a pane while AGY sessions run concurrently; identity is never guessed). The missing agy `agent_session` is a non-blocking Herdr gap; an AGY Run without a native session settles `unresolved(identity_unprovable)` after an unproven Herdr incarnation change (F28).
+
 ## 20. Approval
 
 | Role | Name | Status |
