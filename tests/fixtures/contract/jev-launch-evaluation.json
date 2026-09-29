@@ -1,0 +1,99 @@
+{
+  "request": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "method": "POST",
+    "body": {
+      "state": {
+        "task": {
+          "objective": "Rename the helper formatPaneTitle to renderPaneTitle in the TUI module and update its two call sites.",
+          "scope": "src/tui.ts and test/unit/tui.test.ts only.",
+          "doneWhen": [
+            "npm run typecheck exits clean",
+            "npx vitest run test/unit/tui.test.ts passes"
+          ],
+          "constraints": [
+            "The rendered title text must not change.",
+            "No new dependencies."
+          ]
+        }
+      },
+      "questions": {
+        "done_when_verifiable": {
+          "type": "noul",
+          "instructions": "Does task.doneWhen contain concrete, falsifiable completion evidence relevant to the task's objective and scope — evidence a supervisor could check without re-doing the work?",
+          "criteria": {
+            "true": "doneWhen names concrete, falsifiable evidence relevant to this objective and scope.",
+            "false": "doneWhen is vague, absent, irrelevant, or requires re-doing the work to check."
+          }
+        },
+        "intent": {
+          "type": "choice",
+          "instructions": "Which workload intent best describes this Task? Judge the whole Task, including delegated work.",
+          "criteria": {
+            "explore": "Understand, navigate, or answer questions about code or data without changing it.",
+            "reason": "Analyze, design, plan, or evaluate options; judgment-heavy work that may not touch files.",
+            "implement": "Write, modify, or refactor code or artifacts to achieve the objective.",
+            "debug": "Diagnose and fix a concrete failure, defect, or unexpected behavior.",
+            "verify": "Check that existing work meets its contract: run checks, review outputs, validate evidence.",
+            "review": "Critique completed or in-flight work for correctness, quality, or adherence — not to implement it.",
+            "coordinate": "Organize, delegate, or synchronize work across agents, tasks, or components."
+          }
+        },
+        "weakest_sufficient_tier": {
+          "type": "choice",
+          "instructions": "Choose the lowest tier sufficient for a capable agent to complete this exact Task successfully on the first attempt — the weakest first-attempt-sufficient tier already includes that bar, so do not add a speculative safety margin. Judge the Task's semantic difficulty, uncertainty, coordination burden, verification burden, and failure risk. Ignore caller tier or preference, model/provider/runner identity, cost, quota, availability, and fallback-chain contents. Large file count alone does not imply frontier or max. A high tier requires the qualitative conditions in the option descriptions, not merely important work or a multi-step procedure. Counterexamples: a one-file documentation change is economy, not standard, merely because it lives in a production repository; a bounded local fix or a scoped multi-file change with clear requirements and a focused check is economy or standard, not strong, even though it takes real reasoning and several steps; a repo-wide checklist review with clear boundaries is strong, not automatically max; raw file count, repository scope, or business importance alone does not imply frontier or max; max means compound exceptional factors, and hard by itself is strong; a caller-requested tier is local policy input and must not influence the answer. Judge only the work itself. Reporting and reply instructions (for example sending one result to a manager pane), permission limits, read-only or no-mutation rules, PII and secret handling, and required output formats are ordinary operating constraints: they do not raise the tier by themselves, and a detailed, explicit specification lowers uncertainty rather than adding difficulty. The exception is when satisfying a constraint is itself the hard part of the work, such as acting on live production systems or data, or guaranteeing that sensitive data never crosses a boundary. Delivering one result report or handoff is not coordination. Operating constraints never lower the tier either: a Task whose core work is analyzing locking, concurrency, a race, a trust boundary, a state migration, or an unknown root cause takes that trigger's tier even when it is read-only, small, or fully specified.",
+          "criteria": {
+            "utility": "Deterministic, read-only, or mechanical work with one obvious path and cheap, direct verification. No production-code mutation and no material diagnosis or design uncertainty. Examples: locate one configuration value; count exact references; list a fixed enum or known files.",
+            "economy": "One local, reversible, low-risk change or bounded explanation with clear requirements, an obvious approach, and a focused check. Includes a bounded single-file production-code change. Few files alone do not make uncertain work economy. Examples: update one documentation example and snapshot; rename a local helper and run focused tests; correct a one-line guard and run its focused test; summarize an already-defined fallback order.",
+            "standard": "Normal production work within one subsystem: a bounded change across one or a few related files or tests, a clear contract, moderate implementation/debugging/review effort, ordinary rollback, and no exceptional uncertainty or blast radius. A multi-step procedure with known steps stays standard when each step is ordinary. Read-only investigation, mapping, or review of a bounded diff or of several named files within one subsystem against a clear checklist is standard or below. A review or investigation still takes the tier of any frontier trigger it must analyze, such as locking, concurrency, a race, a trust boundary, or an unknown root cause. Examples: fix a bounded admission bug; implement a scoped feature across two or three related files; verify an evidence join across several known sources.",
+            "strong": "Hard but bounded work requiring sustained reasoning across components or orchestrating and gating other agents' work, while the governing contract and failure boundaries are known. Ordinary single-subsystem difficulty, known multi-step procedures, and sending one result report to a caller are standard, not strong. This includes broad changes under one known contract, repo-wide read-only analysis/review with a concrete checklist, or work decomposed into dependent stages with known handoffs. Examples: regenerate all fixtures after a known schema change; map every consumer and produce a dependency-ordered cutover DAG; coordinate four gated workers within one subsystem.",
+            "frontier": "Work with one exceptional uncertainty or risk trigger for which ordinary strong execution is materially likely to fail: unknown or intermittent root cause, concurrency/race/locking behavior, security or trust-boundary analysis, or state migration with multiple plausible designs and difficult evidence. Examples: diagnose intermittent persisted-record corruption with no reproduction; fix an availability/start race; design a historical-state migration with compatibility constraints.",
+            "max": "Compound exceptional work with at least two frontier triggers, or recovery from a failed high-blast-radius migration with inconsistent partial state. It combines cross-system scope, severe uncertainty, difficult verification, compatibility or security constraints, and/or multi-node coordination such that the strongest available execution is required. Examples: replace a public contract across runtime, MCP, TUI, documentation, and tests while preserving compatibility; recover a partially failed repo migration with inconsistent state; coordinate a repository-wide multi-node migration through independent review and promotion."
+          }
+        }
+      },
+      "model": "jev-latest"
+    }
+  },
+  "response": {
+    "status": 200,
+    "model": "jev-1.13.0",
+    "answers": {
+      "done_when_verifiable": {
+        "type": "noul",
+        "noul": 0.85
+      },
+      "intent": {
+        "type": "choice",
+        "choice": "implement",
+        "confidence": 1,
+        "probabilities": {
+          "implement": 1,
+          "verify": 0,
+          "coordinate": 0,
+          "debug": 0,
+          "review": 0,
+          "reason": 0,
+          "explore": 0
+        }
+      },
+      "weakest_sufficient_tier": {
+        "type": "choice",
+        "choice": "economy",
+        "confidence": 0.98,
+        "probabilities": {
+          "utility": 0,
+          "frontier": 0,
+          "strong": 0,
+          "standard": 0.01,
+          "max": 0,
+          "economy": 0.99
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 1790,
+      "output_tokens": 157
+    }
+  }
+}

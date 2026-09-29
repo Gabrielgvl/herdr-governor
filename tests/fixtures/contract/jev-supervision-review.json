@@ -1,0 +1,150 @@
+{
+  "request": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "method": "POST",
+    "body": {
+      "state": {
+        "targetId": "w0:fixture",
+        "metadata": {
+          "agent_status": "working",
+          "revision": 3,
+          "linesSinceLastReview": 4,
+          "previousReview": {
+            "classification": "progress"
+          }
+        },
+        "transcriptDelta": [
+          "$ npm run typecheck",
+          "src/tui.ts:96 - error TS2551: Property 'formatPaneTitle' does not exist",
+          "$ edit src/tui.ts: rename helper to renderPaneTitle",
+          "$ npm run typecheck  # clean"
+        ],
+        "assignmentDigest": {
+          "doneWhen": [],
+          "constraints": []
+        }
+      },
+      "questions": {
+        "evidence_sufficient": {
+          "type": "noul",
+          "instructions": "Is the supplied evidence sufficient to make a meaningful judgment about the child's current execution state?",
+          "criteria": {
+            "true": "The trace, workspace state, terminal evidence, or previous observation provides concrete evidence about what the agent is doing or has changed.",
+            "false": "The evidence is absent, purely incidental, too ambiguous, or insufficient to distinguish meaningful execution states."
+          }
+        },
+        "progress": {
+          "type": "noul",
+          "instructions": "Does the supplied evidence show meaningful advancement toward the assignment since the previous observation, or within this observation when no previous observation exists?",
+          "criteria": {
+            "true": "Relevant implementation changed; new useful evidence established; a previously failing check now passes; a new milestone reached; a meaningful hypothesis tested; failure advanced toward resolution.",
+            "false": "Mere activity: re-reading, repeated commands, cosmetic churn, progress bars, unchanged failures."
+          }
+        },
+        "stalled": {
+          "type": "noul",
+          "instructions": "Does the evidence show repeated activity without meaningful advancement?",
+          "criteria": {
+            "true": "Repeated same approach; oscillation; same failure with no new evidence; no relevant artifact change across observations.",
+            "false": "Mere absence of output is NOT sufficient."
+          }
+        },
+        "blocked": {
+          "type": "noul",
+          "instructions": "Does the evidence show the child is waiting on a dependency, permission, information, resource, or action it cannot resolve itself?",
+          "criteria": {
+            "false": "A normal code error is not a blocker."
+          }
+        },
+        "risk": {
+          "type": "noul",
+          "instructions": "Does the evidence show the child taking or preparing an incorrect, destructive, unauthorized, or assignment-violating action?",
+          "criteria": {
+            "true": "Includes `constraints` violations."
+          }
+        },
+        "appears_complete": {
+          "type": "noul",
+          "instructions": "Does the evidence establish the assignment's doneWhen conditions sufficiently to make the child appear finished despite no terminal lifecycle state?",
+          "criteria": {
+            "false": "`progressMarkers` never count as completion criteria."
+          }
+        },
+        "reason": {
+          "type": "choice",
+          "instructions": "Which single factor best explains the supplied evidence's overall picture? Choose none only when no specific factor stands out.",
+          "criteria": {
+            "none": "No specific factor stands out",
+            "repetition": "The same action, output, or failure repeats without new effect",
+            "no_output": "Little or no new output appeared in the window",
+            "oscillation": "The agent flips between approaches without converging",
+            "external_dependency": "Progress waits on an external service, resource, or event",
+            "missing_permission": "A credential, grant, or approval the agent needs is missing",
+            "tool_failure": "A tool or command fails and blocks the current approach",
+            "scope_drift": "The work is drifting outside the assignment's scope",
+            "destructive_action": "The agent is taking or approaching a destructive or irreversible action",
+            "incorrect_direction": "The work is converging on a wrong answer or outcome",
+            "completion_claim": "The agent claims or signals the assignment is finished",
+            "artifact_produced": "A deliverable artifact exists and looks ready",
+            "verification_passed": "The assignment's verification checks have passed"
+          }
+        }
+      },
+      "model": "jev-latest"
+    }
+  },
+  "response": {
+    "status": 200,
+    "model": "jev-1.13.0",
+    "answers": {
+      "evidence_sufficient": {
+        "type": "noul",
+        "noul": 0.83
+      },
+      "progress": {
+        "type": "noul",
+        "noul": 0.86
+      },
+      "stalled": {
+        "type": "noul",
+        "noul": 0.12
+      },
+      "blocked": {
+        "type": "noul",
+        "noul": 0.1
+      },
+      "risk": {
+        "type": "noul",
+        "noul": 0.04
+      },
+      "appears_complete": {
+        "type": "noul",
+        "noul": 0.12
+      },
+      "reason": {
+        "type": "choice",
+        "choice": "verification_passed",
+        "confidence": 0.92,
+        "probabilities": {
+          "external_dependency": 0,
+          "missing_permission": 0,
+          "artifact_produced": 0,
+          "oscillation": 0,
+          "repetition": 0,
+          "tool_failure": 0.02,
+          "scope_drift": 0,
+          "destructive_action": 0,
+          "incorrect_direction": 0,
+          "none": 0.04,
+          "no_output": 0,
+          "completion_claim": 0,
+          "verification_passed": 0.93
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 1156,
+      "output_tokens": 235
+    }
+  }
+}

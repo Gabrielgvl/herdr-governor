@@ -553,6 +553,154 @@ class A2ToolsDaemonTransport(unittest.TestCase):
         self.assertIn("herdr-daemon-1", rel["result"]["completed"])
 
 
+class A3StartPrompt(unittest.TestCase):
+    """contract-a3.md — `agent start` / `agent prompt` semantics probed live
+    against pi, devin, agy, claude on dedicated panes in the isolated named
+    session `herdr-governor-contract` (herdr 0.9.1). The committed fixture is
+    the scrubbed distillation; the raw report's verbatim CLI output stays in
+    the artifact bundle. The readiness-fidelity gap is a recorded owner
+    decision (readiness is advisory), and the claude provider-limit start
+    shape stayed unreproduced in-window — both documented, no test by
+    design."""
+
+    def setUp(self):
+        self.ev = fixture_json("a3-start-prompt-evidence.json")
+
+    def test_a3_start_ready_01(self):
+        pi = self.ev["start"]["pi"]
+        result = pi["envelope"]["result"]
+        self.assertEqual(result["type"], "agent_started")
+        agent = result["agent"]
+        self.assertTrue(agent["interactive_ready"])
+        self.assertEqual(agent["agent_status"], "idle")
+        self.assertEqual(agent["agent_session"]["kind"], "path")
+        self.assertEqual(agent["agent_session"]["source"], "herdr:pi")
+        self.assertTrue(agent["screen_detection_skipped"])
+        self.assertTrue(pi["session_file_existed"])
+        # start blocks until reported readiness: ~3.0 s on every pi start
+        self.assertGreaterEqual(pi["elapsed_ms"], 3000)
+        self.assertEqual(pi["repeat_elapsed_ms"], [3024, 3024])
+        for name in ("devin_trusted", "claude"):
+            ret = self.ev["start"][name]
+            self.assertEqual(ret["returned"]["type"], "agent_started")
+            self.assertTrue(ret["returned"]["interactive_ready"])
+            self.assertEqual(ret["returned"]["agent_status"], "idle")
+            self.assertEqual(ret["agent_session"]["kind"], "id")
+        self.assertEqual(self.ev["start"]["devin_trusted"]
+                         ["agent_session"]["source"], "herdr:devin")
+        self.assertEqual(self.ev["start"]["claude"]
+                         ["agent_session"]["source"], "herdr:claude")
+        self.assertTrue(self.ev["start"]["claude"]["session_file_existed"])
+
+    def test_a3_start_ready_02(self):
+        win = self.ev["registration_window"]
+        row = win["during_start_list_row"]
+        self.assertEqual(row["agent_status"], "unknown")
+        self.assertFalse(row["interactive_ready_key_present"])
+        self.assertEqual(row["terminal_title"], "pi")
+        # observable window: status flips to idle before interactive_ready
+        # appears in list records; the start response's flag is authoritative
+        self.assertLess(
+            win["idle_in_list_before_interactive_ready_at_ms_approx"],
+            win["start_response_interactive_ready_at_ms_approx"])
+
+    def test_a3_start_timeout_01(self):
+        rf = self.ev["runtime_failures"]
+        self.assertEqual(rf["envelope"],
+                         {"error": {"code": "timeout",
+                                    "message": "timed out waiting for agent "
+                                               "startup"},
+                          "id": "cli:agent:start"})
+        self.assertFalse(rf["caller_can_distinguish_causes"])
+        self.assertEqual({c["injection"] for c in rf["cases"]},
+                         {"missing_binary", "agent_arg_rejected",
+                          "mid_start_sigkill"})
+        for c in rf["cases"]:
+            # every runtime failure runs out the full --timeout
+            self.assertGreaterEqual(c["elapsed_ms"], c["timeout_ms"])
+            self.assertIn("shell", c["pane_fallback"])
+
+    def test_a3_start_busy_01(self):
+        busy = self.ev["pre_flight_errors"]["start_on_occupied_pane"]
+        self.assertEqual(busy["error"]["code"], "agent_pane_busy")
+        self.assertEqual(busy["id"], "cli:agent:start")
+        race = self.ev["concurrent_starts_one_pane"]
+        self.assertEqual(race["winner"]["type"], "agent_started")
+        self.assertEqual(race["loser"]["error"]["code"], "agent_pane_busy")
+        self.assertFalse(race["double_launch"])
+
+    def test_a3_start_inflight_kill_01(self):
+        k = self.ev["inflight_kill"]
+        self.assertFalse(k["start_call_returned_early"])
+        self.assertEqual(k["start_call_result_code"], "timeout")
+        self.assertTrue(k["agent_absent_from_list_immediately"])
+        self.assertEqual(k["pane_after"]["agent_status"], "unknown")
+        self.assertTrue(k["pane_after"]["terminal_title_back_to_shell"])
+        post = k["post_start_death_deregisters"]
+        self.assertEqual(post["observed_for"], ["pi", "devin", "agy"])
+        self.assertIn("unknown", post["pane_settles"])
+
+    def test_a3_prompt_ack_01(self):
+        pa = self.ev["prompt_acks"]
+        self.assertEqual(pa["ack_type"], "agent_prompted")
+        self.assertEqual(len(pa["concurrent"]), 2)
+        for leg in pa["concurrent"]:
+            # the ack carries the full agent record — concurrent acks map
+            # unambiguously to their targets
+            self.assertIn("name", leg["ack"])
+            self.assertEqual(leg["ack"]["pane_id"], leg["delivered_on"])
+            self.assertIn("agent_session_kind", leg["ack"])
+        names = {leg["ack"]["name"] for leg in pa["concurrent"]}
+        self.assertEqual(names, {"a3-pi-1", "a3-pi-inflight"})
+        devin = pa["cross_harness"]["devin"]
+        self.assertEqual(devin["agent_session_kind"], "id")
+        self.assertEqual(devin["agent_session_value"], "trail-passenger")
+        snap = pa["ack_is_delivery_snapshot"]
+        self.assertEqual(snap["agent_status_in_ack"], "idle")
+        self.assertFalse(snap["has_prompt_id"])
+        self.assertFalse(snap["has_delivery_sequence"])
+
+    def test_a3_prompt_notfound_01(self):
+        pf = self.ev["pre_flight_errors"]
+        self.assertEqual(pf["prompt_to_shell_pane"]["error"]["code"],
+                         "agent_not_found")
+        self.assertEqual(pf["prompt_to_shell_pane"]["id"],
+                         "cli:agent:prompt")
+        self.assertEqual(pf["get_unknown_name"]["error"]["code"],
+                         "agent_not_found")
+
+    def test_a3_agy_session_01(self):
+        """Confirmed-negative: Herdr surfaces no agent_session for agy on any
+        surface; the transcript source is qualified out-of-band under
+        ~/.gemini/antigravity-cli/ (resolves the A5 AGY gap)."""
+        agy = self.ev["agy_transcript"]
+        self.assertEqual(agy["agent_session_absent_on"],
+                         ["start response", "agent get", "agent list"])
+        self.assertIsNone(agy["herdr_session_source_for_agy"])
+        uuid = agy["conversation_uuid"]
+        # all three stores share the conversation uuid
+        self.assertIn(uuid, agy["sqlite"]["path"])
+        self.assertIn(uuid, agy["jsonl"]["brain_logs_dir"])
+        self.assertIn("presence/<uuid>.lock",
+                      agy["presence_lock"]["path_glob"])
+        self.assertEqual(agy["presence_lock"]["bytes"], 0)
+        self.assertTrue(agy["presence_lock"]["present_while_live"])
+        self.assertIn("steps", agy["sqlite"]["tables"])
+        self.assertIn("trajectory_meta", agy["sqlite"]["tables"])
+        self.assertIn("transcript.jsonl", agy["jsonl"]["files"])
+        self.assertIn("step_index", agy["jsonl"]["record_shape"])
+        self.assertIn("content", agy["jsonl"]["record_shape"])
+        self.assertEqual(agy["artifacts_appear"],
+                         "after_first_turn_not_at_tui_open")
+        self.assertIn("conversation uuid", agy["discovery_correlation"])
+
+    def test_a3_pane_cwd_01(self):
+        fb = self.ev["pane_cwd_fallback"]
+        self.assertFalse(fb["failed"])
+        self.assertEqual(fb["resulting_cwd"], "/home/user")
+        self.assertIn("cwd", fb["only_tell"])
+
+
 class A4A6Identity(unittest.TestCase):
     """contract-a4-a6.md — child identity across moves, replacement and
     crashes, on protocol 22. Confirmed-negative (incarnation proof) and the
@@ -1055,6 +1203,301 @@ class A5Transcript(unittest.TestCase):
                          r"\.claude/projects/[^/]+/[0-9a-f-]+\.jsonl$")
         self.assertTrue(native["claude"]["record_session_ids_all_match_filename"])
         self.assertEqual(native["claude"]["exact_id_candidate_count"], 1)
+
+
+class JevWireContract(unittest.TestCase):
+    """contract-jev.md — Jev/System One wire contract evidence: five live
+    judgment calls through the real TypeSafeSpecClient, the verbatim
+    response envelope, triggered error classes, the credential seam, and
+    the models surface. Confirmed-negative items (no local CLI or
+    contract-introspection endpoint; untriggered 403/404/422/429/5xx
+    error classes) are documented in the research file and have no test
+    by design. Code-cited constants the report records but did not
+    trigger live live in the fixture's `code_cited_gates`/`auth_resolution`
+    sections, labeled as code citations."""
+
+    def setUp(self):
+        self.ev = fixture_json("jev-wire-evidence.json")
+        self.raw = fixture_json("jev-raw-response.json")
+        self.launch = fixture_json("jev-launch-evaluation.json")
+        self.review = fixture_json("jev-supervision-review.json")
+
+    @staticmethod
+    def transport_component(status, error_type):
+        """The recorded mapping rule: http_<status>_<error_type> for a
+        conforming snake_case error_type, else the http_<status> fallback."""
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", error_type or ""):
+            return f"http_{status}_{error_type}"
+        return f"http_{status}"
+
+    def call(self, call_id):
+        for c in self.ev["calls"]:
+            if c["id"] == call_id:
+                return c
+        raise AssertionError(f"no recorded jev call {call_id!r}")
+
+    def error(self, probe):
+        for e in self.ev["errors"]:
+            if e["probe"] == probe:
+                return e
+        raise AssertionError(f"no recorded jev error probe {probe!r}")
+
+    def check_choice(self, ans, labels, sum_bound):
+        self.assertEqual(ans["type"], "choice")
+        self.assertIn(ans["choice"], labels)
+        self.assertTrue(0 <= ans["confidence"] <= 1)
+        self.assertEqual(set(ans["probabilities"]), set(labels))
+        for p in ans["probabilities"].values():
+            self.assertTrue(0 <= p <= 1)
+        self.assertLessEqual(abs(sum(ans["probabilities"].values()) - 1),
+                             sum_bound)
+
+    def test_jev_probe_calls_recorded(self):
+        """Fixture completeness guard: the report's five live calls and
+        seven error probes are present and every call returned a response."""
+        self.assertEqual(len(self.ev["calls"]), 5)
+        self.assertEqual(len(self.ev["errors"]), 7)
+        for c in self.ev["calls"]:
+            self.assertEqual(c["result"]["kind"], "response")
+            self.assertGreater(c["latency_ms"], 0)
+
+    def test_jev_request_wire_shape(self):
+        """CT-JEV-REQ-1: every call is POST {base}/v1/systemone with a
+        Bearer Authorization header and a JSON body; state is the
+        semantic task projection only — no caller tier, no catalog."""
+        for c in self.ev["calls"]:
+            wire = c["wire"]
+            self.assertEqual(wire["method"], "POST")
+            self.assertEqual(wire["url"],
+                             "https://api.typesafe.ai/v1/systemone")
+            self.assertTrue(
+                wire["headers"]["Authorization"].startswith("Bearer "))
+            self.assertEqual(wire["headers"]["Content-Type"],
+                             "application/json")
+        body = self.launch["request"]["body"]
+        self.assertEqual(set(body), {"model", "state", "questions"})
+        self.assertEqual(body["model"], "jev-latest")
+        self.assertEqual(set(body["state"]), {"task"})
+        self.assertEqual(set(body["state"]["task"]),
+                         {"objective", "scope", "doneWhen", "constraints"})
+        self.assertNotIn("tier", json.dumps(body["state"]))
+        self.assertEqual(set(body["questions"]),
+                         {"done_when_verifiable", "intent",
+                          "weakest_sufficient_tier"})
+        # the reviewer's projection differs but also carries no tier
+        self.assertNotIn("tier",
+                         json.dumps(self.review["request"]["body"]["state"]))
+
+    def test_jev_request_too_large_client_gate(self):
+        """CT-JEV-REQ-2: a serialized request over 96 KiB abstains
+        invalid_response/request_too_large before any socket write."""
+        e = self.error("oversize-client-side")
+        self.assertEqual(e["result"]["kind"], "abstained")
+        self.assertEqual(e["result"]["reason"], "invalid_response")
+        self.assertEqual(e["result"]["component"], "request_too_large")
+        self.assertGreater(e["result"]["requestSize"]["bytes"], 96 * 1024)
+        # no request was sent — no wire capture, status, or request id
+        for absent in ("wire", "status", "request_id", "body"):
+            self.assertNotIn(absent, e)
+        self.assertEqual(
+            self.ev["code_cited_gates"]["max_spec_request_bytes"], 96 * 1024)
+        # every live call stayed under the client gate
+        for c in self.ev["calls"]:
+            self.assertLess(c["request_bytes"]["bytes"], 96 * 1024)
+
+    def test_jev_response_envelope_metadata(self):
+        """CT-JEV-RESP-4: model and usage{input_tokens,output_tokens} are
+        present but non-semantic; the resolved model is opaque metadata,
+        not the request alias."""
+        for resp in (self.raw["raw_body"], self.launch["response"],
+                     self.review["response"]):
+            self.assertIsInstance(resp["model"], str)
+            self.assertEqual(set(resp["usage"]),
+                             {"input_tokens", "output_tokens"})
+            for tokens in resp["usage"].values():
+                self.assertIsInstance(tokens, int)
+                self.assertGreaterEqual(tokens, 0)
+        self.assertEqual(self.launch["response"]["model"], "jev-1.13.0")
+        self.assertNotEqual(self.launch["response"]["model"],
+                            self.launch["request"]["body"]["model"])
+
+    def test_jev_noul_answer_shape(self):
+        """CT-JEV-RESP-1: answers are keyed by question name; a noul
+        answer is exactly {type:"noul", noul∈[0,1]} — a calibrated
+        P(yes) with no confidence field."""
+        for answers in (self.raw["raw_body"]["answers"],
+                        self.launch["response"]["answers"],
+                        self.review["response"]["answers"]):
+            for ans in answers.values():
+                if ans["type"] == "noul":
+                    self.assertEqual(set(ans), {"type", "noul"})
+                    self.assertTrue(0 <= ans["noul"] <= 1)
+        for cap in (self.launch, self.review):
+            self.assertEqual(set(cap["response"]["answers"]),
+                             set(cap["request"]["body"]["questions"]))
+        # done_when_verifiable is a mid-range P(yes), never a boolean
+        for c in self.ev["calls"]:
+            p = c["result"]["response"]["quality"]["done_when_verifiable"]
+            self.assertTrue(0 < p < 1)
+
+    def test_jev_choice_answer_shape(self):
+        """CT-JEV-RESP-2: choice ∈ criteria labels, confidence∈[0,1],
+        probabilities cover the exact label set. The router enforces
+        |Σ−1|≤1e-6 on its question set; a recorded reviewer-path response
+        sums to 0.99 — the service does not promise an exact-1 sum, so a
+        governor contract must not require tighter than it observed."""
+        raw_ans = self.raw["raw_body"]["answers"]["sized"]
+        self.check_choice(raw_ans, raw_ans["probabilities"].keys(), 1e-6)
+        for cap, bound in ((self.launch, 1e-6), (self.review, 0.05)):
+            for name, q in cap["request"]["body"]["questions"].items():
+                if q["type"] == "choice":
+                    self.check_choice(cap["response"]["answers"][name],
+                                      q["criteria"].keys(), bound)
+        # pin the observed deviation exactly: Σ = 0.99 on the wire
+        review_probs = (self.review["response"]["answers"]["reason"]
+                        ["probabilities"])
+        self.assertAlmostEqual(sum(review_probs.values()), 0.99)
+
+    def test_jev_confidence_not_max_probability(self):
+        """CT-JEV-RESP-3: confidence is a distinct calibrated field —
+        recorded pairs contradict any alias to the top probability, and
+        every divergent answer still parsed as a valid response."""
+        pairs = []
+        sized = self.raw["raw_body"]["answers"]["sized"]
+        pairs.append((sized["confidence"], max(sized["probabilities"].values())))
+        for cap in (self.launch, self.review):
+            for ans in cap["response"]["answers"].values():
+                if ans["type"] == "choice":
+                    pairs.append((ans["confidence"],
+                                  max(ans["probabilities"].values())))
+        for c in self.ev["calls"]:
+            for dim in ("intent", "tier"):
+                r = c["result"]["response"][dim]
+                pairs.append((r["confidence"],
+                              max(r["probabilities"].values())))
+        self.assertIn((0.96, 0.98), pairs)   # raw wire record
+        self.assertIn((0.63, 0.69), pairs)   # router-normalized record
+        self.assertIn((0.92, 0.93), pairs)   # reviewer-path record
+        divergent = [p for p in pairs if p[0] != p[1]]
+        self.assertGreaterEqual(len(divergent), 3)
+
+    def test_jev_error_authentication_mapping(self):
+        """CT-JEV-ERR-1: 401 authentication_error maps to
+        http_401_authentication_error; the unresolvable-key abstain is
+        code-cited evidence (authentication_unavailable/api_key, no
+        request sent)."""
+        e = self.error("bad-key")
+        self.assertEqual(e["name"], "AuthenticationError")
+        self.assertEqual(e["status"], 401)
+        self.assertTrue(e["request_id"].startswith("req_"))
+        detail = e["body"]["detail"]
+        self.assertEqual(detail["error_type"], "authentication_error")
+        self.assertEqual(
+            self.transport_component(e["status"], detail["error_type"]),
+            "http_401_authentication_error")
+        gate = self.ev["code_cited_gates"]["unresolvable_key_abstain"]
+        self.assertEqual(gate["reason"], "authentication_unavailable")
+        self.assertEqual(gate["component"], "api_key")
+
+    def test_jev_error_body_component_mapping(self):
+        """CT-JEV-ERR-2: 400 bodies map by detail.error_type; a
+        non-conforming error_type falls back to http_<status>."""
+        e = self.error("malformed-question")
+        self.assertEqual(e["status"], 400)
+        self.assertEqual(
+            self.transport_component(e["status"],
+                                     e["body"]["detail"]["error_type"]),
+            "http_400_api_usage_error")
+        big = self.error("oversize-256KB-raw")
+        self.assertEqual(big["status"], 400)
+        detail = json.loads(big["body_prefix"])["detail"]
+        self.assertEqual(
+            self.transport_component(big["status"], detail["error_type"]),
+            "http_400_max_tokens_exceeded")
+        rule = self.ev["code_cited_gates"]["error_component_rule"]
+        self.assertEqual(rule["fallback"], "http_<status>")
+        self.assertEqual(rule["non_api_transport_component"], "transport")
+        self.assertEqual(self.transport_component(418, "Weird Type!"),
+                         "http_418")
+
+    def test_jev_timeout_abort_no_retry(self):
+        """CT-JEV-ERR-3: timeout surfaces APITimeoutError, caller abort
+        APIUserAbortError, neither sends/completes a request; the
+        configured policy is maxRetries:0 and no retry header was
+        observed."""
+        t = self.error("timeout-1ms")
+        self.assertEqual(t["name"], "APITimeoutError")
+        self.assertEqual(t["timeout_ms"], 1)
+        a = self.error("pre-abort")
+        self.assertEqual(a["name"], "APIUserAbortError")
+        for e in (t, a):
+            for absent in ("status", "request_id", "wire"):
+                self.assertNotIn(absent, e)
+        self.assertEqual(self.error("empty-questions")["name"],
+                         "TypeSafeError")
+        self.assertEqual(
+            self.ev["code_cited_gates"]["router_retry_max_retries"], 0)
+        for c in self.ev["calls"]:
+            self.assertNotIn("X-TypeSafe-Retry-Count",
+                             c["wire"]["headers"])
+
+    def test_jev_auth_resolution_order(self):
+        """CT-JEV-AUTH-1: explicit option → auth.json typesafe api_key →
+        TYPESAFE_API_KEY; indirected keys pass through verbatim; only
+        presence metadata was captured, never a key value."""
+        auth = self.ev["auth_resolution"]
+        self.assertEqual(auth["order"],
+                         ["explicit_option", "auth_store_typesafe_api_key",
+                          "env_TYPESAFE_API_KEY"])
+        self.assertTrue(auth["store_observed"]["exists"])
+        self.assertEqual(auth["store_observed"]["mode"], "0600")
+        self.assertEqual(auth["store_observed"]["typesafe_entry_type"],
+                         "api_key")
+        self.assertTrue(auth["env_typesafe_api_key_set"])
+        self.assertTrue(auth["store_wins_over_env"])
+        self.assertTrue(auth["indirected_key_passed_verbatim_never_executed"])
+        self.assertFalse(auth["key_material_logged"])
+        seam = self.ev["key_seam"]
+        self.assertTrue(seam["resolved"])
+        self.assertIsInstance(seam["length"], int)
+        self.assertEqual(set(seam), {"resolved", "length"})
+
+    def test_jev_spread_top_label_route(self):
+        """CT-JEV-PROB-1: a sub-0.5-confidence spread still yields the
+        verbatim top label as the route input — no abstain on low
+        confidence."""
+        sec = self.call("security-boundary")["result"]["response"]["intent"]
+        self.assertEqual(sec["value"], "reason")
+        self.assertLess(sec["confidence"], 0.5)
+        self.assertEqual(
+            sec["value"],
+            max(sec["probabilities"], key=sec["probabilities"].get))
+        long = self.call("long-running")["result"]["response"]["tier"]
+        self.assertEqual(long["value"], "max")
+        self.assertLess(long["confidence"], 0.5)
+        self.assertEqual(
+            long["value"],
+            max(long["probabilities"], key=long["probabilities"].get))
+        for cid in ("security-boundary", "long-running"):
+            self.assertEqual(self.call(cid)["result"]["kind"], "response")
+
+    def test_jev_models_surface(self):
+        """GET /v1/models — the only introspection surface — returns
+        ModelCards {name, description, release_date}."""
+        models = self.ev["models"]
+        self.assertEqual(len(models), 2)
+        self.assertEqual({m["name"] for m in models},
+                         {"jev-latest", "jev-preview"})
+        for m in models:
+            self.assertEqual(set(m), {"name", "description", "release_date"})
+
+    def test_jev_no_credential_material(self):
+        """Committed evidence carries presence metadata only — every
+        recorded Authorization header is the redacted placeholder."""
+        for c in self.ev["calls"]:
+            self.assertEqual(c["wire"]["headers"]["Authorization"],
+                             "Bearer <redacted>")
+        self.assertEqual(set(self.ev["key_seam"]), {"resolved", "length"})
 
 
 if __name__ == "__main__":

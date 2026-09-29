@@ -19,8 +19,8 @@ four wave-1 evidence reports into per-assumption verdicts.
 
 **Sources** (evidence reports under the p0p1 artifact bundle;
 `contract-a2-probe.mjs` is the probe source):
-`contract-a4-a6.md`, `contract-a5.md`, `contract-a2.md`,
-`contract-a2-probe.mjs`, `contract-a1.md`, `p1-clone-verify.md`. Proposed check IDs in
+`contract-a4-a6.md`, `contract-a5.md`, `contract-a3.md`, `contract-a2.md`,
+`contract-a2-probe.mjs`, `contract-jev.md`, `contract-a1.md`, `p1-clone-verify.md`. Proposed check IDs in
 those reports (`CT-*`, `A5-*`) are labels for the recorded observations;
 the test IDs in this document are the checks that actually exist in this
 tree.
@@ -86,8 +86,9 @@ Wave-2 OAuth trial evidence: `contract-a1-oauth-evidence/`
 ## A2 — Socket concurrency
 
 **Status: confirmed for the isolated herdr-tools daemon transport and for
-the Herdr protocol-22 subscription leg (isolated named session); three
-items need-owner-decision.**
+the Herdr protocol-22 subscription leg (isolated named session); the last
+open item (the silent stream teardown contract) is owner-decided — ruling
+in spec §19.**
 
 The probe (`contract-a2-probe.mjs`, protocol fixture revision 22) stood up
 a private herdr-tools daemon and drove its Unix socket directly. The
@@ -203,19 +204,69 @@ Source: `contract-a2.md` § subscription leg,
 fixture `a2-subscription-evidence.json`.
 
 The two legs together close the A2 subscription question at evidence
-level; the one remaining need-owner-decision item (silent stream teardown
-contract) goes to the §19 batch with its evidence complete.
+level; the silent stream teardown contract is owner-decided (spec §19):
+an unexpected subscription EOF is re-armed with a state catch-up
+(`pane.read`/`session.snapshot`), "server gone" is declared only when the
+re-arm cannot connect, and every teardown emits a typed event.
 
 ## A3 — Start and prompt semantics
 
-**Status: untested.** No wave-1 report probed agent start, readiness, or
-prompt delivery. One incidental observation exists in the A4/A6 capture:
-an agent's `name`/readiness can appear on the agent-list surface before
-its `agent_session` field does (the `first-native*` captures). That is a
-single observation, not a start-contract check, and nothing in this tree
-depends on it.
+**Status: confirmed for the start/prompt sub-behaviors below; the
+readiness-fidelity gap is a recorded owner decision; the claude
+provider-limit start shape stays untested (not reproduced in-window).**
 
-Source: none (incidental note from `contract-a4-a6.md`).
+The probe ran live `agent start`/`agent prompt`/`agent get`/`agent list`
+calls against pi, devin, agy, claude on dedicated panes in the isolated
+named session `herdr-governor-contract` (`herdr 0.9.1`), timings measured
+with `date +%s%N`. The committed fixture
+`tests/fixtures/contract/a3-start-prompt-evidence.json` is the scrubbed
+distillation; the raw report's verbatim CLI output stays artifact-side.
+
+Confirmed behaviors and their tests:
+
+| Behavior | Test ID |
+|---|---|
+| `agent start` on a healthy harness returns `type:"agent_started"` only after blocking to readiness — `interactive_ready:true`, `agent_status:"idle"`, session field populated (pi → `kind:path`/`herdr:pi`; devin, claude → `kind:id`); consistent ~3.0–3.7 s return | `a3_start_ready_01` |
+| Registration is immediate: the agent appears in `agent list` during the start window with `agent_status:"unknown"` and **no** `interactive_ready` key; the status flips to `idle` in list records before `interactive_ready` appears, so the start response's flag is the authoritative return-time signal | `a3_start_ready_02` |
+| Every runtime startup failure (missing binary, agent arg rejection, mid-start kill) returns the identical `{"error":{"code":"timeout"}}` after the full `--timeout` — the cause is erased for the caller; the pane falls back to shell showing the native error | `a3_start_timeout_01` |
+| `agent start` on an agent-occupied pane — including the loser of two racing starts on one shell pane — returns typed `agent_pane_busy` and launches nothing (single winner, no double-launch) | `a3_start_busy_01` |
+| Killing the harness process mid-start leaves the caller observing only the generic timeout (no early return, no death notification); the pane settles at `agent_status:"unknown"` back at shell. Dead-in-flight and merely-slow starts are indistinguishable by cause | `a3_start_inflight_kill_01` |
+| `agent prompt` returns `type:"agent_prompted"` carrying the full agent record (`name`, `pane_id`, `agent_session`) — concurrent acks, incl. cross-harness, map unambiguously to their targets. The ack is a delivery/target snapshot, not a completion: `agent_status` inside still reads pre-dispatch `idle`, and no prompt-id or delivery sequence exists | `a3_prompt_ack_01` |
+| `agent prompt`/`agent get` against a shell-only pane or unknown name returns typed `agent_not_found` | `a3_prompt_notfound_01` |
+| Confirmed-negative: Herdr surfaces **no** `agent_session` for agy on any surface (start response, `agent get`, `agent list`) and agy has no `herdr:*` session source. The transcript source is qualified out-of-band (resolves the A5 `A5-AGY-UNQUALIFIED` gap): JSONL transcripts under `~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/`, SQLite trajectory store `conversations/<uuid>.db`, live `presence/<uuid>.lock` — all three share the conversation uuid; artifacts appear after the first turn, not at TUI open | `a3_agy_session_01` |
+| `pane split --cwd <nonexistent>` does not fail — it silently creates the pane with `cwd` fallen back to `$HOME`; the pane record's `cwd`/`foreground_cwd` is the only tell | `a3_pane_cwd_01` |
+
+Owner decision, recorded (`A3-READY-FIDELITY-01`): **readiness is
+advisory; the identity-matched prompt ack plus qualification are the
+signals; the Herdr detection gap is a non-blocking follow-up** — not a
+failing test. Evidence behind it: devin and agy both returned
+`interactive_ready:true`/`agent_status:"idle"` while the pane sat at a
+workspace-trust modal that cannot accept prompt text — the detection
+rules (`workspace_trust_prompt`, `permission_prompt`) evaluated but did
+not match, and `default_known_agent_idle_fallback` produced the idle.
+For agy the fallback fires in every state, so `idle`/`interactive_ready`
+cannot distinguish blocked from genuinely promptable; a prompt into a
+gated modal would still ack `agent_prompted` (the ack carries no
+screen-state validity). `agent_session` is absent until a gate is passed,
+which is itself evidence the returned `idle` was pre-interactive.
+
+Confirmed-negative adjunct: post-start agent death (kill or Esc-quit)
+drops the agent from `agent list` entirely and returns the pane to
+`agent_status:"unknown"` at a shell — observed for pi, devin, agy
+(pinned inside `a3_start_inflight_kill_01`'s fixture record).
+
+Untested / unpinned in this fold: `A3-CLAUDE-LIMIT-01` — the predicted
+claude provider-limit screen did not reproduce (healthy provider; a real
+prompt completed in ~3 s), so the limit failure shape remains
+unobserved. `--timeout` default when omitted, `--wait`/`--until` prompt
+variants, and harness kinds outside the four in scope were not
+exercised. Adapter discovery for the qualified AGY transcript (which of
+`presence/`/`brain/`/`conversations/` a governor adapter should follow)
+is owner-decided — AGY is terminal-only; ruling in spec §19
+(`A3-AGY-SESSION-01`).
+
+Source: `contract-a3.md` (artifact bundle);
+fixture `a3-start-prompt-evidence.json`.
 
 ## A4 — Incarnation and child identity
 
@@ -251,8 +302,9 @@ Source: `contract-a4-a6.md`; fixtures `a46-identity-evidence.json`
 
 ## A5 — Transcripts
 
-**Status: confirmed per-harness resolution and failure contracts; AGY
-unqualified (terminal-only).**
+**Status: confirmed per-harness resolution and failure contracts; the AGY
+transcript-source gap is resolved by the A3 fold and owner-decided —
+AGY is terminal-only (ruling in spec §19, `A3-AGY-SESSION-01`).**
 
 27 probe cases ran against the reference readers on synthetic inputs;
 outcomes are committed as `a5-probe-outcomes.json`, native structural
@@ -285,11 +337,25 @@ Confirmed behaviors and their tests:
 | Symlink policies differ per harness: Pi and Devin follow, Claude refuses | `a5_symlink_policies_differ` |
 | Structured-source failure does **not** auto-fall-back to the terminal in the reference implementation; unchanged terminal output proves nothing; a terminal read error surfaces `EIO`. The governor contract (typed failure + bounded terminal fallback) is the spec's requirement, layered on these typed outcomes | `a5_structured_failure_no_terminal_fallback` |
 
-Confirmed-negative / unqualified: **AGY** — binary present and catalog
-key present, but no `~/.agy` directory and no transcript adapter; AGY
-sources resolve to terminal-fallback and its native transcript is
-unqualified (test `a5_agy_unqualified_terminal_only`). Claude likewise
-has no structured transcript reader — transcript resolution falls back
+Confirmed-negative / unqualified in wave 1: **AGY** — binary present and
+catalog key present, but no `~/.agy` directory and no transcript adapter;
+AGY sources resolve to terminal-fallback (test
+`a5_agy_unqualified_terminal_only`). **Resolved by the A3 fold
+(`contract-a3.md` §5, test `a3_agy_session_01`):** the native transcript
+source is qualified — JSONL transcripts under
+`~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/`, a
+SQLite trajectory store `conversations/<uuid>.db`, and a
+live-conversation `presence/<uuid>.lock`, all sharing the conversation
+uuid. Adapter *discovery* is owner-decided (2026-09-29,
+`A3-AGY-SESSION-01`; ruling in spec §19): AGY supervision is
+**terminal-only** — terminal evidence via `agent.read`, no out-of-band
+transcript/uuid discovery. A presence lock cannot be proven to belong
+to a pane when AGY sessions run concurrently, and identity is never
+guessed. The absent agy `agent_session` is a non-blocking Herdr gap;
+per F28 an AGY Run without a native session settles
+`unresolved(identity_unprovable)` after an unproven Herdr incarnation
+change. Claude likewise has no structured transcript
+reader — transcript resolution falls back
 to the terminal; only its quota-reader was probed, and its zero-progress
 result cannot serve as a progress proof (see the corrupt-tail row above).
 
@@ -299,7 +365,7 @@ Source: `contract-a5.md`; fixtures `a5-probe-outcomes.json`,
 ## A6 — Pane tagging and crash recognition
 
 **Status: crash-recognition observations confirmed; the creation-time
-atomic-tagging mechanism needs an owner decision.**
+tagging contract is owner-decided (spec §19).**
 
 Confirmed behaviors and their tests:
 
@@ -312,24 +378,82 @@ Confirmed behaviors and their tests:
 | The advertised `agent_session.value` path is a reference, not a live file — it need not exist after the native dies | `a6_session_ref_not_file` |
 | Schema surface: `PaneSplitParams` has no `label`/`tokens` field; the `LayoutNode` pane variant does (`label`, `cwd`, `env`, `command`, `pane_id`) | `a6_creation_tag_surface_absent_in_split` |
 
-Needs-owner-decision (documented, no test): **the generic
+Owner-decided (spec §19; documented, no test): **the generic
 creation-effect contract for atomic tagging/adoption.** The evidence
 shows: (a) a labeled layout creation could be rediscovered after a lost
 response, but the rebuild changed supplied IDs and topology; (b)
 separate rename/report-metadata calls leave a crash window between
-creation and tagging; (c) `--env` tags do not surface in reads. Which
-mechanism the governor adopts — labeled layout apply vs post-hoc tagging
-with a bounded window vs unique-token rediscovery — is an owner ruling,
-not a confirmed behavior.
+creation and tagging; (c) `--env` tags do not surface in reads. Ruling:
+the governor adopts the F8 unconfirmed/no-adoption fallback — an
+interrupted topology effect is reported `unconfirmed` and never adopted;
+the F14 right-split stays; a labelled `layout.apply` is rejected.
 
 Source: `contract-a4-a6.md`; fixtures `a46-identity-evidence.json`,
 `protocol22-subset.json`.
 
-## Jev — untested
+## Jev — judgment service wire contract
 
-Not probed in wave 1 and deliberately without fixtures in Phase 2 (the
-spec's structural Jev fixtures were scoped out). No claim is made about
-Jev availability, latency, or judgment shape.
+**Status: confirmed for the request/response wire contract, the error
+taxonomy, the credential seam, and the `GET /v1/models` surface;
+confirmed-negative for any other machine-readable contract surface.**
+
+Evidence boundary: five live judgment calls through the real
+`TypeSafeSpecClient` (the router's client code, not a re-implementation)
+all returned `kind:"response"` with complete probability distributions;
+a raw `systemOne` call and a `score` call captured the verbatim
+response envelope; three error classes were triggered live and four
+more confirmed from SDK source. SDK `@typesafe-ai/sdk` 0.6.0 (pinned by
+herdr-tools `package-lock.json`), probed against the reference checkout
+at `922934e2`. No credential value appears in the report or the
+fixtures — only presence metadata (key length, store entry type, file
+mode).
+
+Confirmed behaviors and their tests:
+
+| Behavior | Test ID |
+|---|---|
+| Every judgment call is `POST {base}/v1/systemone` (default `https://api.typesafe.ai`) with `Authorization: Bearer` and a JSON body `{model, state, questions}`; `state` is the semantic task projection only — no caller tier, no catalog (`CT-JEV-REQ-1`) | `jev_request_wire_shape` |
+| A serialized request over 96 KiB (`MAX_SPEC_REQUEST_BYTES`) abstains `invalid_response`/`request_too_large` before any socket write — measured 211,804 bytes with zero network traffic (`CT-JEV-REQ-2`) | `jev_request_too_large_client_gate` |
+| `answers` is keyed by question name; a noul answer is exactly `{type:"noul", noul∈[0,1]}` — a calibrated P(yes) with no confidence field; `done_when_verifiable` returns mid-range probabilities (0.40–0.83 observed), never a boolean (`CT-JEV-RESP-1`) | `jev_noul_answer_shape` |
+| A choice answer carries `choice` ∈ criteria labels, `confidence∈[0,1]`, and `probabilities` over the exact label set; the router enforces \|Σ−1\|≤1e-6 on its own question set — but a recorded reviewer-path response sums to 0.99, so the service does not promise an exact-1 sum (`CT-JEV-RESP-2`) | `jev_choice_answer_shape` |
+| `confidence` is a distinct calibrated concentration measure, not `max(probabilities)` — recorded pairs (0.98→0.96 raw, 0.69→0.63 router, 0.93→0.92 reviewer) contradict any top-probability alias (`CT-JEV-RESP-3`) | `jev_confidence_not_max_probability` |
+| `model` returns the resolved revision (`jev-1.13.0` for request alias `jev-latest`) and `usage{input_tokens,output_tokens}` is bookkeeping — recorded metadata, never a routing input (`CT-JEV-RESP-4`) | `jev_response_envelope_metadata` |
+| 401 `authentication_error` body maps to transport component `http_401_authentication_error`; an unresolvable key abstains `authentication_unavailable`/`api_key` with no request sent (code-cited) (`CT-JEV-ERR-1`) | `jev_error_authentication_mapping` |
+| 400 bodies map by `detail.error_type` (`api_usage_error`, `max_tokens_exceeded` observed live); a non-conforming `error_type` falls back to `http_<status>`; non-APIError transport failures map to `transport` (`CT-JEV-ERR-2`) | `jev_error_body_component_mapping` |
+| Timeout surfaces `APITimeoutError`, caller abort `APIUserAbortError` — neither sends/completes a request; the router/reviewer path configures `maxRetries:0` and no `X-TypeSafe-Retry-Count` header was ever observed (`CT-JEV-ERR-3`) | `jev_timeout_abort_no_retry` |
+| Credential resolution order: explicit option → `auth.json["typesafe"]` `api_key` → `TYPESAFE_API_KEY` (the store wins over env); `!cmd`-/`$ENV`-indirected key values pass through verbatim and are never executed (`CT-JEV-AUTH-1`) | `jev_auth_resolution_order` |
+| A sub-0.5-confidence spread still yields the verbatim top label as the route input — intent `reason` .36 at confidence .25, tier `max` .47 at .36 — no abstain on low confidence (`CT-JEV-PROB-1`) | `jev_spread_top_label_route` |
+| `GET /v1/models` is the only introspection surface — two ModelCards `{name, description, release_date}` (`jev-latest`, `jev-preview`); all five live calls responded `kind:"response"` | `jev_models_surface`, `jev_probe_calls_recorded` |
+
+Confirmed-negative: no local System One/Jev CLI, schema endpoint, or
+contract-introspection endpoint exists — `command -v typesafe jev
+systemone` found nothing and the SDK exposes exactly two resources
+(`systemOne`, `models.list`); there is no machine-readable question
+contract beyond the SDK's `.d.mts` type surface. The error classes
+`PermissionDeniedError` (403), `NotFoundError` (404),
+`UnprocessableEntityError` (422), `RateLimitError` (429, exposes
+`retryAfterMs`), `InternalServerError` (≥500), and `APIConnectionError`
+are confirmed from SDK source only — deliberately not triggered live.
+Every non-2xx is an `APIError` subclass carrying
+`{status, headers, body, requestId?}`; `x-typesafe-request-id` was
+present on observed 200 and 4xx responses.
+
+Operational notes for the owner (recorded, not tested): (a) the service
+enforces its own unversioned size cap — `max_tokens_exceeded` at a raw
+256 KiB state — above the router's 96 KiB client-side gate; the
+governor should keep the client-side number as its contract and treat
+the server 400 as a transport failure class, since the server threshold
+is unversioned. (b) `jev-latest` is a floating alias — observed
+resolution `jev-1.13.0` — so any golden output contract pins the
+*shape* and accepts the resolved `model` string as opaque metadata.
+(c) `confidence` is a separate calibrated measure — a contract that
+aliases it to `max(probabilities)` is contradicted by recorded wire
+data (see `jev_confidence_not_max_probability`).
+
+Source: `contract-jev.md` (probe `jev-contract-probe.mjs`, raw
+secret-scrubbed JSON in the artifact bundle); fixtures
+`jev-wire-evidence.json`, `jev-raw-response.json`,
+`jev-launch-evaluation.json`, `jev-supervision-review.json`.
 
 ---
 
@@ -339,13 +463,14 @@ Jev availability, latency, or judgment shape.
 |---|---|---|
 | A1 OAuth round-trip | confirmed-negative — gateway OAuth loader unimplemented | none (closed); the governor registers loopback no-auth sources only |
 | A1 offline error typing | confirmed untyped transport failure | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
-| A2 Herdr socket: silent stream teardown on malformed input | needs-owner-decision — evidence now complete (zero bytes, RST, `stream_closed` log, re-arm works) | owner adopts the re-arm-and-catch-up contract for unexpected subscription EOF |
-| A3 start/prompt semantics | untested | wave-2 probe of agent start and prompt delivery |
+| A2 Herdr socket: silent stream teardown on malformed input | owner-decided 2026-09-29 | closed — the re-arm-and-catch-up contract is adopted for unexpected subscription EOF; ruling in spec §19 |
+| A3 start/prompt semantics | confirmed — see section | closed — see section |
 | A4 incarnation proof | confirmed-negative | spec fallback already defined — no action needed |
-| A5 AGY transcript source | unqualified | an AGY native-reader probe, or owner ruling that AGY stays terminal-only |
+| A5 AGY transcript source | owner-decided 2026-09-29 — terminal-only | closed — AGY supervision uses terminal evidence (`agent.read`); no out-of-band transcript/uuid discovery; ruling in spec §19 |
 | A5 header validation / corrupt-vs-absence | confirmed reference-reader gaps | governor adapter must implement the stricter contract (Phase 3 work) |
-| A6 creation-time atomic tagging | needs-owner-decision | owner picks the tagging/adoption mechanism |
-| Jev | untested | wave-2 probe |
+| A6 creation-time atomic tagging | owner-decided 2026-09-29 | closed — the F8 unconfirmed/no-adoption fallback is adopted; ruling in spec §19 |
+| Jev | confirmed — see section | closed — see section |
+| Herdr gaps (non-blocking) | recorded | agy `agent_session` absent (`A3-AGY-SESSION-01`); readiness reported at workspace-trust gates (`A3-READY-FIDELITY-01`) — non-blocking Herdr follow-ups |
 
 ## Fixture inventory
 
@@ -355,12 +480,17 @@ Jev availability, latency, or judgment shape.
 | `a1-gateway-observations.json` | recorded gateway-side strings: install result, echoed args, untyped offline error, OAuth discovery, HTTPS refusal, no-uninstall surface | `contract-a1.md` |
 | `a2-tools-daemon-trace.jsonl` | 91-record wire log: hello/ack, multiplex, malformed frames, timeout, close | `/tmp/gov-p2-a2-evidence.jsonl` |
 | `a2-subscription-evidence.json` | scrubbed distillation of the Herdr protocol-22 subscription leg: isolation counts, framing, subscription semantics, concurrency, reconnect, malformed, timeouts, schema drift | `contract-a2-subscription-evidence/evidence.jsonl` (artifact bundle) |
+| `a3-start-prompt-evidence.json` | scrubbed distillation of the `agent start`/`agent prompt` probe: per-harness start envelopes and readiness shape, registration window, timeout/busy/not-found envelopes, racing starts, in-flight kill, prompt acks, AGY transcript layout, pane-cwd fallback, unreproduced claude limit | `contract-a3.md` (artifact bundle) |
 | `a46-identity-evidence.json` | 27 three-surface captures + 47 command receipts + kill/session records | `gov-p2-a46` lane `contract-a4-a6-raw.jsonl` |
 | `a46-restart-history.json` | one restart window, mailbox record kinds, persisted run identities | `contract-a4-a6-historical-summary.json` |
 | `a5-probe-outcomes.json` | 27 recorded case outcomes from the reference readers | `/tmp/gov-a5-*/results.json` |
 | `a5-native-observations.json` | native location shape, identity fields, AGY/env presence | `/tmp/gov-a5-*/metadata.json` |
 | `a5-samples/` | byte-faithful synthetic transcript inputs (Pi JSONL, Devin ATIF, Claude JSONL) | `/tmp/gov-a5-*/cases-*` |
 | `protocol22-subset.json` | pinned schema subset: envelopes + objects the evidence exercised | `tests/fixtures/herdr-api-schema.json` |
+| `jev-wire-evidence.json` | distilled Jev probe record: 5 live calls (wire headers, request sizes, results), 7 error probes, models list, key-seam presence metadata, code-cited gate constants and auth-resolution order | `jev-contract-probe.json` + `contract-jev.md` code citations (artifact bundle) |
+| `jev-raw-response.json` | verbatim 200 response envelope: resolved `model`, typed `answers` (noul + choice), `usage` | `jev-raw-response.json` (artifact bundle) |
+| `jev-launch-evaluation.json` | full request+response capture of one router-path judgment call: `{model, state, questions}` body, exact criteria labels, resolved answer envelope | `fixtures/jev/launch-evaluation.json` (artifact bundle) |
+| `jev-supervision-review.json` | full request+response capture of one reviewer-path judgment call: 7 nouls + 13-label choice, observed Σ=0.99 probabilities | `fixtures/jev/supervision-review.json` (artifact bundle) |
 
-`just contract` runs the suite — 85 checks, fail-closed on absent or
+`just contract` runs the suite — 108 checks, fail-closed on absent or
 malformed fixtures.

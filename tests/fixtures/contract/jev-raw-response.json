@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "requestId": "req_<redacted>",
+  "content_type": "application/json",
+  "raw_body": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "done_when_verifiable": {
+        "type": "noul",
+        "noul": 0.34
+      },
+      "sized": {
+        "type": "choice",
+        "choice": "small",
+        "confidence": 0.96,
+        "probabilities": {
+          "large": 0.02,
+          "small": 0.98
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 400,
+      "output_tokens": 52
+    }
+  }
+}

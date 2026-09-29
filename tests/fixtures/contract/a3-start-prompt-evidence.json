@@ -1,0 +1,148 @@
+{
+  "source": "contract-a3.md (2026-09-29, herdr 0.9.1, isolated named session herdr-governor-contract, workspace w3): verbatim CLI output and date +%s%N timings distilled; host paths and lane names scrubbed to /home/user/ placeholders. The raw report with verbatim CLI output stays artifact-side.",
+  "start": {
+    "pi": {
+      "elapsed_ms": 3023,
+      "repeat_elapsed_ms": [3024, 3024],
+      "envelope": {
+        "id": "cli:agent:start",
+        "result": {
+          "type": "agent_started",
+          "argv": ["pi"],
+          "agent": {
+            "agent": "pi",
+            "agent_session": {"agent": "pi", "kind": "path", "source": "herdr:pi", "value": "/home/user/.pi/agent/sessions/--home-user-lane--/2026-09-29T08-09-02-354Z_01a0ec35-c690-718e-9ceb-0fb1257bfcd3.jsonl"},
+            "agent_status": "idle",
+            "interactive_ready": true,
+            "name": "a3-pi-1",
+            "pane_id": "w3:p1",
+            "screen_detection_skipped": true,
+            "terminal_title": "pi",
+            "workspace_id": "w3"
+          }
+        }
+      },
+      "explain": {"matched": null, "fallback": null},
+      "session_file_existed": true
+    },
+    "devin_trust_gated": {
+      "elapsed_ms": 3726,
+      "returned": {"type": "agent_started", "interactive_ready": true, "agent_status": "idle", "agent_session_present": false},
+      "explain": {"state": "idle", "matched_rule": null, "fallback_reason": "default_known_agent_idle_fallback"},
+      "nonmatching_rule": {"id": "workspace_trust_prompt", "state": "blocked", "priority": 300},
+      "gate_screen": "modal workspace-trust prompt; cannot accept prompt text"
+    },
+    "devin_trusted": {
+      "elapsed_ms": 3729,
+      "argv_extra": ["--respect-workspace-trust", "false"],
+      "returned": {"type": "agent_started", "interactive_ready": true, "agent_status": "idle", "agent_session_present": true},
+      "agent_session": {"kind": "id", "source": "herdr:devin", "value": "trail-passenger"},
+      "explain_matched_rule": {"id": "live_prompt_footer", "state": "idle"},
+      "transcript": {"path": "/home/user/.local/share/devin/cli/transcripts/trail-passenger.json", "schema_version": "ATIF-v1.7", "session_id": "trail-passenger"}
+    },
+    "agy_trust_gated": {
+      "elapsed_ms": 6448,
+      "returned": {"type": "agent_started", "interactive_ready": true, "agent_status": "idle"},
+      "explain": {"matched_rule": null, "fallback_reason": "default_known_agent_idle_fallback"},
+      "nonmatching_rule": "permission_prompt"
+    },
+    "agy_trusted": {
+      "elapsed_ms": 3734,
+      "returned": {"type": "agent_started", "interactive_ready": true, "agent_status": "idle"},
+      "explain": {"matched_rule": null, "fallback_reason": "default_known_agent_idle_fallback"},
+      "vacuous_readiness": "the same fallback produces idle in both the blocked and the genuinely-idle state"
+    },
+    "claude": {
+      "elapsed_ms": 3731,
+      "returned": {"type": "agent_started", "interactive_ready": true, "agent_status": "idle", "agent_session_present": true},
+      "agent_session": {"kind": "id", "source": "herdr:claude", "value": "d4f34af1-c988-4778-8e35-e762183c1af8"},
+      "explain_matched_rule": {"id": "live_prompt_box", "state": "idle", "priority": 950},
+      "session_file_existed": true
+    }
+  },
+  "registration_window": {
+    "during_start_list_row": {"name": "a3-pi-inflight", "agent": "pi", "agent_status": "unknown", "interactive_ready_key_present": false, "terminal_title": "pi"},
+    "observed_at_ms_approx": [800, 1800],
+    "idle_in_list_before_interactive_ready_at_ms_approx": 2800,
+    "start_response_interactive_ready_at_ms_approx": 3000
+  },
+  "pre_flight_errors": {
+    "start_on_occupied_pane": {"error": {"code": "agent_pane_busy", "message": "agent target pane w3:p1 is not an available shell"}, "id": "cli:agent:start"},
+    "prompt_to_shell_pane": {"error": {"code": "agent_not_found", "message": "agent target w3:p6 not found"}, "id": "cli:agent:prompt"},
+    "get_unknown_name": {"error": {"code": "agent_not_found", "message": "agent target no-such-agent not found"}, "id": "cli:agent:get"}
+  },
+  "runtime_failures": {
+    "envelope": {"error": {"code": "timeout", "message": "timed out waiting for agent startup"}, "id": "cli:agent:start"},
+    "caller_can_distinguish_causes": false,
+    "cases": [
+      {"injection": "missing_binary", "kind": "kimi", "timeout_ms": 30000, "elapsed_ms": 30084, "pane_fallback": "shell shows native error (command not found)"},
+      {"injection": "agent_arg_rejected", "kind": "pi", "timeout_ms": 15000, "elapsed_ms": 15021, "pane_fallback": "shell shows native error (Unknown option)"},
+      {"injection": "mid_start_sigkill", "kind": "pi", "killed_at_ms_approx": 1200, "timeout_ms": 30000, "elapsed_ms": 30040, "pane_fallback": "shell, agent_status unknown"}
+    ]
+  },
+  "concurrent_starts_one_pane": {
+    "winner": {"name": "a3-race-1", "kind": "pi", "type": "agent_started"},
+    "loser": {"error": {"code": "agent_pane_busy"}},
+    "double_launch": false
+  },
+  "inflight_kill": {
+    "killed_at_ms_approx": 1200,
+    "agent_absent_from_list_immediately": true,
+    "pane_after": {"agent_status": "unknown", "terminal_title_back_to_shell": true},
+    "start_call_returned_early": false,
+    "start_call_result_code": "timeout",
+    "post_start_death_deregisters": {"observed_for": ["pi", "devin", "agy"], "pane_settles": "agent_status unknown at shell"}
+  },
+  "prompt_acks": {
+    "ack_type": "agent_prompted",
+    "concurrent": [
+      {"prompt_word": "ALPHA", "ack": {"name": "a3-pi-1", "pane_id": "w3:p1", "agent_session_kind": "path"}, "delivered_on": "w3:p1"},
+      {"prompt_word": "BRAVO", "ack": {"name": "a3-pi-inflight", "pane_id": "w3:p4", "agent_session_kind": "path"}, "delivered_on": "w3:p4"}
+    ],
+    "cross_harness": {
+      "devin": {"name": "a3-devin2", "agent_session_kind": "id", "agent_session_value": "trail-passenger", "delivered_word": "CHARLIE", "pane_id": "w3:p3"},
+      "agy": {"delivered_word": "ECHO", "pane_id": "w3:p5"},
+      "claude": {"delivered_word": "FOXTROT", "pane_id": "w3:p2"}
+    },
+    "ack_is_delivery_snapshot": {"agent_status_in_ack": "idle", "has_prompt_id": false, "has_delivery_sequence": false}
+  },
+  "agy_transcript": {
+    "conversation_uuid": "6c6a25fd-2862-4abc-82a5-35d1342d35e8",
+    "artifacts_appear": "after_first_turn_not_at_tui_open",
+    "agent_session_absent_on": ["start response", "agent get", "agent list"],
+    "herdr_session_source_for_agy": null,
+    "sqlite": {
+      "path": "/home/user/.gemini/antigravity-cli/conversations/6c6a25fd-2862-4abc-82a5-35d1342d35e8.db",
+      "tables": ["steps", "trajectory_meta", "gen_metadata", "executor_metadata", "parent_references", "battle_mode_infos", "trajectory_metadata_blob"],
+      "steps_columns": ["idx", "step_type", "status", "metadata", "step_payload"],
+      "payload_encoding": "binary protobuf-like blobs",
+      "second_id": "trajectory_meta.cascade_id"
+    },
+    "jsonl": {
+      "brain_logs_dir": "/home/user/.gemini/antigravity-cli/brain/6c6a25fd-2862-4abc-82a5-35d1342d35e8/.system_generated/logs/",
+      "files": ["transcript.jsonl", "transcript_full.jsonl", "chunks/transcript*/00000000.jsonl"],
+      "record_shape": ["step_index", "source", "type", "status", "created_at", "content"],
+      "sample_records": [
+        {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE", "created_at": "2026-09-29T08:16:06Z"},
+        {"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "status": "DONE", "created_at": "2026-09-29T08:16:06Z", "content": "ECHO"}
+      ]
+    },
+    "presence_lock": {"path_glob": "presence/<uuid>.lock", "bytes": 0, "present_while_live": true},
+    "history": {"path": "history.jsonl", "record_fields": ["display", "timestamp", "workspace"], "append_only": true},
+    "side_files": ["implicit/<other-uuid>.pb (own id space)", "log/cli-*.log names the conversation uuid"],
+    "discovery_correlation": "newest presence/*.lock, brain/<uuid>/, and conversations/<uuid>.db share the conversation uuid"
+  },
+  "pane_cwd_fallback": {
+    "command": "pane split --cwd /nonexistent-a3-path",
+    "failed": false,
+    "resulting_cwd": "/home/user",
+    "only_tell": "pane record cwd/foreground_cwd"
+  },
+  "claude_limit": {
+    "predicted_screen": "weekly usage-limit at start",
+    "reproduced": false,
+    "tui_opened_to_composer": true,
+    "probe_prompt_completed": {"word": "FOXTROT", "elapsed_s_approx": 3},
+    "failure_shape": "unobserved"
+  }
+}
