@@ -41,6 +41,49 @@ def a1_trace_records():
             .decode().splitlines() if line.strip()]
 
 
+def a1_executor_bearer():
+    return fixture_json("a1-executor-bearer-requests.json")
+
+
+def a1_executor_reconnect():
+    return fixture_json("a1-executor-reconnect-requests.json")
+
+
+def wire_requests(records):
+    """HTTP-level records (mcp_request + plain request), in order."""
+    return [r for r in records if r["kind"] in ("mcp_request", "request")]
+
+
+def rpc_methods(records):
+    return [r["method"] for r in records if r["kind"] == "mcp_method"]
+
+
+def call_segment(records, n):
+    """Records between the `call-<n>-start*` and `call-<n>-end` markers."""
+    out, inside = [], False
+    for r in records:
+        if r["kind"] == "marker":
+            if r["label"].startswith(f"call-{n}-start"):
+                inside = True
+            elif inside and r["label"] == f"call-{n}-end":
+                break
+            continue
+        if inside:
+            out.append(r)
+    return out
+
+
+def registration_segment(records):
+    """Everything before the `call-1-start` marker (post-listening health
+    handshake performed at connection create)."""
+    out = []
+    for r in records:
+        if r["kind"] == "marker" and r["label"] == "call-1-start":
+            break
+        out.append(r)
+    return out
+
+
 def a2_sub_evidence():
     return fixture_json("a2-subscription-evidence.json")
 
@@ -142,12 +185,17 @@ def jsonl_scan(data: bytes):
 
 
 class A1ExecutorTransport(unittest.TestCase):
-    """contract-a1.md — gateway/Executor Streamable HTTP transport trial
-    against a purpose-built probe server. Wire frames come from the probe
-    server's own log (two runs, split at its `listening` records);
-    gateway-side strings come from the recorded observation fixture. The
-    full OAuth round-trip against a real authorization server is the one
-    remaining sub-case and has no test by design."""
+    """contract-a1.md — Streamable HTTP transport trial against a
+    purpose-built probe server. Gateway-identity correction (A1 fold,
+    2026-09-29): this trial registered the probe through pi's MCP adapter
+    (`pi-mcp-adapter`, retired in pi 0.99), not the Executor catalog
+    daemon real callers use — these checks are kept as pi-adapter
+    evidence; Executor catalog-path and pi-native measurements live in
+    A1ExecutorCatalogTransport / A1PiNativeTransport. Wire frames come
+    from the probe server's own log (two runs, split at its `listening`
+    records); adapter-side strings come from the recorded observation
+    fixture. The wave-2 OAuth trial closed the adapter's authenticated
+    sub-case confirmed-negative; it has no test by design."""
 
     def setUp(self):
         self.records = a1_trace_records()
@@ -231,10 +279,11 @@ class A1ExecutorTransport(unittest.TestCase):
         self.assertTrue(self.obs["auth"]["non_loopback_http_refused"])
 
     def test_a1_auth_round_trip_confirmed_negative(self):
-        """The gateway names the RFC 8414 metadata URL in its error but never
-        issues the request (verified server-side): its OAuth metadata loader
-        is unimplemented, so an authenticated source cannot complete
-        registration. Loopback + no-auth is the only supported shape."""
+        """The pi adapter names the RFC 8414 metadata URL in its error but
+        never issues the request (verified server-side): its OAuth
+        metadata loader is unimplemented, so an authenticated source
+        cannot complete registration on that adapter — loopback + no-auth
+        was the only supported shape there."""
         on401 = self.obs["auth"]["on_401"]
         self.assertEqual(on401["www_authenticate"], "Bearer")
         self.assertIn("/.well-known/oauth-authorization-server",
@@ -250,6 +299,203 @@ class A1ExecutorTransport(unittest.TestCase):
         self.assertEqual(auth["loopback_name_derivation"],
                          "every loopback variant derives the source name "
                          "local-mcp")
+
+
+class A1ExecutorCatalogTransport(unittest.TestCase):
+    """contract-a1-bearer.md + reconnect/contract-a1-reconnect.md — the A1
+    transport measured on the real caller gateway (Executor's catalog
+    daemon), 2026-09-29: apiKey `headers` template + file-provider
+    credential, session lifecycle across restarts. Fixtures are
+    mechanical distillations of the probe server's request logs —
+    method/path/header-name/auth/session fields only."""
+
+    def setUp(self):
+        self.bearer = a1_executor_bearer()
+        self.recon = a1_executor_reconnect()
+
+    def test_a1_executor_registration_declarative(self):
+        """Registration performs no tool calls: the connection-create
+        segment is exactly one health handshake (discover → initialize →
+        initialized → GET → tools/list), every request authenticated."""
+        seg = registration_segment(self.recon["records"])
+        self.assertEqual(rpc_methods(seg), ["server/discover", "initialize",
+                                            "notifications/initialized",
+                                            "tools/list"])
+        reqs = wire_requests(seg)
+        self.assertEqual(len(reqs), 5)
+        self.assertTrue(all(r["auth_match"] for r in reqs))
+
+    def test_a1_executor_addserver_requires_name(self):
+        self.assertEqual(
+            self.recon["observations"]["addserver_missing_name_rejected"],
+            "invalid_tool_arguments")
+
+    def test_a1_executor_static_bearer_every_request(self):
+        """apiKey headers template + file-provider item: every request on
+        the authenticated path carries `Authorization: Bearer` and
+        matches the configured credential."""
+        reqs = wire_requests(self.bearer["executor"]["authenticated"])
+        self.assertGreater(len(reqs), 0)
+        for r in reqs:
+            self.assertTrue(r["auth_present"])
+            self.assertEqual(r["auth_scheme"], "bearer")
+            self.assertTrue(r["auth_match"])
+            self.assertIn("Authorization", r["header_names"])
+        self.assertIn("tools/call",
+                      rpc_methods(self.bearer["executor"]["authenticated"]))
+
+    def test_a1_executor_connection_address_camelized(self):
+        obs = self.bearer["observations"]
+        self.assertEqual(obs["connection_address"],
+                         "tools.gov-a1-bearer-probe.org.govA1BearerProbe")
+        self.assertEqual(obs["credential_provider"], "file")
+        self.assertEqual(
+            obs["credential_item_id"],
+            "connection:org:gov-a1-bearer-probe:gov-a1-bearer-probe:token")
+
+    def test_a1_executor_authenticated_no_oauth_discovery(self):
+        """OAuth never engages on the authenticated path: zero
+        `/.well-known` fetches and zero unauthenticated requests."""
+        seg = self.bearer["executor"]["authenticated"]
+        self.assertFalse(
+            any(".well-known" in r.get("path", "") for r in seg))
+        self.assertTrue(all(r["auth_match"] for r in wire_requests(seg)))
+
+    def test_a1_executor_401_triggers_oauth_discovery(self):
+        """An unauthenticated probe is 401'd and still triggers RFC 8414 /
+        OIDC metadata discovery; metadata 501s yield the recorded verdict."""
+        probe = self.bearer["executor"]["probe_unauthenticated"]
+        paths = [r["path"] for r in probe if r["kind"] == "request"]
+        self.assertEqual(
+            paths, ["/.well-known/oauth-authorization-server/mcp",
+                    "/.well-known/openid-configuration/mcp",
+                    "/mcp/.well-known/openid-configuration"])
+        self.assertTrue(
+            all(not r["auth_present"] for r in wire_requests(probe)))
+        self.assertEqual(
+            self.bearer["observations"]["probe_endpoint_verdict"],
+            {"connected": False, "requiresAuthentication": True,
+             "requiresOAuth": False})
+
+    def test_a1_executor_reconnect_after_restart(self):
+        """First call on a new server process re-initializes: a fresh
+        handshake presents no session id and ends at tools/call."""
+        recs = self.recon["records"]
+        call3 = call_segment(recs, 3)
+        reqs = wire_requests(call3)
+        self.assertIsNone(reqs[0]["session_id"])
+        self.assertEqual(rpc_methods(call3),
+                         ["server/discover", "initialize",
+                          "notifications/initialized", "tools/call"])
+        self.assertTrue(all(r["auth_match"] for r in reqs))
+
+    def test_a1_executor_dead_session_evicted(self):
+        """A transport failure evicts the cached session: after failed
+        call-2 the next call presents no id from the dead session."""
+        recs = self.recon["records"]
+        dead = {r["session_id"] for r in wire_requests(call_segment(recs, 1))
+                if r["session_id"] is not None}
+        self.assertEqual(len(dead), 1)
+        presented = [r["session_id"]
+                     for r in wire_requests(call_segment(recs, 3))]
+        self.assertNotIn(next(iter(dead)), presented)
+        # same eviction after the failed --log-level call-2b
+        dead2 = {r["session_id"] for r in wire_requests(call_segment(recs, 4))
+                 if r["session_id"] is not None}
+        presented5 = [r["session_id"]
+                      for r in wire_requests(call_segment(recs, 5))]
+        for sid in dead2:
+            self.assertNotIn(sid, presented5)
+
+    def test_a1_executor_stale_session_404_reinitialize(self):
+        """Stale `Mcp-Session-Id` → 404 → re-initialize → retry, inside the
+        same call; the caller never sees the 404."""
+        recs = self.recon["records"]
+        seg = call_segment(recs, 7)
+        reqs = wire_requests(seg)
+        self.assertEqual(rpc_methods(seg),
+                         ["tools/call", "server/discover", "initialize",
+                          "notifications/initialized", "tools/call"])
+        # the first tools/call presented a session id the new process
+        # does not know (stale) — the server logged a session_rejected
+        self.assertFalse(reqs[0]["session_known"])
+        rejected = [r for r in seg if r["kind"] == "session_rejected"
+                    and r["session_id"] == reqs[0]["session_id"]]
+        self.assertTrue(
+            any(r["method"] == "tools/call" for r in rejected))
+        # the retried call carries the freshly issued session id
+        self.assertIsNotNone(reqs[-1]["session_id"])
+        self.assertTrue(reqs[-1]["session_known"])
+        self.assertNotEqual(reqs[-1]["session_id"], reqs[0]["session_id"])
+
+    def test_a1_executor_session_reused_between_calls(self):
+        """Steady state: one `tools/call` per call carrying the session id
+        the preceding handshake established."""
+        recs = self.recon["records"]
+        for warm_n, cold_n in ((4, 3), (6, 5), (8, 7)):
+            warm = call_segment(recs, warm_n)
+            self.assertEqual(rpc_methods(warm), ["tools/call"])
+            reqs = wire_requests(warm)
+            self.assertEqual(len(reqs), 1)
+            known = {r["session_id"]
+                     for r in wire_requests(call_segment(recs, cold_n))
+                     if r["session_known"]}
+            self.assertIn(reqs[0]["session_id"], known)
+
+    def test_a1_executor_server_down_error_untyped(self):
+        """Server down → caller sees an untyped `Internal tool error
+        [<correlation-id>]`, exit 1; the server received zero requests."""
+        obs = self.recon["observations"]
+        self.assertEqual(obs["server_down_caller_error"],
+                         "Internal tool error [4fce215a]")
+        self.assertEqual(obs["server_down_exit_code"], 1)
+        self.assertFalse(obs["server_down_error_envelope_typed"])
+        self.assertEqual(call_segment(self.recon["records"], 2), [])
+
+    def test_a1_executor_no_oauth_rediscovery(self):
+        """Across restarts: every request auth-matched, zero 401s, zero
+        `.well-known` fetches — restart does not re-trigger discovery."""
+        recs = self.recon["records"]
+        self.assertTrue(all(r["auth_match"] for r in wire_requests(recs)))
+        self.assertFalse(
+            any(".well-known" in r.get("path", "") for r in recs))
+
+
+class A1PiNativeTransport(unittest.TestCase):
+    """pi 0.99 native `pi mcp` client leg of contract-a1-bearer.md —
+    measured on the same loopback probe server (pi's own MCP client; a
+    different registry from the retired pi-mcp-adapter that hosted the
+    wave-1 trial)."""
+
+    def setUp(self):
+        self.bearer = a1_executor_bearer()
+
+    def test_a1_pi_native_static_headers_sent(self):
+        """Configured static headers ride every request (the env-var
+        indirection keeps the token out of mcp.json)."""
+        seg = self.bearer["pi_native"]
+        authed = [r for r in wire_requests(seg) if r["auth_present"]]
+        self.assertGreaterEqual(len(authed), 4)
+        for r in authed:
+            self.assertIn("Authorization", r["header_names"])
+            self.assertEqual(r["auth_scheme"], "bearer")
+            self.assertTrue(r["auth_match"])
+        self.assertEqual(rpc_methods(seg),
+                         ["initialize", "notifications/initialized",
+                          "tools/list"])
+
+    def test_a1_pi_native_401_defers_oauth(self):
+        """On 401 pi marks the server `needs sign-in` and defers OAuth to
+        `pi mcp login` — exactly one unauthenticated request and zero
+        `.well-known` fetches."""
+        seg = self.bearer["pi_native"]
+        unauthed = [r for r in wire_requests(seg) if not r["auth_present"]]
+        self.assertEqual(len(unauthed), 1)
+        self.assertFalse(
+            any(".well-known" in r.get("path", "") for r in seg))
+        self.assertEqual(
+            self.bearer["observations"]["pi_list_status_unauthenticated"],
+            "needs sign-in")
 
 
 class A2HerdrSubscription(unittest.TestCase):
@@ -645,7 +891,7 @@ class A3StartPrompt(unittest.TestCase):
         self.assertEqual(pa["ack_type"], "agent_prompted")
         self.assertEqual(len(pa["concurrent"]), 2)
         for leg in pa["concurrent"]:
-            # the ack carries the full agent record — concurrent acks map
+            # the ack carries the agent record — concurrent acks map
             # unambiguously to their targets
             self.assertIn("name", leg["ack"])
             self.assertEqual(leg["ack"]["pane_id"], leg["delivered_on"])
@@ -655,6 +901,13 @@ class A3StartPrompt(unittest.TestCase):
         devin = pa["cross_harness"]["devin"]
         self.assertEqual(devin["agent_session_kind"], "id")
         self.assertEqual(devin["agent_session_value"], "trail-passenger")
+        # the recorded agy/claude entries carry only the delivery word and
+        # pane_id; for agy the absent agent_session fields are structural —
+        # agy has no agent_session on any surface (a3_agy_session_01)
+        self.assertEqual(pa["cross_harness"]["agy"],
+                         {"delivered_word": "ECHO", "pane_id": "w3:p5"})
+        self.assertEqual(pa["cross_harness"]["claude"],
+                         {"delivered_word": "FOXTROT", "pane_id": "w3:p2"})
         snap = pa["ack_is_delivery_snapshot"]
         self.assertEqual(snap["agent_status_in_ack"], "idle")
         self.assertFalse(snap["has_prompt_id"])
@@ -1213,7 +1466,7 @@ class JevWireContract(unittest.TestCase):
     contract-introspection endpoint; untriggered 403/404/422/429/5xx
     error classes) are documented in the research file and have no test
     by design. Code-cited constants the report records but did not
-    trigger live live in the fixture's `code_cited_gates`/`auth_resolution`
+    trigger live sit in the fixture's `code_cited_gates`/`auth_resolution`
     sections, labeled as code citations."""
 
     def setUp(self):
@@ -1422,17 +1675,23 @@ class JevWireContract(unittest.TestCase):
 
     def test_jev_timeout_abort_no_retry(self):
         """CT-JEV-ERR-3: timeout surfaces APITimeoutError, caller abort
-        APIUserAbortError, neither sends/completes a request; the
-        configured policy is maxRetries:0 and no retry header was
-        observed."""
+        APIUserAbortError. Only the pre-abort proves no request was
+        sent; a timeout proves no response was received — send is not
+        disproven. The configured policy is maxRetries:0 and no retry
+        header was observed."""
         t = self.error("timeout-1ms")
         self.assertEqual(t["name"], "APITimeoutError")
         self.assertEqual(t["timeout_ms"], 1)
+        # no response was received: no status, no request id. A
+        # client-side timeout cannot disprove the request went out, so
+        # the absence of a wire capture is not asserted here.
+        for absent in ("status", "request_id"):
+            self.assertNotIn(absent, t)
         a = self.error("pre-abort")
         self.assertEqual(a["name"], "APIUserAbortError")
-        for e in (t, a):
-            for absent in ("status", "request_id", "wire"):
-                self.assertNotIn(absent, e)
+        # aborted before send: no request went out
+        for absent in ("status", "request_id", "wire"):
+            self.assertNotIn(absent, a)
         self.assertEqual(self.error("empty-questions")["name"],
                          "TypeSafeError")
         self.assertEqual(

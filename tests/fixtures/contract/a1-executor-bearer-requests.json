@@ -1,0 +1,453 @@
+{
+  "source": "contract-a1-bearer-evidence/request-log.jsonl (p0p1 artifact bundle, probe 2026-09-29) \u2014 distilled to kind/method/path/header-name/auth fields; header values, bodies, timestamps, ports and request ids dropped by construction. Executor segment is the catalog-daemon traffic (unauthenticated mcp.probeEndpoint leg, then the apiKey-headers-template + file-provider authenticated path); pi_native is the pi 0.99 native `pi mcp` client leg on the same probe server. Caller-side strings in observations come from contract-a1-bearer.md and its call transcripts.",
+  "observations": {
+    "connection_address": "tools.gov-a1-bearer-probe.org.govA1BearerProbe",
+    "credential_item_id": "connection:org:gov-a1-bearer-probe:gov-a1-bearer-probe:token",
+    "credential_provider": "file",
+    "probe_endpoint_verdict": {
+      "connected": false,
+      "requiresAuthentication": true,
+      "requiresOAuth": false
+    },
+    "pi_list_status_unauthenticated": "needs sign-in"
+  },
+  "executor": {
+    "probe_unauthenticated": [
+      {
+        "kind": "listening"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": false,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-method",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": null,
+        "auth_match": false,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": false,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": null,
+        "auth_match": false,
+        "method": "POST"
+      },
+      {
+        "kind": "request",
+        "auth_present": false,
+        "path": "/.well-known/oauth-authorization-server/mcp",
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "b3",
+          "traceparent"
+        ],
+        "auth_scheme": null,
+        "auth_match": false,
+        "method": "GET"
+      },
+      {
+        "kind": "request",
+        "auth_present": false,
+        "path": "/.well-known/openid-configuration/mcp",
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "b3",
+          "traceparent"
+        ],
+        "auth_scheme": null,
+        "auth_match": false,
+        "method": "GET"
+      },
+      {
+        "kind": "request",
+        "auth_present": false,
+        "path": "/mcp/.well-known/openid-configuration",
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "b3",
+          "traceparent"
+        ],
+        "auth_scheme": null,
+        "auth_match": false,
+        "method": "GET"
+      }
+    ],
+    "authenticated": [
+      {
+        "kind": "listening"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-method",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "server/discover"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "initialize"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "notifications/initialized"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "GET"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "tools/list"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-method",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "server/discover"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "initialize"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "notifications/initialized"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "GET"
+      },
+      {
+        "kind": "mcp_request",
+        "auth_present": true,
+        "header_names": [
+          "Accept",
+          "Accept-Encoding",
+          "Authorization",
+          "Connection",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "b3",
+          "mcp-protocol-version",
+          "traceparent"
+        ],
+        "auth_scheme": "bearer",
+        "auth_match": true,
+        "method": "POST"
+      },
+      {
+        "kind": "mcp_method",
+        "method": "tools/call"
+      }
+    ]
+  },
+  "pi_native": [
+    {
+      "kind": "mcp_request",
+      "auth_present": true,
+      "header_names": [
+        "Authorization",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "sec-fetch-mode",
+        "user-agent"
+      ],
+      "auth_scheme": "bearer",
+      "auth_match": true,
+      "method": "POST"
+    },
+    {
+      "kind": "mcp_method",
+      "method": "initialize"
+    },
+    {
+      "kind": "mcp_request",
+      "auth_present": true,
+      "header_names": [
+        "Authorization",
+        "MCP-Protocol-Version",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "sec-fetch-mode",
+        "user-agent"
+      ],
+      "auth_scheme": "bearer",
+      "auth_match": true,
+      "method": "POST"
+    },
+    {
+      "kind": "mcp_method",
+      "method": "notifications/initialized"
+    },
+    {
+      "kind": "mcp_request",
+      "auth_present": true,
+      "header_names": [
+        "Authorization",
+        "MCP-Protocol-Version",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "connection",
+        "host",
+        "sec-fetch-mode",
+        "user-agent"
+      ],
+      "auth_scheme": "bearer",
+      "auth_match": true,
+      "method": "GET"
+    },
+    {
+      "kind": "mcp_request",
+      "auth_present": true,
+      "header_names": [
+        "Authorization",
+        "MCP-Protocol-Version",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "sec-fetch-mode",
+        "user-agent"
+      ],
+      "auth_scheme": "bearer",
+      "auth_match": true,
+      "method": "POST"
+    },
+    {
+      "kind": "mcp_method",
+      "method": "tools/list"
+    },
+    {
+      "kind": "mcp_request",
+      "auth_present": false,
+      "header_names": [
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "sec-fetch-mode",
+        "user-agent"
+      ],
+      "auth_scheme": null,
+      "auth_match": false,
+      "method": "POST"
+    }
+  ]
+}
