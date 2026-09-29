@@ -157,18 +157,31 @@ Confirmed behaviors and their tests:
 | Without `timeout_ms` a wait does not reply (3 s observation); the client close is silent and the server stays healthy | `a2sub_wait_no_timeout_blocks` |
 | An armed subscription idle 8 s still delivers (longer idle bounds untested) | `a2sub_subscription_survives_idle_8s` |
 | Confirmed-negative: `events.wait` rejects every `EventMatch` except pane agent-status matches (`unsupported_event_wait_match`) although the fixture union lists 25+ kinds | `a2sub_events_wait_agent_status_only` |
+| `pane.scroll_changed` **is delivered** — on explicit scroll (offset 120 of max 267), on return to bottom, and on output growth while scrolled; the wave-1 non-delivery was a server-side no-op on a pane with no scrollback, not a delivery gap | `a2sub_scroll_changed_delivered` |
 
-Needs-owner-decision (documented, no test): **`A2-HERDR-SCROLL-CHANGED-UNVERIFIED`**
-(a `pane.scroll_changed` subscription produced no event in 1.5 s — request
-no-op vs non-delivery not distinguished; `pane.agent_status_changed` was
-subscribed but never triggered, since starting an agent was outside the
-read-only probe); **`A2-HERDR-MALFORMED-ON-STREAM-SILENT`** (a malformed
-frame on a subscription connection tears the stream down with no error
-frame — a governor must treat unexpected EOF on a subscription as
-"re-arm and catch up", never as "server gone"); **`A2-HERDR-SCHEMA-DRIFT-GRAPHICS-STREAM`**
-(server 0.9.1 enumerates 104 methods vs the fixture's 103, server-only
-`pane.graphics.stream`, same protocol number — `just schema-live` is the
-sanctioned check and was not run).
+Observations recorded, no test (refusals and owner-decision evidence):
+**command panes** created via `layout.apply` with a `command` appear in
+`session.snapshot` but refuse subscriptions (`pane.scroll_changed` →
+`pane_not_found`; `pane.output_matched` → `internal_error "failed to decode
+pane read error"`) — PTY panes arm cleanly, so subscriptions target PTY
+panes. **Silent stream teardown, evidence complete**: a malformed frame on
+an armed subscription connection produces **zero bytes before an
+ECONNRESET close, no error frame**, and the server logs a plain
+`outcome="stream_closed"`; an immediate re-arm on a fresh connection
+succeeds (`subscription_started`); state catch-up after re-arm is the
+already-confirmed `recent`-text behavior.
+
+**Schema note (resolves the wave-1 drift flag):** `just schema-live`
+against the session server is **green** — the pinned
+`herdr-api-schema.json` matches `herdr api schema --json` byte-for-byte,
+and the pinned fixture already contains `pane.graphics.stream` (as a
+doc entry). The wave-1 comparison measured the server's **runtime
+unknown-method enum** (request methods, includes `pane.graphics.stream`)
+against the schema doc's request surface (omits it): the drift is
+**server-internal** (runtime enum vs its own doc), not fixture staleness.
+No re-pin: the fixture's contract is to match the doc, and diverging it
+would break `schema-live`. The governor must not treat the schema doc as
+the exhaustive request surface.
 
 Implication for the spec's A2 assumption: the Herdr socket offers **no
 durable, multiplexed event stream**. A governor needing "subscription
@@ -181,7 +194,8 @@ Source: `contract-a2.md` § subscription leg,
 fixture `a2-subscription-evidence.json`.
 
 The two legs together close the A2 subscription question at evidence
-level; the three need-owner-decision items above go to the §19 batch.
+level; the one remaining need-owner-decision item (silent stream teardown
+contract) goes to the §19 batch with its evidence complete.
 
 ## A3 — Start and prompt semantics
 
@@ -316,9 +330,7 @@ Jev availability, latency, or judgment shape.
 |---|---|---|
 | A1 full OAuth round-trip | open sub-case — auth proven up to metadata discovery only | trial against a real authorization server (owner-decision material) |
 | A1 offline error typing | confirmed untyped transport failure | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
-| A2 Herdr socket: scroll-changed delivery | needs-owner-decision | distinguished probe (scroll-inducing pane or agent-status transition in the session) |
-| A2 Herdr socket: silent stream teardown on malformed input | needs-owner-decision | owner adopts the re-arm-and-catch-up contract for unexpected subscription EOF |
-| A2 Herdr socket: schema drift (`pane.graphics.stream`) | needs-owner-decision | `just schema-live` against the session server, then re-pin the fixture |
+| A2 Herdr socket: silent stream teardown on malformed input | needs-owner-decision — evidence now complete (zero bytes, RST, `stream_closed` log, re-arm works) | owner adopts the re-arm-and-catch-up contract for unexpected subscription EOF |
 | A3 start/prompt semantics | untested | wave-2 probe of agent start and prompt delivery |
 | A4 incarnation proof | confirmed-negative | spec fallback already defined — no action needed |
 | A5 AGY transcript source | unqualified | an AGY native-reader probe, or owner ruling that AGY stays terminal-only |
@@ -341,5 +353,5 @@ Jev availability, latency, or judgment shape.
 | `a5-samples/` | byte-faithful synthetic transcript inputs (Pi JSONL, Devin ATIF, Claude JSONL) | `/tmp/gov-a5-*/cases-*` |
 | `protocol22-subset.json` | pinned schema subset: envelopes + objects the evidence exercised | `tests/fixtures/herdr-api-schema.json` |
 
-`just contract` runs the suite — 84 checks, fail-closed on absent or
+`just contract` runs the suite — 85 checks, fail-closed on absent or
 malformed fixtures.

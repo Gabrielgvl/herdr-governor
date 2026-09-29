@@ -72,5 +72,20 @@
     "fixture_methods": 103,
     "server_only": ["pane.graphics.stream"],
     "fixture_only": []
+  },
+  "scroll_changed": {
+    "delivered_on_explicit_scroll": {"max_offset_from_bottom": 267, "offset_from_bottom": 120, "viewport_rows": 40},
+    "delivered_on_return_to_bottom": true,
+    "delivered_on_output_growth": {"max_offset_grew_to": 310},
+    "prior_leg_non_delivery_cause": "pane had no scrollback (max_offset 0); the scroll request was a server-side no-op, not a delivery gap"
+  },
+  "command_pane_subscribe": {
+    "scroll_changed_on_layout_apply_command_pane": "pane_not_found",
+    "output_matched_on_layout_apply_command_pane": "internal_error: failed to decode pane read error",
+    "note": "command panes from layout.apply appear in session.snapshot but refuse subscriptions; PTY panes arm cleanly"
+  },
+  "teardown_evidence": {
+    "malformed_on_armed_stream": {"bytes_before_eof": "", "close": "connection reset (ECONNRESET)", "server_log_outcome": "stream_closed"},
+    "immediate_rearm_after_teardown": "subscription_started"
   }
 }

@@ -370,6 +370,15 @@ class A2HerdrSubscription(unittest.TestCase):
         self.assertEqual(self.ev["timeouts"]["wait_unsupported_match_code"],
                          "unsupported_event_wait_match")
 
+    def test_a2sub_scroll_changed_delivered(self):
+        sc = self.ev["scroll_changed"]
+        d = sc["delivered_on_explicit_scroll"]
+        self.assertEqual(d["offset_from_bottom"], 120)
+        self.assertEqual(d["viewport_rows"], 40)
+        self.assertTrue(sc["delivered_on_return_to_bottom"])
+        self.assertEqual(sc["delivered_on_output_growth"]["max_offset_grew_to"], 310)
+        self.assertIn("no-op", sc["prior_leg_non_delivery_cause"])
+
 
 class A2ToolsDaemonTransport(unittest.TestCase):
     """contract-a2.md — isolated herdr-tools daemon socket evidence. These are
