@@ -86,9 +86,13 @@ every later PR is judged by gates it did not write.
 
 Canonical machine list: **`scripts/protected-paths.txt`** — one
 `<mode><TAB><pattern>` per line, consumed by `agent-gate.sh`,
-`check-protected-diff.sh`, and `check-lint-integrity.sh`. Matching is by
-suffix, so a bare `tests/fixtures/**` already covers every member's
-`*/tests/fixtures/**`.
+`check-protected-diff.sh`, and `check-lint-integrity.sh`. The glob
+semantics live in one shared matcher, **`scripts/protected_paths.py`**,
+imported by `agent-gate.sh` and `check-protected-diff.sh` so the hook
+and the gate cannot drift apart (`check-lint-integrity.sh` parses the
+same table for its own existence and coverage checks but matches no
+paths). Matching is by suffix, so a bare `tests/fixtures/**` already
+covers every member's `*/tests/fixtures/**`.
 
 | Mode | Meaning |
 |---|---|
@@ -135,7 +139,10 @@ additions still need owner approval — see *Adding a dependency*.
 
 Local mode (no argument → `BASE=HEAD`) judges the working deliverable —
 `git diff HEAD` plus untracked files. `check-protected-diff.sh <BASE>` is CI
-mode over `BASE...HEAD`. Verdicts are FAIL or REPORT:
+mode over `BASE...HEAD`. Untracked in-scope files join the content scans,
+and one the gate cannot scan — over the 8 MiB limit or unreadable — is a
+FAIL (R0) naming the file and the limit, never a skipped-scan pass.
+Verdicts are FAIL or REPORT:
 
 - **R1** — touched a `hard`/`conditional` path: FAIL on modified, deleted,
   or staged-added files; REPORT on new untracked files (scaffold workers
@@ -271,10 +278,14 @@ cover `src`, `tests`, `*/src`, `*/tests` — the dirs that exist:
   `use std as x`), all `include`/`include_str`/`include_bytes` identifiers
   (not just invocations: plain, grouped, aliased and raw-identifier imports
   also fail, e.g. `use core::{r#include as imported}`),
-  `env!`/`option_env!`, `#[path]`, every `extern crate std|core|alloc`
+  `env!`/`option_env!`, `#[path]`, every `extern crate std|core`
   spelling (`r#std`, `as` aliases, `#[macro_use]`, comment-split), glob
-  imports of `std`/`core`/`alloc` roots (`use std::*` names no banned
-  module — rejected outright), and space- or newline-split paths.
+  imports of the `std`/`core`/`alloc` roots (`use std::*` names no
+  banned module — rejected outright), and space- or newline-split paths.
+  `alloc` is the owner-sanctioned exception to the extern-crate ban:
+  `extern crate alloc;` plus `alloc::` paths are how the `no_std` core
+  allocates (BTreeMap and friends are intended to work) — only the
+  alloc-root glob stays banned, since a glob names no module.
   `governor-core` is `#![no_std]` — lib.rs must open with that inner
   attribute — so `std` paths cannot compile in the first place; the
   lexical layer runs on the comment-stripped, literal-blanked view
@@ -441,6 +452,7 @@ diff gate.
 | `just purity` | `check-core-purity.sh` — dep allowlist + core I/O scan |
 | `just schema-check` | `check-herdr-schema.sh` — fixture present, parses, pinned protocol, sha256 sidecar match |
 | `just schema-live` | `check-herdr-schema.sh --live` — adds a live `herdr` drift diff; not in `ci` |
+| `just contract` | `tests/contract/contract_tests.py` — offline contract suite pinning each confirmed Phase-2 evidence behavior to its committed fixture under `tests/fixtures/contract/`; fails closed on missing or malformed evidence and contacts no live system. Not in `ci` — it is the Phase-2 evidence gate, run on demand and before promotion while the evidence set is still accumulating |
 | `just test-inventory <base>` | BASE vs HEAD `cargo nextest list` ratchet |
 | `just mutants-diff <base>` | diff-scoped mutation gate on `governor-core` |
 | `just ci` | all of the `ci` legs above — the definition of done |

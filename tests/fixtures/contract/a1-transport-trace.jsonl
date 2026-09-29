@@ -1,0 +1,8 @@
+{"n": 1, "kind": "listening", "detail": {"port": 8877, "pid": 1343753}}
+{"n": 2, "kind": "request", "detail": {"path": "/mcp", "method": "initialize", "headers": {"accept": "application/json, text/event-stream", "content-type": "application/json", "user-agent": "undici"}, "id": 0}}
+{"n": 3, "kind": "request", "detail": {"path": "/mcp", "method": "notifications/initialized", "headers": {"accept": "application/json, text/event-stream", "content-type": "application/json", "user-agent": "undici"}, "id": null}}
+{"n": 4, "kind": "get", "detail": {"path": "/mcp"}}
+{"n": 5, "kind": "request", "detail": {"path": "/mcp", "method": "tools/list", "headers": {"accept": "application/json, text/event-stream", "content-type": "application/json", "user-agent": "undici"}, "id": 1}}
+{"n": 6, "kind": "request", "detail": {"path": "/mcp", "method": "tools/call", "headers": {"accept": "application/json, text/event-stream", "content-type": "application/json", "user-agent": "undici"}, "id": 2}}
+{"n": 1, "kind": "listening", "detail": {"port": 8877, "pid": 1389195}}
+{"n": 2, "kind": "request", "detail": {"path": "/mcp", "method": "tools/call", "headers": {"accept": "application/json, text/event-stream", "content-type": "application/json", "user-agent": "undici"}, "id": 4}}

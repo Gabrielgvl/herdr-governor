@@ -1,0 +1,45 @@
+{
+  "source": "contract-a1.md (A1 Executor transport trial, 2026-09-29) \u2014 recorded gateway-side observations; the probe server's own frame record is a1-transport-trace.jsonl",
+  "install": {
+    "result": "Installed and connected",
+    "url": "http://127.0.0.1:8877/mcp",
+    "gateway_source_name": "local-mcp",
+    "tool_exposed": "local_probe_echo",
+    "protocol_version_accepted": "2025-06-18"
+  },
+  "caller_forwarding": {
+    "request": {
+      "text": "caller-forwarding-probe-1",
+      "nested": {
+        "k": 42
+      }
+    },
+    "echoed": "byte-identical"
+  },
+  "sse_validation_get": {
+    "gateway_issued": true,
+    "server_status": 405,
+    "session_continued": true
+  },
+  "offline_failure": {
+    "observed_error": "Failed to call tool: fetch failed",
+    "typed_error_class": null
+  },
+  "process_model": {
+    "persistent_server_process_for_all_calls": true,
+    "child_spawns_observed": 0,
+    "client_user_agent": "undici"
+  },
+  "auth": {
+    "non_loopback_http_refused": true,
+    "loopback_name_derivation": "every loopback variant derives the source name local-mcp",
+    "uninstall_verb_present": false,
+    "on_401": {
+      "www_authenticate": "Bearer",
+      "named_metadata_url": "/.well-known/oauth-authorization-server (RFC 8414, MCP spec 2026-07-28)",
+      "observed_error_template": "HTTP 501 trying to load OAuth metadata \u2014 gateway-local, not a server response",
+      "metadata_request_actually_issued": false,
+      "full_round_trip": "confirmed-negative: against a compliant AS serving 200 RFC 8414 metadata + register/authorize/token, the gateway still fails identically and issues zero well-known/register/authorize/token requests"
+    }
+  }
+}

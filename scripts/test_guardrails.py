@@ -463,6 +463,100 @@ class AgentGateTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, stdin)
 
 
+class MatcherParityTests(unittest.TestCase):
+    """pi-review F3: one shared matcher (scripts/protected_paths.py), two
+    entry points. The same fixture paths are judged by agent-gate.sh
+    (deny = rc 2) and by check-protected-diff.sh (the FAIL/REPORT
+    verdict behind its classification); both must agree with the path's
+    policy mode across every mode and across `**`/suffix boundaries."""
+
+    # (repo-relative path, expected policy class)
+    FIXTURES = (
+        ("clippy.toml", "hard"),                             # exact file
+        ("scripts/deep/nested.sh", "hard"),                  # dir/** subtree
+        (".github/workflows/w.yml", "hard"),                 # dir/** subtree
+        ("member/.gitattributes", "hard"),                   # leading ** + suffix
+        ("governor-core/Cargo.toml", "section"),             # section mode
+        ("tests/fixtures/f.json", "conditional"),            # root tests/** dir
+        ("governor-core/tests/support/h.rs", "conditional"),  # member, suffix
+        ("herdr-governor/strategies/s.rs", "conditional"),   # member dir/**
+        ("gen_strategies.rs", "conditional"),                # bare * glob
+        ("docs/spec/s.md", "report"),                        # report subtree
+        ("docs/adr/sub/a.md", "report"),                     # deeper report tree
+        ("docs/operations.md", "report"),                    # report file
+        ("governor-core/src/free.rs", None),                 # member src: open
+        ("notes.txt", None),                                 # root file: open
+    )
+
+    def test_same_verdicts_through_both_entry_points(self):
+        repo = base_repo()
+        self.addCleanup(repo.cleanup)
+        for rel, _cls in self.FIXTURES:
+            if rel != CORE_MANI:  # base_repo already seeds the real manifest
+                repo.write(rel, "fn f() {}\n" if rel.endswith(".rs")
+                           else "# parity\n" if rel.endswith(".gitattributes")
+                           else "x\n")
+        repo.commit_all("seed fixture paths")
+        for rel, _cls in self.FIXTURES:
+            with (repo.dir / rel).open("a") as fh:
+                # land in a report-mode TOML section so the section row
+                # exercises the matcher without tripping R4/R5; a comment
+                # for .gitattributes so no attribute rule is defined
+                fh.write("[package.metadata.parity]\nk = \"v\"\n"
+                         if rel.endswith("Cargo.toml")
+                         else "// parity\n" if rel.endswith(".rs")
+                         else "# parity\n" if rel.endswith(".gitattributes")
+                         else "parity\n")
+        # an untracked conditional path: the hook still denies (it exists
+        # on disk) while the diff gate reports instead of failing
+        repo.write("tests/support/new_helper.rs", "fn h() {}\n")
+
+        proc = run("check-protected-diff.sh", cwd=repo.dir)
+        self.assertEqual(proc.stderr, "", proc.stderr)
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        diff_lines = proc.stdout.splitlines()
+
+        def hits(rel):
+            pad = " " + rel + " "
+            return [l for l in diff_lines if pad in " %s " % l]
+
+        def gate_rc(rel):
+            return run("agent-gate.sh", stdin=json.dumps(
+                {"tool_input": {"file_path": str(repo.dir / rel)}}),
+                cwd=repo.dir).returncode
+
+        for rel, cls in self.FIXTURES:
+            with self.subTest(path=rel):
+                rc = gate_rc(rel)
+                rows = hits(rel)
+                if cls in ("hard", "conditional"):
+                    self.assertEqual(rc, 2, rel)
+                    self.assertTrue(
+                        any(l.startswith("FAIL R1") for l in rows), rows)
+                elif cls == "section":
+                    self.assertEqual(rc, 0, rel)
+                    self.assertFalse(
+                        any(l.startswith("FAIL") for l in rows), rows)
+                    self.assertTrue(
+                        any(l.startswith("REPORT R4b") for l in rows), rows)
+                elif cls == "report":
+                    self.assertEqual(rc, 0, rel)
+                    self.assertTrue(
+                        any(l.startswith("REPORT R1") for l in rows), rows)
+                    self.assertFalse(
+                        any(l.startswith("FAIL") for l in rows), rows)
+                else:
+                    self.assertEqual(rc, 0, rel)
+                    self.assertEqual(rows, [])
+
+        with self.subTest(path="tests/support/new_helper.rs"):
+            self.assertEqual(gate_rc("tests/support/new_helper.rs"), 2)
+            rows = hits("tests/support/new_helper.rs")
+            self.assertTrue(
+                any(l.startswith("REPORT R1") for l in rows), rows)
+            self.assertFalse(any(l.startswith("FAIL") for l in rows), rows)
+
+
 class FmtOnEditTests(unittest.TestCase):
     def test_non_rs_allows(self):
         proc = run("fmt-on-edit.sh", stdin=json.dumps(
@@ -1136,6 +1230,43 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         self.repo.write(CORE + "/src/extra.rs", "#[allow(dead_code)]\nfn g() {}\n")
         proc = self.check()
         self.assertIn("FAIL R2", proc.stdout)
+
+    def test_untracked_oversized_source_fails(self):
+        # F3-B: an untracked in-scope file over the scan limit is a FAIL
+        # naming the file and the limit — a skipped scan is not a clean one.
+        p = self.repo.dir / CORE / "src" / "oversized.rs"
+        with open(p, "wb") as fh:
+            fh.truncate(8 * 1024 * 1024 + 1)
+        proc = self.check()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("FAIL R0", proc.stdout)
+        self.assertIn("oversized.rs", proc.stdout)
+        self.assertIn("8 MiB", proc.stdout)
+
+    def test_untracked_unreadable_source_fails(self):
+        # F3-B: same rule when the file exists but cannot be opened.
+        p = self.repo.dir / CORE / "src" / "unreadable.rs"
+        p.write_text("fn g() {}\n")
+        os.chmod(p, 0)
+        self.addCleanup(os.chmod, p, 0o644)
+        if os.access(p, os.R_OK):
+            self.skipTest("running with read-anything privilege")
+        proc = self.check()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("FAIL R0", proc.stdout)
+        self.assertIn("unreadable.rs", proc.stdout)
+
+    def test_untracked_dangling_symlink_source_fails(self):
+        # pi-review F1: a dangling symlink named like an in-scope source is
+        # not a regular file — the isfile guard must not skip it; R0 names
+        # it unscannable.
+        p = self.repo.dir / CORE / "src" / "dangling.rs"
+        os.symlink("/nonexistent-target", p)
+        proc = self.check()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("FAIL R0", proc.stdout)
+        self.assertIn("dangling.rs", proc.stdout)
+        self.assertIn("symlink", proc.stdout)
 
     @case("snapshot-self-accept", "control", "policy files legitimately quote the forbidden patterns — R1 gates them, R7 stays silent")
     def test_r7_exempts_protected_policy_files(self):
@@ -3026,6 +3157,35 @@ class CorePurityTests(unittest.TestCase):
             "extern crate r#std;\n",
             "extern crate std as sysroot;\n",
             "extern /*x*/ crate std;\n",
+        ):
+            with self.subTest(body=body):
+                self.repo.write(CORE_LIB, real_file(CORE_LIB) + body)
+                proc = self.check()
+                self.assertIn("FAIL PURITY", proc.stdout)
+                self.assertNotEqual(proc.returncode, 0)
+                self.repo.write(CORE_LIB, real_file(CORE_LIB))
+
+    @case("io-crate-in-core", "control", "extern crate alloc plus alloc:: paths is the sanctioned no_std allocation spelling (F3-A)")
+    def test_pure_alloc_user_ok(self):
+        self.repo.write(
+            CORE_LIB,
+            real_file(CORE_LIB)
+            + "extern crate alloc;\n"
+            + "use alloc::collections::BTreeMap;\n"
+            + "pub fn f() -> alloc::vec::Vec<u8> {\n"
+            + "    let _m = BTreeMap::<u8, u8>::new();\n"
+            + "    alloc::vec::Vec::new()\n"
+            + "}\n",
+        )
+        proc = self.check()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    @case("io-crate-in-core", "cheat", "permitting extern crate alloc launders nothing — std I/O, extern crate std and the alloc glob stay banned")
+    def test_alloc_allowance_keeps_bans(self):
+        for body in (
+            'extern crate alloc;\npub fn f() { let _ = std::fs::read("/x"); }\n',
+            "extern crate alloc;\nextern crate std;\n",
+            "extern crate alloc;\nuse alloc::*;\n",
         ):
             with self.subTest(body=body):
                 self.repo.write(CORE_LIB, real_file(CORE_LIB) + body)

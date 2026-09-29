@@ -19,7 +19,7 @@ input="$(cat)"
 
 verdict=""
 if out="$(
-  python3 - "$policy" "$input" 2>/dev/null <<'PYEOF'
+  python3 -B - "$policy" "$input" 2>/dev/null <<'PYEOF'
 import json
 import os
 import re
@@ -50,72 +50,22 @@ if not isinstance(path, str):
 if not isinstance(cmd, str):
     cmd = ""
 
-hard, cond = [], []
+sys.path.insert(0, os.path.dirname(os.path.abspath(policy_path)))
+import protected_paths as PP
+
 try:
-    with open(policy_path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            parts = line.split("\t")
-            if len(parts) < 2:
-                continue
-            if parts[0] == "hard":
-                hard.append(parts[1].strip())
-            elif parts[0] == "conditional":
-                cond.append(parts[1].strip())
+    pol = PP.load_policy(policy_path)
 except OSError:
     sys.exit(0)
+hard, cond = pol["hard"], pol["conditional"]
 
-
-def norm(p):
-    return os.path.normpath(p.strip().strip('"').strip("'").strip())
-
-
-def pat_re(pat):
-    out, i = [], 0
-    while i < len(pat):
-        c = pat[i]
-        if c == "*":
-            if pat[i:i + 2] == "**":
-                out.append(".*")
-                i += 2
-            else:
-                out.append("[^/]*")
-                i += 1
-        elif c == "?":
-            out.append("[^/]")
-            i += 1
-        else:
-            out.append(re.escape(c))
-            i += 1
-    return "".join(out)
-
-
-def path_matches(p, pat):
-    if not p:
-        return False
-    return re.search("(?:^|/)" + pat_re(pat) + "$", p) is not None
-
-
-def mentions(p, pat):
-    # a bare mention of a "dir/**" pattern's directory counts too
-    if path_matches(p, pat):
-        return True
-    if "**" in pat:
-        base = pat.split("**", 1)[0].rstrip("/")
-        if base:
-            return re.search("(?:^|/)" + pat_re(base) + "(?:/|$)", p) is not None
-    return False
-
-
-p = norm(path) if path else ""
+p = PP.norm(path) if path else ""
 
 for pat in hard:
-    if path_matches(p, pat):
+    if PP.path_matches(p, pat):
         emit("protected path: %s requires owner review" % pat)
 for pat in cond:
-    if path_matches(p, pat) and os.path.exists(p):
+    if PP.path_matches(p, pat) and os.path.exists(p):
         emit("protected path (exists): %s requires owner review" % pat)
 
 # `cargo insta` tolerates cargo's global flags (`+<toolchain>`, `--config`,
@@ -150,14 +100,14 @@ for rx, msg in FORBIDDEN:
 
 
 def protected_token(tok):
-    t = norm(tok.rsplit("=", 1)[-1])
+    t = PP.norm(tok.rsplit("=", 1)[-1])
     if not t or t.startswith("-"):
         return None
     for pat in hard:
-        if mentions(t, pat):
+        if PP.mentions(t, pat):
             return pat
     for pat in cond:
-        if mentions(t, pat) and os.path.exists(t):
+        if PP.mentions(t, pat) and os.path.exists(t):
             return pat
     return None
 

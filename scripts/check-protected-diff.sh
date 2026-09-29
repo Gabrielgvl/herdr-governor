@@ -3,6 +3,11 @@
 # Local mode (no arg): deliverable = `git diff HEAD` + untracked files from
 #   `git ls-files --others`; staged/tracked changes on protected paths ->
 #   FAIL R1; still-untracked -> REPORT R1 and join the R2/R6/R7/R8 content scans.
+#   An untracked in-scope file the scan cannot read — over the 8 MiB scan
+#   limit, failing to open/stat, or not a regular file at all (a dangling
+#   symlink is the known cheat: isfile follows the link and misses it) —
+#   is FAIL R0 naming the file (and the limit or the reason): a skipped
+#   scan is not a clean one.
 # CI mode (BASE arg): `git diff BASE...HEAD`; any protected path -> FAIL R1.
 # GOV_PROTECTED_OK=1 is the owner override: every failure that concerns a
 # protected path or a protected Cargo.toml section (R1, R4, R5, R6)
@@ -70,6 +75,7 @@ from collections import Counter
 
 policy_path, mode, base, ok_env = sys.argv[1:5]
 sys.path.insert(0, os.path.dirname(os.path.abspath(policy_path)))
+import protected_paths as PP
 import strip_rust_comments as S
 override = ok_env == "1"
 ci = mode == "ci"
@@ -105,56 +111,22 @@ def git_or_none(*args):
     return r.stdout if r.returncode == 0 else None
 
 
-hard, cond, sect, rep = [], [], [], []
-with open(policy_path, encoding="utf-8") as fh:
-    for line in fh:
-        line = line.rstrip("\n")
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        bucket = {"hard": hard, "conditional": cond, "section": sect, "report": rep}.get(parts[0])
-        if bucket is not None:
-            bucket.append(parts[1].strip())
-
-
-def pat_re(pat):
-    out, i = [], 0
-    while i < len(pat):
-        c = pat[i]
-        if c == "*":
-            if pat[i:i + 2] == "**":
-                out.append(".*")
-                i += 2
-            else:
-                out.append("[^/]*")
-                i += 1
-        elif c == "?":
-            out.append("[^/]")
-            i += 1
-        else:
-            out.append(re.escape(c))
-            i += 1
-    return "".join(out)
-
-
-def path_matches(p, pat):
-    return re.search("(?:^|/)" + pat_re(pat) + "$", p) is not None
+pol = PP.load_policy(policy_path)
+hard, cond, sect, rep = pol["hard"], pol["conditional"], pol["section"], pol["report"]
 
 
 def classify_path(p):
     for pat in hard:
-        if path_matches(p, pat):
+        if PP.path_matches(p, pat):
             return "hard"
     for pat in cond:
-        if path_matches(p, pat):
+        if PP.path_matches(p, pat):
             return "cond"
     for pat in sect:
-        if path_matches(p, pat):
+        if PP.path_matches(p, pat):
             return "section"
     for pat in rep:
-        if path_matches(p, pat):
+        if PP.path_matches(p, pat):
             return "report"
     return None
 
@@ -565,6 +537,19 @@ for st, p in changes:
 if not ci:
     for p in untracked:
         if not os.path.isfile(p):
+            # git lists whatever occupies the path, not just regular
+            # files — a dangling symlink is the known cheat. A path
+            # that vanished between ls-files and this scan hides
+            # nothing; anything still present but not a readable
+            # regular file is an unscannable in-scope source.
+            if os.path.lexists(p):
+                if os.path.islink(p):
+                    why = ("dangling symlink" if not os.path.exists(p)
+                           else "symlink to a non-regular file")
+                else:
+                    why = "not a regular file"
+                fail("R0", "%s: unscannable untracked in-scope source — %s"
+                     % (p, why))
             continue
         if r6_scoped(p) and not os.access(p, os.X_OK):
             fail("R6", "%s new file not executable — hook/gate scripts must stay 100755" % p)
@@ -573,12 +558,16 @@ if not ci:
         if cls in ("hard", "cond") and not is_rs:
             continue
         try:
-            if os.path.getsize(p) > 8 * 1024 * 1024:
-                report("R0", "untracked file too large to scan: %s" % p)
+            size = os.path.getsize(p)
+            if size > 8 * 1024 * 1024:
+                fail("R0", "%s: %d bytes exceeds the 8 MiB untracked-file "
+                     "scan limit — refusing to skip" % (p, size))
                 continue
             with open(p, encoding="utf-8", errors="replace") as fh:
                 body = fh.read()
         except OSError:
+            fail("R0", "%s: unreadable untracked in-scope source — "
+                 "cannot scan" % p)
             continue
         for line in body.splitlines():
             if cls not in ("hard", "cond") and r7_hit(line):

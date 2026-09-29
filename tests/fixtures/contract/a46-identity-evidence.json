@@ -1,0 +1,6387 @@
+{
+ "provenance": {
+  "source": "contract-a4-a6-raw.jsonl (wave-1 lane lane recorder journal)",
+  "report": "contract-a4-a6.md",
+  "note": "verbatim capture/command/record extraction, path-scrubbed; empty_session_snapshot transcribed verbatim from the report (recorded before the first workspace create)"
+ },
+ "protocol": {
+  "empty_session_snapshot": {
+   "id": "cli:api:snapshot",
+   "result": {
+    "snapshot": {
+     "agents": [],
+     "layouts": [],
+     "panes": [],
+     "protocol": 22,
+     "tabs": [],
+     "version": "0.9.1",
+     "workspaces": []
+    },
+    "type": "session_snapshot"
+   }
+  },
+  "session_snapshot_property_names": [
+   "agents",
+   "focused_pane_id",
+   "focused_tab_id",
+   "focused_workspace_id",
+   "layouts",
+   "panes",
+   "protocol",
+   "tabs",
+   "version",
+   "workspaces"
+  ]
+ },
+ "records": [
+  {
+   "pi_probe_args": [
+    "--offline",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-themes",
+    "--no-tools",
+    "--extension",
+    "/home/user/.pi/agent/extensions/herdr-agent-state.ts",
+    "--session-dir",
+    "/home/user/lane/contract-a4-a6-sessions",
+    "--name",
+    "a46-first"
+   ],
+   "note": "No prompt or Task is sent; idle real native process only."
+  },
+  {
+   "kill_scope_verified": {
+    "pid": 508578,
+    "pane_id": "w1:p1",
+    "socket": "/home/user/.config/herdr/sessions/herdr-governor-contract/herdr.sock"
+   },
+   "note": "Warm-up process has no reported native session; cancel startup without accepting trust."
+  },
+  {
+   "isolated_pi_args": [
+    "--offline",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-themes",
+    "--no-tools",
+    "--extension",
+    "/home/user/.pi/agent/extensions/herdr-agent-state.ts",
+    "--session-dir",
+    "/home/user/lane/contract-a4-a6-sessions",
+    "--name",
+    "a46-first",
+    "--no-approve"
+   ]
+  },
+  {
+   "anchor": "w1:p3",
+   "destination_pane": "w1:p2",
+   "destination_tab": "w1:t2"
+  },
+  {
+   "kill_scope_verified": {
+    "pid": 604544,
+    "inherited_pane_id": "w1:p1",
+    "live_pane_id": "w2:p1",
+    "socket": "/home/user/.config/herdr/sessions/herdr-governor-contract/herdr.sock"
+   }
+  },
+  {
+   "kill_scope_verified": {
+    "pid": 571659,
+    "pane_id": "w1:p3",
+    "socket": "/home/user/.config/herdr/sessions/herdr-governor-contract/herdr.sock"
+   }
+  },
+  {
+   "advertised_native_path": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl",
+   "exists_after_kill": false,
+   "note": "Idle, unprompted Pi advertises a session path before persisting it; no resume attempted."
+  },
+  {
+   "socket": "/home/user/.config/herdr/sessions/herdr-governor-contract/herdr.sock",
+   "request": {
+    "id": "a46:ping",
+    "method": "ping",
+    "params": {}
+   },
+   "drop_response": false
+  },
+  {
+   "socket_response": {
+    "id": "a46:ping",
+    "result": {
+     "type": "pong",
+     "version": "0.9.1",
+     "protocol": 22,
+     "capabilities": {
+      "live_handoff": true,
+      "detached_server_daemon": true,
+      "endpoint_protocol_generation": 1,
+      "surface_interest": true,
+      "health_check": true
+     }
+    }
+   }
+  },
+  {
+   "socket": "/home/user/.config/herdr/sessions/herdr-governor-contract/herdr.sock",
+   "request": {
+    "id": "a46:layout.apply",
+    "method": "layout.apply",
+    "params": {
+     "tab_id": "w2:t2",
+     "focus": false,
+     "root": {
+      "type": "split",
+      "direction": "right",
+      "ratio": 0.5,
+      "first": {
+       "type": "pane",
+       "pane_id": "w2:p4"
+      },
+      "second": {
+       "type": "pane",
+       "label": "a46-atomic-layout-tag",
+       "cwd": "/home/user/lane",
+       "env": {
+        "PI_CODING_AGENT_DIR": "/home/user/lane/contract-a4-a6-pi",
+        "ZDOTDIR": "/home/user/lane/contract-a4-a6-zdot",
+        "HISTFILE": "/home/user/lane/contract-a4-a6-history"
+       }
+      }
+     }
+    }
+   },
+   "drop_response": true
+  },
+  {
+   "note": "Client sent a complete labeled layout.apply then closed without reading receipt; server not restarted."
+  },
+  {
+   "cleanup_verified": true,
+   "remaining_workspace_ids": []
+  }
+ ],
+ "commands": [
+  {
+   "at": "2026-09-28T21:10:59.146773+00:00",
+   "command": "herdr --session herdr-governor-contract workspace create --cwd /home/user/lane --label a46-identity --no-focus --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"workspace_id\":\"w1\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w1:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"a46-identity\",\"number\":1,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w1\"}}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:11:29.239000+00:00",
+   "command": "herdr --session herdr-governor-contract agent start a46-first --kind pi --pane w1:p1 --timeout 30000 -- --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first",
+   "exit": 1,
+   "stdout": "",
+   "stderr": "{\"error\":{\"code\":\"timeout\",\"message\":\"timed out waiting for agent startup\"},\"id\":\"cli:agent:start\"}\n"
+  },
+  {
+   "at": "2026-09-28T21:11:36.206567+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":497497,\"foreground_processes\":[{\"argv\":[\"/usr/bin/zsh\"],\"cmdline\":\"/usr/bin/zsh\",\"cwd\":\"/home/user/lane\",\"name\":\"zsh\",\"pid\":497497}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:09.789487+00:00",
+   "command": "herdr --session herdr-governor-contract agent start a46-first --kind pi --pane w1:p1 --timeout 30000 -- --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"interactive_ready\":true,\"name\":\"a46-first\",\"pane_id\":\"w1:p1\",\"revision\":0,\"state_change_seq\":1,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"workspace_id\":\"w1\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\"],\"type\":\"agent_started\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:09.798637+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":508575,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508575},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508578}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:27.352467+00:00",
+   "command": "herdr --session herdr-governor-contract agent send-keys a46-first ctrl+c",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:send-keys\",\"result\":{\"type\":\"ok\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:27.354910+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":508575,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508575},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508578}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:36.435873+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":508575,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508575},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508578}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:59.003149+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":508575,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508575},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":508578}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:59.005555+00:00",
+   "command": "kill -KILL 508578",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:12:59.015669+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":497497,\"foreground_processes\":[{\"argv\":[\"/usr/bin/zsh\"],\"cmdline\":\"/usr/bin/zsh\",\"cwd\":\"/home/user/lane\",\"name\":\"zsh\",\"pid\":497497}],\"pane_id\":\"w1:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:11.873787+00:00",
+   "command": "herdr --session herdr-governor-contract agent start a46-first --kind pi --pane w1:p1 --timeout 30000 -- --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first --no-approve",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"interactive_ready\":true,\"name\":\"a46-first\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":3,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-first - lane\",\"terminal_title_stripped\":\"π - a46-first - lane\",\"workspace_id\":\"w1\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\",\"--no-approve\"],\"type\":\"agent_started\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.665371+00:00",
+   "command": "herdr --session herdr-governor-contract pane rename w1:p1 a46-pane-tag",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:rename\",\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w1:p1\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":55,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-first - lane\",\"terminal_title_stripped\":\"π - a46-first - lane\",\"workspace_id\":\"w1\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.669018+00:00",
+   "command": "herdr --session herdr-governor-contract pane report-metadata w1:p1 --source contract-a46 --token gov_run=a46-probe-run",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.684910+00:00",
+   "command": "herdr --session herdr-governor-contract tab create --workspace w1 --cwd /home/user/lane --label a46-destination --no-focus --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:tab:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w1:p2\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t2\",\"terminal_id\":\"term_65c918a9ad9012\",\"workspace_id\":\"w1\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":false,\"label\":\"a46-destination\",\"number\":2,\"pane_count\":1,\"tab_id\":\"w1:t2\",\"workspace_id\":\"w1\"},\"type\":\"tab_created\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.690142+00:00",
+   "command": "herdr --session herdr-governor-contract pane split w1:p1 --direction right --cwd /home/user/lane --no-focus --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:split\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w1:p3\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c918a9af7563\",\"workspace_id\":\"w1\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.692988+00:00",
+   "command": "herdr --session herdr-governor-contract pane move w1:p1 --tab w1:t2 --split right --target-pane w1:p2 --no-focus",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:move\",\"result\":{\"move_result\":{\"changed\":true,\"focused_pane_id\":\"w1:p2\",\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w1:p1\",\"revision\":2,\"scroll\":{\"max_offset_from_bottom\":55,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t2\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-first - lane\",\"terminal_title_stripped\":\"π - a46-first - lane\",\"tokens\":{\"gov_run\":\"a46-probe-run\"},\"workspace_id\":\"w1\"},\"previous_pane_id\":\"w1:p1\",\"previous_tab_id\":\"w1:t1\",\"previous_workspace_id\":\"w1\",\"source_layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p3\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p3\",\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"splits\":[],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"target_layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":40,\"width\":60,\"x\":0,\"y\":0}},{\"focused\":false,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":40,\"width\":60,\"x\":60,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t2\",\"workspace_id\":\"w1\",\"zoomed\":false}},\"type\":\"pane_move\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.702299+00:00",
+   "command": "herdr --session herdr-governor-contract pane swap --source-pane w1:p1 --target-pane w1:p3",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:swap\",\"result\":{\"swap\":{\"changed\":false,\"focused_pane_id\":\"w1:p2\",\"layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":40,\"width\":60,\"x\":0,\"y\":0}},{\"focused\":false,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":40,\"width\":60,\"x\":60,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t2\",\"workspace_id\":\"w1\",\"zoomed\":false},\"reason\":\"cross_tab\",\"source_pane_id\":\"w1:p1\",\"target_pane_id\":\"w1:p3\"},\"type\":\"pane_swap\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.714346+00:00",
+   "command": "herdr --session herdr-governor-contract pane move w1:p1 --new-workspace --label a46-moved --tab-label a46-moved --no-focus",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:move\",\"result\":{\"move_result\":{\"changed\":true,\"created_tab\":{\"agent_status\":\"idle\",\"focused\":false,\"label\":\"a46-moved\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\"},\"created_workspace\":{\"active_tab_id\":\"w2:t1\",\"agent_status\":\"idle\",\"focused\":false,\"label\":\"a46-moved\",\"number\":2,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w2\"},\"focused_pane_id\":\"w2:p1\",\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w2:p1\",\"revision\":2,\"scroll\":{\"max_offset_from_bottom\":55,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-first - lane\",\"terminal_title_stripped\":\"π - a46-first - lane\",\"tokens\":{\"gov_run\":\"a46-probe-run\"},\"workspace_id\":\"w2\"},\"previous_pane_id\":\"w1:p1\",\"previous_tab_id\":\"w1:t2\",\"previous_workspace_id\":\"w1\",\"source_layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"splits\":[],\"tab_id\":\"w1:t2\",\"workspace_id\":\"w1\",\"zoomed\":false},\"target_layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w2:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w2:p1\",\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"splits\":[],\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\",\"zoomed\":false}},\"type\":\"pane_move\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:45.716662+00:00",
+   "command": "herdr --session herdr-governor-contract pane get w1:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:get\",\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w2:p1\",\"revision\":2,\"scroll\":{\"max_offset_from_bottom\":55,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-first - lane\",\"terminal_title_stripped\":\"π - a46-first - lane\",\"tokens\":{\"gov_run\":\"a46-probe-run\"},\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:57.870013+00:00",
+   "command": "herdr --session herdr-governor-contract agent get w1:p1",
+   "exit": 1,
+   "stdout": "",
+   "stderr": "{\"error\":{\"code\":\"agent_not_found\",\"message\":\"agent target w1:p1 not found\"},\"id\":\"cli:agent:get\"}\n"
+  },
+  {
+   "at": "2026-09-28T21:13:57.872232+00:00",
+   "command": "herdr --session herdr-governor-contract pane run w2:p1 /new",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:13:57.874579+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":536172,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-first\",\"--no-approve\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-first --no-approve\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":536172},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":536177}],\"pane_id\":\"w2:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:14:29.297759+00:00",
+   "command": "herdr --session herdr-governor-contract agent send-keys a46-first ctrl+d",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:send-keys\",\"result\":{\"type\":\"ok\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:14:51.593211+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":497497,\"foreground_processes\":[{\"argv\":[\"/usr/bin/zsh\"],\"cmdline\":\"/usr/bin/zsh\",\"cwd\":\"/home/user/lane\",\"name\":\"zsh\",\"pid\":497497}],\"pane_id\":\"w2:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:14:54.622523+00:00",
+   "command": "herdr --session herdr-governor-contract agent start a46-first --kind pi --pane w2:p1 --timeout 30000 -- --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-second --no-approve",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"interactive_ready\":true,\"name\":\"a46-first\",\"pane_id\":\"w2:p1\",\"revision\":4,\"screen_detection_skipped\":true,\"state_change_seq\":7,\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-second - lane\",\"terminal_title_stripped\":\"π - a46-second - lane\",\"tokens\":{\"gov_run\":\"a46-probe-run\"},\"workspace_id\":\"w2\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-second\",\"--no-approve\"],\"type\":\"agent_started\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:15:29.073206+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":604541,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-second\",\"--no-approve\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-second --no-approve\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":604541},{\"argv\":[\"pi\"],\"cmdline\":\"pi\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":604544}],\"pane_id\":\"w2:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:15:29.075060+00:00",
+   "command": "kill -KILL 604544",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:15:29.088974+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":604541,\"foreground_processes\":[{\"argv\":[\"/home/user/.volta/bin/pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-second\",\"--no-approve\"],\"cmdline\":\"/home/user/.volta/bin/pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-second --no-approve\",\"cwd\":\"/home/user/lane\",\"name\":\"pi\",\"pid\":604541},{\"name\":\"pi\",\"pid\":604544}],\"pane_id\":\"w2:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:16:55.301614+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":497497,\"foreground_processes\":[{\"argv\":[\"/usr/bin/zsh\"],\"cmdline\":\"/usr/bin/zsh\",\"cwd\":\"/home/user/lane\",\"name\":\"zsh\",\"pid\":497497}],\"pane_id\":\"w2:p1\",\"shell_pid\":497497},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:16:55.315091+00:00",
+   "command": "herdr --session herdr-governor-contract pane rename w1:p3 a46-shell-crash",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:rename\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-shell-crash\",\"pane_id\":\"w1:p3\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65c918a9af7563\",\"workspace_id\":\"w1\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:16:55.336510+00:00",
+   "command": "herdr --session herdr-governor-contract pane report-metadata w1:p3 --source contract-a46 --token gov_run=a46-shell-crash",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:16:55.420574+00:00",
+   "command": "herdr --session herdr-governor-contract pane process-info --pane w1:p3",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":571659,\"foreground_processes\":[{\"argv\":[\"/usr/bin/zsh\"],\"cmdline\":\"/usr/bin/zsh\",\"cwd\":\"/home/user/lane\",\"name\":\"zsh\",\"pid\":571659}],\"pane_id\":\"w1:p3\",\"shell_pid\":571659},\"type\":\"pane_process_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:16:55.436544+00:00",
+   "command": "kill -KILL 571659",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.561910+00:00",
+   "command": "herdr --session herdr-governor-contract agent start a46-first --kind pi --pane w2:p1 --timeout 30000 -- --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --extension /home/user/.pi/agent/extensions/herdr-agent-state.ts --session-dir /home/user/lane/contract-a4-a6-sessions --name a46-third --no-approve",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"interactive_ready\":true,\"name\":\"a46-first\",\"pane_id\":\"w2:p1\",\"revision\":5,\"screen_detection_skipped\":true,\"state_change_seq\":9,\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9180ad9c2f1\",\"terminal_title\":\"π - a46-third - lane\",\"terminal_title_stripped\":\"π - a46-third - lane\",\"tokens\":{\"gov_run\":\"a46-probe-run\"},\"workspace_id\":\"w2\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-tools\",\"--extension\",\"/home/user/.pi/agent/extensions/herdr-agent-state.ts\",\"--session-dir\",\"/home/user/lane/contract-a4-a6-sessions\",\"--name\",\"a46-third\",\"--no-approve\"],\"type\":\"agent_started\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.574157+00:00",
+   "command": "herdr --session herdr-governor-contract pane split w2:p1 --direction right --cwd /home/user/lane --no-focus --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:split\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w2:p2\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9198e74c794\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.578301+00:00",
+   "command": "herdr --session herdr-governor-contract pane swap --source-pane w2:p1 --target-pane w2:p2",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:swap\",\"result\":{\"swap\":{\"changed\":true,\"focused_pane_id\":\"w2:p1\",\"layout\":{\"area\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0},\"focused_pane_id\":\"w2:p1\",\"panes\":[{\"focused\":false,\"pane_id\":\"w2:p2\",\"rect\":{\"height\":40,\"width\":60,\"x\":0,\"y\":0}},{\"focused\":true,\"pane_id\":\"w2:p1\",\"rect\":{\"height\":40,\"width\":60,\"x\":60,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":40,\"width\":120,\"x\":0,\"y\":0}}],\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\",\"zoomed\":false},\"source_pane_id\":\"w2:p1\",\"target_pane_id\":\"w2:p2\"},\"type\":\"pane_swap\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.643927+00:00",
+   "command": "herdr --session herdr-governor-contract pane close w2:p1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:close\",\"result\":{\"type\":\"ok\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.677528+00:00",
+   "command": "herdr --session herdr-governor-contract pane split w2:p2 --direction right --cwd /home/user/lane --no-focus --env GOV_RUN_ID=a46-atomic-env --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:split\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w2:p3\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9198e8cf0a5\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.694376+00:00",
+   "command": "herdr --session herdr-governor-contract pane rename w2:p3 a46-pane-tag",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:rename\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w2:p3\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9198e8cf0a5\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:17:45.697941+00:00",
+   "command": "herdr --session herdr-governor-contract pane report-metadata w2:p3 --source contract-a46 --token gov_run=a46-probe-run",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:18:43.038598+00:00",
+   "command": "herdr --session herdr-governor-contract pane rename w2:p2 a46-pane-tag",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:pane:rename\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":true,\"foreground_cwd\":\"/home/user/lane\",\"label\":\"a46-pane-tag\",\"pane_id\":\"w2:p2\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65c9198e74c794\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:18:43.057224+00:00",
+   "command": "herdr --session herdr-governor-contract pane report-metadata w2:p2 --source contract-a46 --token gov_run=a46-probe-run",
+   "exit": 0,
+   "stdout": "",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:18:43.212267+00:00",
+   "command": "herdr --session herdr-governor-contract tab create --workspace w2 --cwd /home/user/lane --label a46-layout-atomic --no-focus --env PI_CODING_AGENT_DIR=/home/user/lane/contract-a4-a6-pi --env ZDOTDIR=/home/user/lane/contract-a4-a6-zdot --env HISTFILE=/home/user/lane/contract-a4-a6-history",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:tab:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/home/user/lane\",\"focused\":false,\"foreground_cwd\":\"/home/user/lane\",\"pane_id\":\"w2:p4\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w2:t2\",\"terminal_id\":\"term_65c919c56b3076\",\"workspace_id\":\"w2\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":false,\"label\":\"a46-layout-atomic\",\"number\":2,\"pane_count\":1,\"tab_id\":\"w2:t2\",\"workspace_id\":\"w2\"},\"type\":\"tab_created\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:19:26.075056+00:00",
+   "command": "herdr --session herdr-governor-contract workspace close w1",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:workspace:close\",\"result\":{\"type\":\"ok\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:19:26.171199+00:00",
+   "command": "herdr --session herdr-governor-contract workspace close w2",
+   "exit": 0,
+   "stdout": "{\"id\":\"cli:workspace:close\",\"result\":{\"type\":\"ok\"}}\n",
+   "stderr": ""
+  },
+  {
+   "at": "2026-09-28T21:19:26.260450+00:00",
+   "command": "ps -o pid,ppid,lstart,comm -p 462546,3347587",
+   "exit": 0,
+   "stdout": "    PID    PPID                  STARTED COMMAND\n 462546       1 Mon Sep 28 18:08:57 2026 herdr\n3347587       1 Mon Sep 21 15:33:07 2026 herdr\n",
+   "stderr": ""
+  }
+ ],
+ "captures": {
+  "initial-shell": {
+   "capture": "initial-shell",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "first-native": {
+   "capture": "first-native",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "first-native-ready": {
+   "capture": "first-native-ready",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "state_change_seq": 1,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 12,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 12,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 0,
+     "state_change_seq": 1,
+     "tab_id": "w1:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "first-native-settled": {
+   "capture": "first-native-settled",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "state_change_seq": 1,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 12,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 12,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 0,
+     "state_change_seq": 1,
+     "tab_id": "w1:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "warmup-killed": {
+   "capture": "warmup-killed",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-12-06-321Z_01a0e9dc-55b0-732f-8651-e46f2945b8b6.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "screen_detection_skipped": true,
+      "state_change_seq": 1,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-12-06-321Z_01a0e9dc-55b0-732f-8651-e46f2945b8b6.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 26,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-12-06-321Z_01a0e9dc-55b0-732f-8651-e46f2945b8b6.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 26,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-12-06-321Z_01a0e9dc-55b0-732f-8651-e46f2945b8b6.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 1,
+     "screen_detection_skipped": true,
+     "state_change_seq": 1,
+     "tab_id": "w1:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "warmup-killed-later": {
+   "capture": "warmup-killed-later",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 26,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 26,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "first-native-new": {
+   "capture": "first-native-new",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p1",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 1,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w1:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "tagged-before-move": {
+   "capture": "tagged-before-move",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p1",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 2,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w1:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "after-tab-move": {
+   "capture": "after-tab-move",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 2,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 3,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 2,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w1:t2",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "after-cross-tab-swap": {
+   "capture": "after-cross-tab-swap",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w1:p1",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 2,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 3,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w1:p1",
+     "revision": 2,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w1:t2",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w1"
+    }
+   ]
+  },
+  "after-workspace-move": {
+   "capture": "after-workspace-move",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 2,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "after-native-new-immediate": {
+   "capture": "after-native-new-immediate",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "screen_detection_skipped": true,
+      "state_change_seq": 3,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 2,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-first - lane",
+      "terminal_title_stripped": "π - a46-first - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-09-093Z_01a0e9dd-4ae4-7729-8b42-a98afba87927.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 2,
+     "screen_detection_skipped": true,
+     "state_change_seq": 3,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-first - lane",
+     "terminal_title_stripped": "π - a46-first - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "after-native-new-settled": {
+   "capture": "after-native-new-settled",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-57-876Z_01a0e9de-0974-7729-8b42-a98c21a4388a.jsonl"
+      },
+      "agent_status": "done",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 3,
+      "screen_detection_skipped": true,
+      "state_change_seq": 5,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - lane",
+      "terminal_title_stripped": "π - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-57-876Z_01a0e9de-0974-7729-8b42-a98c21a4388a.jsonl"
+      },
+      "agent_status": "done",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 3,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - lane",
+      "terminal_title_stripped": "π - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "done",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "done",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-57-876Z_01a0e9de-0974-7729-8b42-a98c21a4388a.jsonl"
+      },
+      "agent_status": "done",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 3,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - lane",
+      "terminal_title_stripped": "π - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-13-57-876Z_01a0e9de-0974-7729-8b42-a98c21a4388a.jsonl"
+     },
+     "agent_status": "done",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 3,
+     "screen_detection_skipped": true,
+     "state_change_seq": 5,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - lane",
+     "terminal_title_stripped": "π - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "graceful-exit-shell": {
+   "capture": "graceful-exit-shell",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 3,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - lane",
+      "terminal_title_stripped": "π - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 3,
+      "scroll": {
+       "max_offset_from_bottom": 55,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - lane",
+      "terminal_title_stripped": "π - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "replacement-native": {
+   "capture": "replacement-native",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "screen_detection_skipped": true,
+      "state_change_seq": 7,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 4,
+     "screen_detection_skipped": true,
+     "state_change_seq": 7,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-second - lane",
+     "terminal_title_stripped": "π - a46-second - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "before-native-kill": {
+   "capture": "before-native-kill",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "screen_detection_skipped": true,
+      "state_change_seq": 7,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 4,
+     "screen_detection_skipped": true,
+     "state_change_seq": 7,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-second - lane",
+     "terminal_title_stripped": "π - a46-second - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "after-native-kill-immediate": {
+   "capture": "after-native-kill-immediate",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "screen_detection_skipped": true,
+      "state_change_seq": 7,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-14-51-822Z_01a0e9de-dc2d-72d9-a549-15e292ac7ccb.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 4,
+     "screen_detection_skipped": true,
+     "state_change_seq": 7,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-second - lane",
+     "terminal_title_stripped": "π - a46-second - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "after-native-kill-settled": {
+   "capture": "after-native-kill-settled",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "before-shell-kill": {
+   "capture": "before-shell-kill",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-shell-crash",
+      "pane_id": "w1:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "tokens": {
+       "gov_run": "a46-shell-crash"
+      },
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-shell-crash",
+      "pane_id": "w1:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "tokens": {
+       "gov_run": "a46-shell-crash"
+      },
+      "workspace_id": "w1"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "after-shell-kill-immediate": {
+   "capture": "after-shell-kill-immediate",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w1:p3",
+    "focused_tab_id": "w1:t1",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p3",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p3",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t1",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "label": "a46-shell-crash",
+      "pane_id": "w1:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c918a9af7563",
+      "tokens": {
+       "gov_run": "a46-shell-crash"
+      },
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 4,
+      "scroll": {
+       "max_offset_from_bottom": 85,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-second - lane",
+      "terminal_title_stripped": "π - a46-second - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "1",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 2,
+      "tab_count": 2,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "error": {
+     "code": "pane_not_found",
+     "message": "pane w1:p3 not found"
+    },
+    "id": "cli:pane:get"
+   },
+   "agents": []
+  },
+  "third-native": {
+   "capture": "third-native",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "screen_detection_skipped": true,
+      "state_change_seq": 9,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w1:p2",
+    "focused_tab_id": "w1:t2",
+    "focused_workspace_id": "w1",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "scroll": {
+       "max_offset_from_bottom": 114,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": false,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "scroll": {
+       "max_offset_from_bottom": 114,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": false,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 5,
+     "screen_detection_skipped": true,
+     "state_change_seq": 9,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-third - lane",
+     "terminal_title_stripped": "π - a46-third - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "after-same-tab-swap": {
+   "capture": "after-same-tab-swap",
+   "snapshot": {
+    "agents": [
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "interactive_ready": true,
+      "name": "a46-first",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "screen_detection_skipped": true,
+      "state_change_seq": 9,
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "focused_pane_id": "w2:p1",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p1",
+      "panes": [
+       {
+        "focused": false,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": true,
+        "pane_id": "w2:p1",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "workspace_id": "w2"
+     },
+     {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "scroll": {
+       "max_offset_from_bottom": 114,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 2,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 2,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent": "pi",
+      "agent_session": {
+       "agent": "pi",
+       "kind": "path",
+       "source": "herdr:pi",
+       "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p1",
+      "revision": 5,
+      "scroll": {
+       "max_offset_from_bottom": 114,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9180ad9c2f1",
+      "terminal_title": "π - a46-third - lane",
+      "terminal_title_stripped": "π - a46-third - lane",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": [
+    {
+     "agent": "pi",
+     "agent_session": {
+      "agent": "pi",
+      "kind": "path",
+      "source": "herdr:pi",
+      "value": "/home/user/lane/contract-a4-a6-sessions/2026-09-28T21-17-42-787Z_01a0e9e1-7802-7595-a5f9-b1620af9dd77.jsonl"
+     },
+     "agent_status": "idle",
+     "cwd": "/home/user/lane",
+     "focused": true,
+     "foreground_cwd": "/home/user/lane",
+     "interactive_ready": true,
+     "name": "a46-first",
+     "pane_id": "w2:p1",
+     "revision": 5,
+     "screen_detection_skipped": true,
+     "state_change_seq": 9,
+     "tab_id": "w2:t1",
+     "terminal_id": "term_65c9180ad9c2f1",
+     "terminal_title": "π - a46-third - lane",
+     "terminal_title_stripped": "π - a46-third - lane",
+     "tokens": {
+      "gov_run": "a46-probe-run"
+     },
+     "workspace_id": "w2"
+    }
+   ]
+  },
+  "closed-pane": {
+   "capture": "closed-pane",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w2:p2",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 1,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "error": {
+     "code": "pane_not_found",
+     "message": "pane w2:p1 not found"
+    },
+    "id": "cli:pane:get"
+   },
+   "agents": []
+  },
+  "recreated-pane": {
+   "capture": "recreated-pane",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w2:p2",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w2:p3",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 2,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 2,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p3",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "recreated-retagged": {
+   "capture": "recreated-retagged",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w2:p2",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w2:p3",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 2,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 2,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "duplicate-tags": {
+   "capture": "duplicate-tags",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w2:p2",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w2:p3",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p2",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 2,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 2,
+      "tab_count": 1,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p2",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  },
+  "atomic-labeled-no-receipt": {
+   "capture": "atomic-labeled-no-receipt",
+   "snapshot": {
+    "agents": [],
+    "focused_pane_id": "w2:p2",
+    "focused_tab_id": "w2:t1",
+    "focused_workspace_id": "w2",
+    "layouts": [
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w1:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w1:p2",
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [],
+      "tab_id": "w1:t2",
+      "workspace_id": "w1",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p2",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p2",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w2:p3",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "zoomed": false
+     },
+     {
+      "area": {
+       "height": 40,
+       "width": 120,
+       "x": 0,
+       "y": 0
+      },
+      "focused_pane_id": "w2:p5",
+      "panes": [
+       {
+        "focused": true,
+        "pane_id": "w2:p5",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 0,
+         "y": 0
+        }
+       },
+       {
+        "focused": false,
+        "pane_id": "w2:p6",
+        "rect": {
+         "height": 40,
+         "width": 60,
+         "x": 60,
+         "y": 0
+        }
+       }
+      ],
+      "splits": [
+       {
+        "direction": "right",
+        "id": "split_0_root",
+        "ratio": 0.5,
+        "rect": {
+         "height": 40,
+         "width": 120,
+         "x": 0,
+         "y": 0
+        }
+       }
+      ],
+      "tab_id": "w2:t3",
+      "workspace_id": "w2",
+      "zoomed": false
+     }
+    ],
+    "panes": [
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65c918a9ad9012",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": true,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p2",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e74c794",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-pane-tag",
+      "pane_id": "w2:p3",
+      "revision": 1,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t1",
+      "terminal_id": "term_65c9198e8cf0a5",
+      "tokens": {
+       "gov_run": "a46-probe-run"
+      },
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "pane_id": "w2:p5",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t3",
+      "terminal_id": "term_65c919c5702ee7",
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-atomic-layout-tag",
+      "pane_id": "w2:p6",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t3",
+      "terminal_id": "term_65c919c570f4e8",
+      "workspace_id": "w2"
+     }
+    ],
+    "protocol": 22,
+    "tabs": [
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-destination",
+      "number": 2,
+      "pane_count": 1,
+      "tab_id": "w1:t2",
+      "workspace_id": "w1"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 1,
+      "pane_count": 2,
+      "tab_id": "w2:t1",
+      "workspace_id": "w2"
+     },
+     {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-layout-atomic",
+      "number": 3,
+      "pane_count": 2,
+      "tab_id": "w2:t3",
+      "workspace_id": "w2"
+     }
+    ],
+    "version": "0.9.1",
+    "workspaces": [
+     {
+      "active_tab_id": "w1:t2",
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "a46-identity",
+      "number": 1,
+      "pane_count": 1,
+      "tab_count": 1,
+      "workspace_id": "w1"
+     },
+     {
+      "active_tab_id": "w2:t1",
+      "agent_status": "unknown",
+      "focused": true,
+      "label": "a46-moved",
+      "number": 2,
+      "pane_count": 4,
+      "tab_count": 2,
+      "workspace_id": "w2"
+     }
+    ]
+   },
+   "get": {
+    "id": "cli:pane:get",
+    "result": {
+     "pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/lane",
+      "focused": false,
+      "foreground_cwd": "/home/user/lane",
+      "label": "a46-atomic-layout-tag",
+      "pane_id": "w2:p6",
+      "revision": 0,
+      "scroll": {
+       "max_offset_from_bottom": 0,
+       "offset_from_bottom": 0,
+       "viewport_rows": 40
+      },
+      "tab_id": "w2:t3",
+      "terminal_id": "term_65c919c570f4e8",
+      "workspace_id": "w2"
+     },
+     "type": "pane_info"
+    }
+   },
+   "agents": []
+  }
+ }
+}

@@ -1,0 +1,375 @@
+{
+ "provenance": {
+  "source": "metadata.json structural projection (no transcript prose, tool arguments, or configuration values)",
+  "report": "contract-a5.md"
+ },
+ "observed_at": "2026-09-28T21:14:42.716281+00:00",
+ "environment_presence": {
+  "XDG_DATA_HOME": false,
+  "CLAUDE_CONFIG_DIR": false,
+  "PI_CODING_AGENT_DIR": false,
+  "PI_CODING_AGENT_SESSION_DIR": false,
+  "PI_SESSION_FILE": true,
+  "PI_SESSION_ID": true
+ },
+ "agy": {
+  "binary_present": true,
+  "dot_agy_dir_present": false,
+  "catalog_harness_key_present": true,
+  "transcript_adapter_present": false
+ },
+ "pi_package_version": "0.87.1",
+ "native": {
+  "pi": {
+   "path": "/home/user/.pi/agent/sessions/--home-user-worktrees-lane--/2026-09-28T21-07-13-457Z_01a0e9d7-ddb1-75df-a809-3dbf6cda573a.jsonl",
+   "bytes_read": 382349,
+   "mode": "0o664",
+   "ends_newline": true,
+   "malformed_complete_line_positions": [],
+   "first_shape_per_type_role": [
+    {
+     "line": 1,
+     "type": "session",
+     "role": null,
+     "keys": [
+      "cwd",
+      "id",
+      "timestamp",
+      "type",
+      "version"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 2,
+     "type": "model_change",
+     "role": null,
+     "keys": [
+      "id",
+      "modelId",
+      "parentId",
+      "provider",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 3,
+     "type": "thinking_level_change",
+     "role": null,
+     "keys": [
+      "id",
+      "parentId",
+      "thinkingLevel",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 4,
+     "type": "message",
+     "role": "system",
+     "keys": [
+      "id",
+      "message",
+      "parentId",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": [
+      "content",
+      "role",
+      "sections",
+      "timestamp",
+      "toolsAdded"
+     ]
+    },
+    {
+     "line": 5,
+     "type": "message",
+     "role": "user",
+     "keys": [
+      "id",
+      "message",
+      "parentId",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": [
+      "content",
+      "role",
+      "timestamp"
+     ]
+    },
+    {
+     "line": 6,
+     "type": "message",
+     "role": "assistant",
+     "keys": [
+      "id",
+      "message",
+      "parentId",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": [
+      "api",
+      "content",
+      "model",
+      "provider",
+      "rawStopReason",
+      "responseId",
+      "role",
+      "stopReason",
+      "timestamp",
+      "usage"
+     ]
+    },
+    {
+     "line": 7,
+     "type": "message",
+     "role": "toolResult",
+     "keys": [
+      "id",
+      "message",
+      "parentId",
+      "timestamp",
+      "type"
+     ],
+     "message_keys": [
+      "content",
+      "isError",
+      "role",
+      "timestamp",
+      "toolCallId",
+      "toolName"
+     ]
+    }
+   ],
+   "record_types": {
+    "session": 1,
+    "model_change": 1,
+    "thinking_level_change": 1,
+    "message": 55
+   },
+   "content_block_types": [
+    "text",
+    "thinking",
+    "toolCall"
+   ],
+   "header_version": 3,
+   "header_id_matches_filename": true,
+   "header_id_matches_environment": true,
+   "header_cwd_matches_lane": true
+  },
+  "claude": {
+   "path": "/home/user/.claude/projects/-home-user-worktrees-lane/3c9bc9ea-2594-48f4-9e79-df36be3bea58.jsonl",
+   "bytes_read": 140868,
+   "mode": "0o600",
+   "ends_newline": true,
+   "malformed_complete_line_positions": [],
+   "first_shape_per_type_role": [
+    {
+     "line": 1,
+     "type": "last-prompt",
+     "role": null,
+     "keys": [
+      "leafUuid",
+      "sessionId",
+      "type"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 2,
+     "type": "<unknown>",
+     "role": null,
+     "keys": [
+      "mode",
+      "sessionId",
+      "type"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 11,
+     "type": "file-history-snapshot",
+     "role": null,
+     "keys": [
+      "isSnapshotUpdate",
+      "messageId",
+      "snapshot",
+      "type"
+     ],
+     "message_keys": []
+    },
+    {
+     "line": 12,
+     "type": "user",
+     "role": "user",
+     "keys": [
+      "cwd",
+      "entrypoint",
+      "gitBranch",
+      "isSidechain",
+      "message",
+      "origin",
+      "parentUuid",
+      "permissionMode",
+      "promptId",
+      "promptSource",
+      "sessionId",
+      "timestamp",
+      "turnOrigin",
+      "turnPosition",
+      "type",
+      "userType",
+      "uuid",
+      "version"
+     ],
+     "message_keys": [
+      "content",
+      "role"
+     ]
+    },
+    {
+     "line": 30,
+     "type": "assistant",
+     "role": "assistant",
+     "keys": [
+      "apiErrorStatus",
+      "cwd",
+      "entrypoint",
+      "error",
+      "gitBranch",
+      "isApiErrorMessage",
+      "isSidechain",
+      "message",
+      "parentUuid",
+      "perTurnEffort",
+      "quotaLimits",
+      "requestId",
+      "sessionId",
+      "session_id",
+      "timestamp",
+      "type",
+      "userType",
+      "uuid",
+      "version"
+     ],
+     "message_keys": [
+      "container",
+      "content",
+      "context_management",
+      "diagnostics",
+      "id",
+      "model",
+      "role",
+      "stop_details",
+      "stop_reason",
+      "stop_sequence",
+      "type",
+      "usage"
+     ]
+    },
+    {
+     "line": 31,
+     "type": "system",
+     "role": null,
+     "keys": [
+      "content",
+      "cwd",
+      "entrypoint",
+      "gitBranch",
+      "isMeta",
+      "isSidechain",
+      "level",
+      "parentUuid",
+      "sessionId",
+      "subtype",
+      "timestamp",
+      "type",
+      "userType",
+      "uuid",
+      "version"
+     ],
+     "message_keys": []
+    }
+   ],
+   "record_types": {
+    "last-prompt": 3,
+    "<unknown>": 26,
+    "file-history-snapshot": 1,
+    "user": 1,
+    "assistant": 1,
+    "system": 2
+   },
+   "content_block_types": [
+    "text"
+   ],
+   "record_session_ids_all_match_filename": true,
+   "identified_records_with_cwd_all_match_lane": true,
+   "identified_records_missing_cwd": 10,
+   "typed_rate_limit_lines": [
+    30
+   ],
+   "exact_id_candidate_count": 1
+  },
+  "devin": {
+   "path": "/home/user/.local/share/devin/cli/transcripts/roan-chive.json",
+   "bytes_read": 599614,
+   "mode": "0o664",
+   "ends_newline": false,
+   "root_keys": [
+    "agent",
+    "final_metrics",
+    "schema_version",
+    "session_id",
+    "steps"
+   ],
+   "schema_version": "ATIF-v1.7",
+   "session_id_matches_filename": true,
+   "steps_count": 88,
+   "field_lines": {
+    "schema_version": 2,
+    "session_id": 3,
+    "steps": 842,
+    "step_id": 844,
+    "source": 846,
+    "tool_calls": 970,
+    "tool_call_id": 972,
+    "function_name": 973,
+    "arguments": 974,
+    "observation": 993,
+    "source_call_id": 996,
+    "metrics": 1009
+   },
+   "step_keys": [
+    "extra",
+    "message",
+    "metrics",
+    "model_name",
+    "observation",
+    "reasoning_content",
+    "source",
+    "step_id",
+    "timestamp",
+    "tool_calls"
+   ],
+   "step_sources": [
+    "agent",
+    "system",
+    "user"
+   ],
+   "sequential_step_ids": true
+  }
+ },
+ "identity": {
+  "run_marker": "a4035908-8f47-4d86-8aab-66ed8105016e",
+  "native_pi_id": "01a0e9d7-ddb1-75df-a809-3dbf6cda573a",
+  "native_claude_id": "3c9bc9ea-2594-48f4-9e79-df36be3bea58",
+  "native_devin_id": "roan-chive"
+ }
+}

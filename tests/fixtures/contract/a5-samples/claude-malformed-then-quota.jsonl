@@ -1,0 +1,2 @@
+{broken-record}
+{"type":"assistant","sessionId":"00000000-0000-4000-8000-000000000001","cwd":"/synthetic/project","isApiErrorMessage":true,"error":"rate_limit","apiErrorStatus":429,"requestId":"synthetic","timestamp":"2026-09-28T00:00:00.000Z"}

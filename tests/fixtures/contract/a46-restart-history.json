@@ -1,0 +1,373 @@
+{
+ "command": "python3 contract_a46_history.py",
+ "daemon_runtime_state": {
+  "startedAt": "2026-09-27T22:12:50.692Z",
+  "lastStoppedAt": "2026-09-27T22:12:48.980Z"
+ },
+ "mailbox_record_counts": {
+  "downtime_gap": 9,
+  "job_terminal": 11
+ },
+ "matching_1912_utc_records": 0,
+ "windows": [
+  {
+   "from": "2026-09-27T22:12:45.640Z",
+   "to": "2026-09-27T22:12:50.692Z",
+   "duration_seconds": 5.052
+  }
+ ],
+ "date_conversion_command": "date --date=2026-09-27T22:12:50.692Z -Is",
+ "date_conversion_stdout": "2026-09-27T19:12:50-03:00",
+ "records": [
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/13aa971077ccdd802d1a385a9f37e4137359d373ee9f38c4276e648f94665000/unread/2026-09-27T221253.960Z-1b3f43db-a0e2-42f8-a939-900ef864d530.json",
+   "record": {
+    "id": "2026-09-27T221253.960Z-1b3f43db-a0e2-42f8-a939-900ef864d530",
+    "at": "2026-09-27T22:12:53.960Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/482a8e14eab8fb5fadd2dd7d85c6c08b96f27f2607e8a3ddaa407745a372f5d2/unread/2026-09-27T221253.993Z-1fec2203-39da-4e44-a39d-8cda538c4541.json",
+   "record": {
+    "id": "2026-09-27T221253.993Z-1fec2203-39da-4e44-a39d-8cda538c4541",
+    "at": "2026-09-27T22:12:53.993Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/58d895c2700f475ebf5e802928f118bf613ca023e3b9d584956d2bcc44a3c3a5/unread/2026-09-27T221248.980Z-7622b1d2-e460-46a5-a713-091fb2f1811c.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-7622b1d2-e460-46a5-a713-091fb2f1811c",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "a113702f-f91a-4001-86aa-7639ce3f05a3",
+    "jobId": "job_b3861135-e3c1-48d0-bc66-e418b0d41c80",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/58d895c2700f475ebf5e802928f118bf613ca023e3b9d584956d2bcc44a3c3a5/unread/2026-09-27T221254.059Z-efa4fbdd-e52b-499c-819f-ec4b54cd3875.json",
+   "record": {
+    "id": "2026-09-27T221254.059Z-efa4fbdd-e52b-499c-819f-ec4b54cd3875",
+    "at": "2026-09-27T22:12:54.059Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/628f8e189bf0e9b351e8356914b0adec6944184ec0d0aa22fd9c59b1fef38d06/unread/2026-09-27T221253.927Z-0dad9830-8e13-4425-9fc0-c4f308c00b41.json",
+   "record": {
+    "id": "2026-09-27T221253.927Z-0dad9830-8e13-4425-9fc0-c4f308c00b41",
+    "at": "2026-09-27T22:12:53.927Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/71c666ecfc605d6faf053c7ce228e764656bb557c478c12522926305f2410e8e/unread/2026-09-27T221248.980Z-0e74c70b-438e-4d0c-a502-02d00faada4b.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-0e74c70b-438e-4d0c-a502-02d00faada4b",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "bc8ee485-caff-4e49-a036-88f7df3e56c1",
+    "jobId": "job_cec4ec59-e2dd-4ff2-9c0d-61f496bde2ec",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/71c666ecfc605d6faf053c7ce228e764656bb557c478c12522926305f2410e8e/unread/2026-09-27T221248.980Z-5032fd19-0eec-4e93-b889-d3e0b151eda2.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-5032fd19-0eec-4e93-b889-d3e0b151eda2",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "850cf148-fe74-40b9-8549-4077aed17837",
+    "jobId": "job_ac34d341-d613-47f9-a564-8d68a59c7ae0",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/71c666ecfc605d6faf053c7ce228e764656bb557c478c12522926305f2410e8e/unread/2026-09-27T221248.980Z-6edf20a1-7c27-4b11-8347-3b4dbc5352f8.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-6edf20a1-7c27-4b11-8347-3b4dbc5352f8",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "8be88cbb-d94e-41fb-b526-92aad5a05ced",
+    "jobId": "job_98ee6cdf-9e51-4294-890e-04e8cfe80155",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/71c666ecfc605d6faf053c7ce228e764656bb557c478c12522926305f2410e8e/unread/2026-09-27T221248.980Z-7ce6d963-eb01-4eae-a559-f317be1a864b.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-7ce6d963-eb01-4eae-a559-f317be1a864b",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "e9010c20-3d5b-4571-8fae-8bfd1bc31f8f",
+    "jobId": "job_0039e508-0ca7-480f-97b1-7b409ee8fb1a",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/71c666ecfc605d6faf053c7ce228e764656bb557c478c12522926305f2410e8e/unread/2026-09-27T221254.026Z-c56078d0-536b-43de-982e-c7b28cbbe4fc.json",
+   "record": {
+    "id": "2026-09-27T221254.026Z-c56078d0-536b-43de-982e-c7b28cbbe4fc",
+    "at": "2026-09-27T22:12:54.026Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/867c58cf43f7690d797a2cd425ee2ba9be1e60ef91207414b55b0cfc608a8081/acked/2026-09-27T221248.980Z-08809573-c14f-4aff-8c39-42a434664d80.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-08809573-c14f-4aff-8c39-42a434664d80",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "f8212740-1602-44ca-9597-18e2c3d44fba",
+    "jobId": "job_d1c4881c-3396-4eec-a9a5-c2a964bb781e",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/867c58cf43f7690d797a2cd425ee2ba9be1e60ef91207414b55b0cfc608a8081/acked/2026-09-27T221248.980Z-1c6f2b58-00d4-4f67-af6b-2c61d2c772be.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-1c6f2b58-00d4-4f67-af6b-2c61d2c772be",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "c08bceb1-dbe1-4545-8092-b0618b14e26a",
+    "jobId": "job_c334688a-2040-4705-97d7-3fdb2370a505",
+    "handoff": {
+     "state": "handed_off"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/867c58cf43f7690d797a2cd425ee2ba9be1e60ef91207414b55b0cfc608a8081/acked/2026-09-27T221248.980Z-29c63c2c-ee73-49a7-b9f0-1d053e3120b0.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-29c63c2c-ee73-49a7-b9f0-1d053e3120b0",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "eb537bf0-2880-4fbf-a640-d93a213a2b54",
+    "jobId": "job_0010e0f8-8271-467b-ab84-4f5ae712e47a",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/867c58cf43f7690d797a2cd425ee2ba9be1e60ef91207414b55b0cfc608a8081/acked/2026-09-27T221248.980Z-a2bbdbb0-3eb4-4f5c-9485-a5897350a0bc.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-a2bbdbb0-3eb4-4f5c-9485-a5897350a0bc",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "ec77342e-8fe8-4c6e-9036-615cfb2e36ff",
+    "jobId": "job_fe90b57d-c7f4-4b7d-9f9e-dc213c3cd3ee",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/867c58cf43f7690d797a2cd425ee2ba9be1e60ef91207414b55b0cfc608a8081/acked/2026-09-27T221254.098Z-e65ceef3-25c5-4ac1-81a0-3c641b50d481.json",
+   "record": {
+    "id": "2026-09-27T221254.098Z-e65ceef3-25c5-4ac1-81a0-3c641b50d481",
+    "at": "2026-09-27T22:12:54.098Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/90270b5de2f8f3a52e5bdc5a6cc652c13a8a0b955b78a2d73d4caff3bf8ce920/acked/2026-09-27T221248.980Z-52574810-f296-4cf1-b2d4-1dd160092e8e.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-52574810-f296-4cf1-b2d4-1dd160092e8e",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "a58f3cfa-ed21-4fb8-9c1c-d9e14679da19",
+    "jobId": "job_b1b1e5d6-21d0-4167-8c9c-c5748d89903c",
+    "handoff": {
+     "state": "recovery_pending"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/90270b5de2f8f3a52e5bdc5a6cc652c13a8a0b955b78a2d73d4caff3bf8ce920/acked/2026-09-27T221248.980Z-80d254f1-0077-46b9-91a8-6a014ec421c5.json",
+   "record": {
+    "id": "2026-09-27T221248.980Z-80d254f1-0077-46b9-91a8-6a014ec421c5",
+    "at": "2026-09-27T22:12:48.980Z",
+    "kind": "job_terminal",
+    "runId": "fc93de7d-5fad-46df-8aae-9282c5bf4333",
+    "jobId": "job_f0152efb-01f2-4e62-8c45-c915b5d58e44",
+    "handoff": {
+     "state": "handed_off"
+    },
+    "actions": [
+     "cancelled"
+    ]
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/90270b5de2f8f3a52e5bdc5a6cc652c13a8a0b955b78a2d73d4caff3bf8ce920/acked/2026-09-27T221253.859Z-984ea6f6-fefa-489a-9794-0a9ba5780f26.json",
+   "record": {
+    "id": "2026-09-27T221253.859Z-984ea6f6-fefa-489a-9794-0a9ba5780f26",
+    "at": "2026-09-27T22:12:53.859Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/9b9d50ed6d1fde050c6bb7d8fb7f54d80d2a5a0b97b356e3baf179df214c9367/unread/2026-09-27T221253.822Z-ece34112-51c0-4b1e-81a8-b5b68213bb5f.json",
+   "record": {
+    "id": "2026-09-27T221253.822Z-ece34112-51c0-4b1e-81a8-b5b68213bb5f",
+    "at": "2026-09-27T22:12:53.822Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-tools-daemon/mailbox/f7dd8270c42f025ab9cd5f06747f1558a39a0f8af551a49c4d0066210a8e6eab/unread/2026-09-27T221253.893Z-b4ff098e-41d2-4275-8c3d-2cc40dd9289b.json",
+   "record": {
+    "id": "2026-09-27T221253.893Z-b4ff098e-41d2-4275-8c3d-2cc40dd9289b",
+    "at": "2026-09-27T22:12:53.893Z",
+    "kind": "downtime_gap",
+    "from": "2026-09-27T22:12:45.640Z",
+    "to": "2026-09-27T22:12:50.692Z",
+    "lost": {}
+   }
+  }
+ ],
+ "current_persisted_run_identities": [
+  {
+   "path": "/home/user/.config/herdr/herdr-handoffs/eb537bf0-2880-4fbf-a640-d93a213a2b54/.tools/state.json",
+   "runId": "eb537bf0-2880-4fbf-a640-d93a213a2b54",
+   "createdAt": "2026-09-27T22:08:35.025Z",
+   "child": {
+    "paneId": "w6:pJ9",
+    "terminalId": "term_65c7e30d3e256385",
+    "agentName": "task-2699c042-1",
+    "agentKind": "devin",
+    "agentId": null
+   },
+   "nativeSession": {
+    "source": "herdr:devin",
+    "agent": "devin",
+    "kind": "id",
+    "value": "spiral-octopus"
+   },
+   "lifecycle": {
+    "state": "handed_off",
+    "watermark": null,
+    "detail": "daemon_restart_reattached"
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-handoffs/ec77342e-8fe8-4c6e-9036-615cfb2e36ff/.tools/state.json",
+   "runId": "ec77342e-8fe8-4c6e-9036-615cfb2e36ff",
+   "createdAt": "2026-09-27T22:08:29.887Z",
+   "child": {
+    "paneId": "w6:pJ8",
+    "terminalId": "term_65c7e3087422d384",
+    "agentName": "task-eddf6167-1",
+    "agentKind": "devin",
+    "agentId": null
+   },
+   "nativeSession": {
+    "source": "herdr:devin",
+    "agent": "devin",
+    "kind": "id",
+    "value": "lake-entree"
+   },
+   "lifecycle": {
+    "state": "handed_off",
+    "watermark": null,
+    "detail": "daemon_restart_reattached"
+   }
+  },
+  {
+   "path": "/home/user/.config/herdr/herdr-handoffs/f8212740-1602-44ca-9597-18e2c3d44fba/.tools/state.json",
+   "runId": "f8212740-1602-44ca-9597-18e2c3d44fba",
+   "createdAt": "2026-09-27T22:08:40.172Z",
+   "child": {
+    "paneId": "w6:pJA",
+    "terminalId": "term_65c7e31227256386",
+    "agentName": "task-bad996af-1",
+    "agentKind": "devin",
+    "agentId": null
+   },
+   "nativeSession": {
+    "source": "herdr:devin",
+    "agent": "devin",
+    "kind": "id",
+    "value": "loud-drum"
+   },
+   "lifecycle": {
+    "state": "handed_off",
+    "watermark": null,
+    "detail": "daemon_restart_reattached"
+   }
+  }
+ ],
+ "provenance": {
+  "source": "contract-a4-a6-historical-summary.json (read-only extraction)",
+  "report": "contract-a4-a6.md"
+ }
+}

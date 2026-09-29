@@ -65,6 +65,13 @@ schema-check:
 schema-live:
     scripts/check-herdr-schema.sh --live
 
+# Phase 2 contract suite — offline executable checks pinning each confirmed
+# evidence behavior to its committed fixture (tests/fixtures/contract/);
+# fails closed on missing or malformed fixtures, contacts no live system.
+# Kept out of ci while the evidence set is still accumulating (Phase 2).
+contract:
+    python3 -B tests/contract/contract_tests.py
+
 # BASE-dependent gates: BASE defaults to `git merge-base HEAD origin/main`
 # and both recipes FAIL when it cannot be resolved — a missing base means the
 # check cannot honestly run, so it is never skipped. Before the first push

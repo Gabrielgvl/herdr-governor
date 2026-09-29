@@ -1,0 +1,446 @@
+{
+ "node": "v25.9.0",
+ "uid": 1000,
+ "scratch": "/tmp/a5-probe/cases",
+ "source_sha256": {
+  "src/transcript-delta.ts": "4bb387f2334f589517a0b5f1cadc79cc6288ff567c29984888f2ad6dd7677efe",
+  "src/supervision/trace-source.ts": "d52ea5e5e3665d2ce1ed4f3417212c3e11fc0e6e8671a6dce7dc6de74ffffd1b",
+  "src/supervision/devin-trace.ts": "75da582f4b99bf052b2d4579a11d632bd3f0268f9941759a268e5f6c26ab7c20",
+  "src/supervision/claude-quota.ts": "dd6871cad51b9ad06a5384f2d8f9852e0004b1de08d232628892f6f07ed82493"
+ },
+ "constants": {
+  "TRACE_WINDOW_MAX_BYTES": 32768,
+  "DEVIN_SOURCE_MAX_BYTES": 8388608
+ },
+ "cases_passed": 27,
+ "results": [
+  {
+   "id": "pi-partial-utf8",
+   "first": {
+    "source": "pi-jsonl",
+    "events": 1,
+    "byteCount": 82,
+    "cursor": 82,
+    "failure": null
+   },
+   "after_append": {
+    "source": "pi-jsonl",
+    "events": 1,
+    "byteCount": 90,
+    "cursor": 172,
+    "failure": null
+   }
+  },
+  {
+   "id": "pi-complete-json-without-newline",
+   "source": "pi-jsonl",
+   "events": 0,
+   "byteCount": 0,
+   "cursor": 0,
+   "failure": null
+  },
+  {
+   "id": "pi-malformed-complete-record",
+   "source": "pi-jsonl",
+   "events": 0,
+   "byteCount": 0,
+   "cursor": null,
+   "failure": {
+    "kind": "source_malformed",
+    "detail": {
+     "offset": 82
+    }
+   }
+  },
+  {
+   "id": "pi-header-identity-not-validated",
+   "source": "pi-jsonl",
+   "events": 1,
+   "byteCount": 77,
+   "cursor": 77,
+   "failure": null
+  },
+  {
+   "id": "devin-partial-document",
+   "partial": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_malformed",
+     "detail": {
+      "reason": "invalid_json"
+     }
+    }
+   },
+   "completed": {
+    "source": "devin-session",
+    "events": 1,
+    "byteCount": 44,
+    "cursor": 1,
+    "failure": null
+   }
+  },
+  {
+   "id": "devin-identity-guards",
+   "content_mismatch": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_malformed",
+     "detail": {
+      "reason": "session_id_mismatch"
+     }
+    }
+   },
+   "traversal": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "session_pointer_invalid",
+     "detail": {
+      "reason": "id_not_filename_safe"
+     }
+    }
+   }
+  },
+  {
+   "id": "claude-partial-and-corrupt-records",
+   "only_partial": false,
+   "completed": {
+    "retryNotBefore": null,
+    "zeroProgressProven": true
+   },
+   "partial_tool_record_after_quota": {
+    "retryNotBefore": null,
+    "zeroProgressProven": true
+   },
+   "malformed_complete_record_before_quota": {
+    "retryNotBefore": null,
+    "zeroProgressProven": true
+   }
+  },
+  {
+   "id": "pi-duplicate-id-files",
+   "candidates": 2,
+   "exact_path_selected_a": true,
+   "id_only": {
+    "source": "pi-jsonl",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "session_pointer_invalid",
+     "detail": {
+      "reason": "kind_not_path"
+     }
+    }
+   }
+  },
+  {
+   "id": "devin-duplicate-id-files",
+   "candidates": 2,
+   "exact_root_selected_a": true
+  },
+  {
+   "id": "claude-ambiguous-id-files",
+   "candidates": 2,
+   "fixed_slug_result": {
+    "retryNotBefore": null,
+    "zeroProgressProven": true
+   },
+   "alternate_only_result": false,
+   "general_ambiguity_resolver_present": false
+  },
+  {
+   "id": "devin-xdg-resolution",
+   "resolved_synthetic_root": true,
+   "events": 1
+  },
+  {
+   "id": "pi-permission-denied",
+   "errno": "EACCES",
+   "result": {
+    "source": "pi-jsonl",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_unreadable",
+     "detail": {
+      "code": "EACCES"
+     }
+    }
+   }
+  },
+  {
+   "id": "devin-permission-denied",
+   "errno": "EACCES",
+   "result": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_unreadable",
+     "detail": {
+      "code": "EACCES"
+     }
+    }
+   }
+  },
+  {
+   "id": "claude-permission-denied",
+   "errno": "EACCES",
+   "result": false
+  },
+  {
+   "id": "pi-vanish-before-open",
+   "path_absent": true,
+   "result": {
+    "source": "pi-jsonl",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_unreadable",
+     "detail": {
+      "code": "ENOENT"
+     }
+    }
+   }
+  },
+  {
+   "id": "devin-vanish-before-open",
+   "path_absent": true,
+   "result": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_unreadable",
+     "detail": {
+      "code": "ENOENT"
+     }
+    }
+   }
+  },
+  {
+   "id": "claude-vanish-before-open",
+   "path_absent": true,
+   "result": false
+  },
+  {
+   "id": "pi-vanish-after-open-before-read",
+   "path_absent": true,
+   "result": {
+    "source": "pi-jsonl",
+    "events": 1,
+    "byteCount": 82,
+    "cursor": 82,
+    "failure": null
+   }
+  },
+  {
+   "id": "devin-vanish-after-open-before-read",
+   "path_absent": true,
+   "result": {
+    "source": "devin-session",
+    "events": 1,
+    "byteCount": 44,
+    "cursor": 1,
+    "failure": null
+   }
+  },
+  {
+   "id": "claude-vanish-after-open-before-read",
+   "path_absent": true,
+   "result": {
+    "retryNotBefore": null,
+    "zeroProgressProven": true
+   }
+  },
+  {
+   "id": "cursor-rewrites",
+   "pi": {
+    "source": "pi-jsonl",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": 171,
+    "failure": {
+     "kind": "source_rewritten"
+    }
+   },
+   "devin": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": 1,
+    "failure": {
+     "kind": "source_rewritten",
+     "detail": {
+      "reason": "anchor_mismatch"
+     }
+    }
+   }
+  },
+  {
+   "id": "pi-oversized-scan",
+   "source": "pi-jsonl",
+   "events": 0,
+   "byteCount": 0,
+   "cursor": 17825880,
+   "failure": {
+    "kind": "record_exceeds_budget",
+    "detail": {
+     "offset": 0,
+     "bytes": 17825880,
+     "skipped": true
+    }
+   },
+   "read_calls": 18,
+   "requested_bytes": 17858560,
+   "actual_bytes": 17825973,
+   "exceeds_governor_source_ceiling": true
+  },
+  {
+   "id": "pi-after-skipped-record",
+   "source": "pi-jsonl",
+   "events": 1,
+   "byteCount": 93,
+   "cursor": 17825973,
+   "failure": null
+  },
+  {
+   "id": "devin-oversized-step",
+   "skipped": {
+    "source": "devin-session",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": 1,
+    "failure": {
+     "kind": "record_exceeds_budget",
+     "detail": {
+      "step": 1,
+      "bytes": 32811,
+      "skipped": true
+     }
+    }
+   },
+   "resumed": {
+    "source": "devin-session",
+    "events": 1,
+    "byteCount": 48,
+    "cursor": 2,
+    "failure": null
+   }
+  },
+  {
+   "id": "devin-source-ceiling",
+   "source": "devin-session",
+   "events": 0,
+   "byteCount": 0,
+   "cursor": null,
+   "failure": {
+    "kind": "source_exceeds_budget",
+    "detail": {
+     "bytesAtLeast": 8388609,
+     "budget": 8388608
+    }
+   }
+  },
+  {
+   "id": "symlink-behavior",
+   "pi_followed": true,
+   "devin_followed_then_content_id_rejected": true,
+   "claude_refused": true
+  },
+  {
+   "id": "source-selection-and-fallback",
+   "structured_failure_terminal_calls": 0,
+   "total_terminal_calls": 3,
+   "selections": [
+    {
+     "harness": "pi",
+     "source": "pi-jsonl",
+     "events": 0,
+     "byteCount": 0,
+     "cursor": null,
+     "failure": {
+      "kind": "source_unreadable",
+      "detail": {
+       "code": "ENOENT"
+      }
+     }
+    },
+    {
+     "harness": "devin",
+     "source": "devin-session",
+     "events": 0,
+     "byteCount": 0,
+     "cursor": null,
+     "failure": {
+      "kind": "source_unreadable",
+      "detail": {
+       "code": "ENOENT"
+      }
+     }
+    },
+    {
+     "harness": "claude",
+     "source": "tmux-fallback",
+     "events": 1,
+     "byteCount": 18,
+     "cursor": null,
+     "failure": null
+    },
+    {
+     "harness": "agy",
+     "source": "tmux-fallback",
+     "events": 1,
+     "byteCount": 18,
+     "cursor": null,
+     "failure": null
+    },
+    {
+     "harness": "unknown",
+     "source": "tmux-fallback",
+     "events": 1,
+     "byteCount": 18,
+     "cursor": null,
+     "failure": null
+    }
+   ],
+   "unchanged_terminal": {
+    "source": "tmux-fallback",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": null
+   },
+   "terminal_error": {
+    "source": "tmux-fallback",
+    "events": 0,
+    "byteCount": 0,
+    "cursor": null,
+    "failure": {
+     "kind": "source_unreadable",
+     "detail": {
+      "code": "EIO"
+     }
+    }
+   }
+  }
+ ],
+ "provenance": {
+  "source": "results.json from the wave-1 a5 probe (27 asserted cases)",
+  "report": "contract-a5.md",
+  "note": "synthetic fault fixtures; native observations are structural snapshots at 2026-09-28T21:14:42Z"
+ }
+}
