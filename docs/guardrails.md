@@ -452,6 +452,7 @@ diff gate.
 | `just purity` | `check-core-purity.sh` — dep allowlist + core I/O scan |
 | `just schema-check` | `check-herdr-schema.sh` — fixture present, parses, pinned protocol, sha256 sidecar match |
 | `just schema-live` | `check-herdr-schema.sh --live` — adds a live `herdr` drift diff; not in `ci` |
+| `just contract` | `tests/contract/contract_tests.py` — offline contract suite pinning each confirmed Phase-2 evidence behavior to its committed fixture under `tests/fixtures/contract/`; fails closed on missing or malformed evidence and contacts no live system. Not in `ci` — it is the Phase-2 evidence gate, run on demand and before promotion while the evidence set is still accumulating |
 | `just test-inventory <base>` | BASE vs HEAD `cargo nextest list` ratchet |
 | `just mutants-diff <base>` | diff-scoped mutation gate on `governor-core` |
 | `just ci` | all of the `ci` legs above — the definition of done |

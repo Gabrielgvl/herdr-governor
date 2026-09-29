@@ -1,0 +1,91 @@
+{"evidence":"private_root","root":"/tmp/a2-private"}
+{"evidence":"baseline","checkoutEntries":41352,"namespaceEntries":1452,"processes":[{"pid":"756310","startTicks":"159198319"}],"liveEndpointDistinct":true}
+{"evidence":"fixture","protocol":22,"errorRequired":["id","error"],"requestMethods":[{"properties":{"method":{"const":"session.snapshot","type":"string"},"params":{"$ref":"#/schemas/request/$defs/EmptyParams"}},"required":["method","params"],"type":"object"},{"properties":{"method":{"const":"events.subscribe","type":"string"},"params":{"$ref":"#/schemas/request/$defs/EventsSubscribeParams"}},"required":["method","params"],"type":"object"}]}
+{"evidence":"built_constants","version":1,"maxLineBytes":262144}
+{"evidence":"spawn","command":"/usr/bin/strace","argv":["-ff","-e","trace=%file,connect,kill","-o","/tmp/a2-private/trace","/home/user/.volta/tools/image/node/25.9.0/bin/node","/home/user/lane/docs/research/contract-a2-probe.mjs","--daemon"],"cwd":"/tmp/a2-private","env":{"PATH":"/usr/bin:/bin","HOME":"/tmp/a2-private/home","XDG_CONFIG_HOME":"/tmp/a2-private/home/.config","XDG_RUNTIME_DIR":"/tmp/a2-private","HERDR_SOCKET_PATH":"/tmp/a2-private/endpoint"}}
+{"peer":"subscription","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"subscription","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"subscription","tx":"{\"id\":\"sub\",\"method\":\"events.subscribe\",\"params\":{\"subscriptions\":[]}}\n"}
+{"peer":"subscription","rx":"{\"id\":\"sub\",\"error\":{\"code\":\"DAEMON_UNKNOWN_METHOD\",\"message\":\"daemon method is not implemented\"}}\n"}
+{"peer":"subscription","tx":"{\"id\":\"hold\",\"method\":\"a2.hold\",\"params\":{}}\n"}
+{"peer":"subscription","tx":"{\"id\":\"same\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"subscription","rx":"{\"id\":\"same\",\"result\":{\"held\":[\"hold\"],\"completed\":[]}}\n"}
+{"peer":"concurrent","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"concurrent","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"concurrent","tx":"{\"id\":\"parallel\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"parallel\",\"result\":{\"held\":[\"hold\"],\"completed\":[]}}\n"}
+{"peer":"concurrent","tx":"{\"id\":\"identity\",\"method\":\"status\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"identity\",\"error\":{\"code\":\"CALLER_IDENTITY_MALFORMED\",\"message\":\"Daemon request was rejected\"}}\n"}
+{"peer":"concurrent","tx":"{\"id\":\"release\",\"method\":\"a2.release\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"release\",\"result\":{\"completed\":[\"hold\"]}}\n"}
+{"peer":"subscription","rx":"{\"id\":\"hold\",\"result\":{\"released\":\"hold\"}}\n"}
+{"evidence":"concurrency","confirmed":true}
+{"peer":"subscription","tx":"{\"id\":\"disconnect\",\"method\":\"a2.hold\",\"params\":{}}\n"}
+{"peer":"subscription","tx":"{\"id\":\"pending\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"subscription","rx":"{\"id\":\"pending\",\"result\":{\"held\":[\"disconnect\"],\"completed\":[\"hold\"]}}\n"}
+{"peer":"subscription","event":"closed"}
+{"peer":"reconnect","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"reconnect","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"reconnect","tx":"{\"id\":\"after-disconnect\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"reconnect","rx":"{\"id\":\"after-disconnect\",\"result\":{\"held\":[\"disconnect\"],\"completed\":[\"hold\"]}}\n"}
+{"peer":"reconnect","tx":"{\"id\":\"finish-disconnected\",\"method\":\"a2.release\",\"params\":{}}\n"}
+{"peer":"reconnect","rx":"{\"id\":\"finish-disconnected\",\"result\":{\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"reconnect","tx":"{\"id\":\"finished\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"reconnect","rx":"{\"id\":\"finished\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"evidence":"disconnect","handlerContinued":true,"replayTested":false}
+{"peer":"invalid-json","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"invalid-json","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"invalid-json","tx":"{\n"}
+{"peer":"invalid-json","rx":"{\"type\":\"error\",\"error\":{\"code\":\"DAEMON_PROTOCOL_ERROR\",\"message\":\"daemon socket line is not JSON\"}}\n"}
+{"peer":"invalid-json","event":"closed"}
+{"peer":"concurrent","tx":"{\"id\":\"health-invalid-json\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"health-invalid-json\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"bad-params","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"bad-params","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"bad-params","tx":"{\"id\":\"bad\",\"method\":\"status\",\"params\":[]}\n"}
+{"peer":"bad-params","rx":"{\"type\":\"error\",\"error\":{\"code\":\"DAEMON_PROTOCOL_ERROR\",\"message\":\"daemon socket request params are malformed\"}}\n"}
+{"peer":"bad-params","event":"closed"}
+{"peer":"concurrent","tx":"{\"id\":\"health-bad-params\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"health-bad-params\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"no-hello","tx":"{\"id\":\"raw\",\"method\":\"session.snapshot\",\"params\":{}}\n"}
+{"peer":"no-hello","rx":"{\"type\":\"error\",\"error\":{\"code\":\"DAEMON_PROTOCOL_ERROR\",\"message\":\"daemon socket expects a hello\"}}\n"}
+{"peer":"no-hello","event":"closed"}
+{"peer":"concurrent","tx":"{\"id\":\"health-no-hello\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"health-no-hello\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"wrong-version","tx":"{\"type\":\"hello\",\"version\":22}\n"}
+{"peer":"wrong-version","rx":"{\"type\":\"error\",\"error\":{\"code\":\"PROTOCOL_MISMATCH\",\"message\":\"daemon protocol version is not supported\"}}\n"}
+{"peer":"wrong-version","event":"closed"}
+{"peer":"concurrent","tx":"{\"id\":\"health-wrong-version\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"health-wrong-version\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"oversized","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"oversized","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"oversized","tx":{"expression":"'x'.repeat(262145)","bytes":262145,"sha256":"9408817bc040328d1c403ff97e94cea3dfd3a361b2fb7ecc7af75ff3a5157139"}}
+{"peer":"oversized","rx":"{\"type\":\"error\",\"error\":{\"code\":\"DAEMON_PROTOCOL_ERROR\",\"message\":\"daemon socket line exceeds the accepted bound\"}}\n"}
+{"peer":"oversized","event":"closed"}
+{"peer":"concurrent","tx":"{\"id\":\"health-oversized\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"health-oversized\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"official-client","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"official-client","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"official-client","tx":"{\"id\":\"herdr-daemon-1\",\"method\":\"a2.hold\",\"params\":{}}\n"}
+{"evidence":"request_timeout","configuredMs":100,"elapsedMs":101.35385599999972,"code":"DAEMON_UNAVAILABLE","message":"daemon request timed out","isClosed":false}
+{"peer":"concurrent","tx":"{\"id\":\"timeout-pending\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"timeout-pending\",\"result\":{\"held\":[\"herdr-daemon-1\"],\"completed\":[\"hold\",\"disconnect\"]}}\n"}
+{"peer":"concurrent","tx":"{\"id\":\"timeout-release\",\"method\":\"a2.release\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"timeout-release\",\"result\":{\"completed\":[\"hold\",\"disconnect\",\"herdr-daemon-1\"]}}\n"}
+{"peer":"official-client","tx":"{\"id\":\"herdr-daemon-2\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"official-client","rx":"{\"id\":\"herdr-daemon-1\",\"result\":{\"released\":\"herdr-daemon-1\"}}\n"}
+{"peer":"official-client","rx":"{\"id\":\"herdr-daemon-2\",\"result\":{\"held\":[],\"completed\":[\"hold\",\"disconnect\",\"herdr-daemon-1\"]}}\n"}
+{"peer":"official-client","tx":"{\"type\":\"hello\",\"version\":1}\n"}
+{"peer":"official-client","rx":"{\"type\":\"ack\",\"version\":1}\n"}
+{"peer":"official-client","tx":"{\"id\":\"herdr-daemon-1\",\"method\":\"a2.hold\",\"params\":{}}\n"}
+{"peer":"official-client","tx":"{\"id\":\"herdr-daemon-2\",\"method\":\"a2.stats\",\"params\":{}}\n"}
+{"peer":"official-client","rx":"{\"id\":\"herdr-daemon-2\",\"result\":{\"held\":[\"herdr-daemon-1\"],\"completed\":[\"hold\",\"disconnect\",\"herdr-daemon-1\"]}}\n"}
+{"evidence":"pending_client_close","code":"DAEMON_UNAVAILABLE","message":"daemon socket closed by the client"}
+{"peer":"concurrent","tx":"{\"id\":\"client-close-release\",\"method\":\"a2.release\",\"params\":{}}\n"}
+{"peer":"concurrent","rx":"{\"id\":\"client-close-release\",\"result\":{\"completed\":[\"hold\",\"disconnect\",\"herdr-daemon-1\",\"herdr-daemon-1\"]}}\n"}
+{"evidence":"assertions","result":"PASS"}
+{"peer":"reconnect","event":"closed"}
+{"peer":"concurrent","event":"closed"}
+{"evidence":"daemon_exit","code":0,"signal":null,"log":"herdr-tools-daemon listening on /tmp/a2-private/herdr-tools-daemon/daemon.sock\nherdr-tools-daemon received SIGTERM; shutting down\nherdr-tools-daemon shutdown step: flushHandoffs\nherdr-tools-daemon shutdown step: stopSupervisors\nherdr-tools-daemon shutdown step: recordStoppedAt\nherdr-tools-daemon shutdown step: closeServer\nherdr-tools-daemon shutdown step: releaseLock\n"}
+{"evidence":"live_comparison","checkoutChanged":[],"namespaceChanged":[],"processesUnchanged":true,"socketUnchanged":true}
+{"evidence":"syscall_audit","traceFiles":["trace.464797","trace.464798","trace.464799","trace.464800","trace.464801","trace.464802","trace.464803","trace.465350","trace.465392","trace.465393","trace.465394","trace.465395","trace.465396","trace.465397","trace.465398"],"mutations":["unlink(\"/tmp/a2-private/herdr-tools-daemon/daemon.sock\") = 0","openat(AT_FDCWD, \"/tmp/a2-private/herdr-tools-daemon/daemon.lock\", O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 21","openat(AT_FDCWD, \"/tmp/a2-private/herdr-tools-daemon/.09a4dc4b-42d8-473c-b9ad-6881cdb15f2a.tmp\", O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 22","rename(\"/tmp/a2-private/herdr-tools-daemon/.09a4dc4b-42d8-473c-b9ad-6881cdb15f2a.tmp\", \"/tmp/a2-private/herdr-tools-daemon/daemon.json\") = 0","mkdir(\"/tmp/a2-private/herdr-tools-daemon/intents\", 0700) = 0","mkdir(\"/tmp/a2-private/herdr-tools-daemon\", 0700) = 0","openat(AT_FDCWD, \"/tmp/a2-private/herdr-tools-daemon/.be12be99-6ebf-4c9d-87b1-bc695b080e57.tmp\", O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 24","rename(\"/tmp/a2-private/herdr-tools-daemon/.be12be99-6ebf-4c9d-87b1-bc695b080e57.tmp\", \"/tmp/a2-private/herdr-tools-daemon/daemon.json\") = 0","unlink(\"/tmp/a2-private/herdr-tools-daemon/daemon.sock\") = -1 ENOENT (No such file or directory)","openat(AT_FDCWD, \"/tmp/a2-private/herdr-tools-daemon/daemon.lock\", O_RDONLY|O_CREAT|O_NOCTTY, 0666) = 3"],"connects":["connect(22, {sa_family=AF_UNIX, sun_path=\"/tmp/a2-private/herdr-tools-daemon/daemon.sock\"}, 110) = -1 ENOENT (No such file or directory)"]}

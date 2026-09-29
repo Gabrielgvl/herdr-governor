@@ -1,0 +1,566 @@
+{
+ "provenance": {
+  "source": "tests/fixtures/herdr-api-schema.json",
+  "schema_sha256_pin_file": "tests/fixtures/herdr-api-schema.json.sha256",
+  "note": "mechanically distilled property/required sets for the objects the Phase-2 contract names; the pinned fixture itself is verified by just schema-check"
+ },
+ "protocol": 22,
+ "schema_version": 1,
+ "schema_documents": [
+  "error_response",
+  "event",
+  "request",
+  "subscription_event",
+  "success_response"
+ ],
+ "objects": {
+  "SessionSnapshot": {
+   "success_response": {
+    "properties": [
+     "agents",
+     "focused_pane_id",
+     "focused_tab_id",
+     "focused_workspace_id",
+     "layouts",
+     "panes",
+     "protocol",
+     "tabs",
+     "version",
+     "workspaces"
+    ],
+    "required": [
+     "agents",
+     "layouts",
+     "panes",
+     "protocol",
+     "tabs",
+     "version",
+     "workspaces"
+    ]
+   }
+  },
+  "PaneInfo": {
+   "event": {
+    "properties": [
+     "agent",
+     "agent_session",
+     "agent_status",
+     "cwd",
+     "display_agent",
+     "focused",
+     "foreground_cwd",
+     "label",
+     "pane_id",
+     "revision",
+     "scroll",
+     "state_labels",
+     "tab_id",
+     "terminal_id",
+     "terminal_title",
+     "terminal_title_stripped",
+     "title",
+     "tokens",
+     "workspace_id"
+    ],
+    "required": [
+     "agent_status",
+     "focused",
+     "pane_id",
+     "revision",
+     "tab_id",
+     "terminal_id",
+     "workspace_id"
+    ]
+   },
+   "success_response": {
+    "properties": [
+     "agent",
+     "agent_session",
+     "agent_status",
+     "cwd",
+     "display_agent",
+     "focused",
+     "foreground_cwd",
+     "label",
+     "pane_id",
+     "revision",
+     "scroll",
+     "state_labels",
+     "tab_id",
+     "terminal_id",
+     "terminal_title",
+     "terminal_title_stripped",
+     "title",
+     "tokens",
+     "workspace_id"
+    ],
+    "required": [
+     "agent_status",
+     "focused",
+     "pane_id",
+     "revision",
+     "tab_id",
+     "terminal_id",
+     "workspace_id"
+    ]
+   }
+  },
+  "AgentInfo": {
+   "success_response": {
+    "properties": [
+     "agent",
+     "agent_session",
+     "agent_status",
+     "cwd",
+     "display_agent",
+     "focused",
+     "foreground_cwd",
+     "interactive_ready",
+     "launch_pending",
+     "name",
+     "pane_id",
+     "revision",
+     "screen_detection_skipped",
+     "state_change_seq",
+     "state_labels",
+     "tab_id",
+     "terminal_id",
+     "terminal_title",
+     "terminal_title_stripped",
+     "title",
+     "tokens",
+     "workspace_id"
+    ],
+    "required": [
+     "agent_status",
+     "focused",
+     "pane_id",
+     "revision",
+     "tab_id",
+     "terminal_id",
+     "workspace_id"
+    ]
+   }
+  },
+  "AgentSessionInfo": {
+   "event": {
+    "properties": [
+     "agent",
+     "kind",
+     "source",
+     "value"
+    ],
+    "required": [
+     "agent",
+     "kind",
+     "source",
+     "value"
+    ]
+   },
+   "success_response": {
+    "properties": [
+     "agent",
+     "kind",
+     "source",
+     "value"
+    ],
+    "required": [
+     "agent",
+     "kind",
+     "source",
+     "value"
+    ]
+   }
+  },
+  "PaneSplitParams": {
+   "request": {
+    "properties": [
+     "cwd",
+     "direction",
+     "env",
+     "focus",
+     "ratio",
+     "right_click",
+     "target_pane_id",
+     "workspace_id"
+    ],
+    "required": [
+     "direction"
+    ]
+   }
+  },
+  "TabCreateParams": {
+   "request": {
+    "properties": [
+     "cwd",
+     "env",
+     "focus",
+     "label",
+     "workspace_id"
+    ],
+    "required": []
+   }
+  },
+  "EventsSubscribeParams": {
+   "request": {
+    "properties": [
+     "subscriptions"
+    ],
+    "required": [
+     "subscriptions"
+    ]
+   }
+  },
+  "LayoutNode": {
+   "request": {
+    "properties": [],
+    "required": [],
+    "oneOf": [
+     {
+      "const": "pane",
+      "properties": [
+       "command",
+       "cwd",
+       "env",
+       "label",
+       "pane_id",
+       "type"
+      ],
+      "required": [
+       "type"
+      ]
+     },
+     {
+      "const": "split",
+      "properties": [
+       "direction",
+       "first",
+       "ratio",
+       "second",
+       "type"
+      ],
+      "required": [
+       "direction",
+       "first",
+       "ratio",
+       "second",
+       "type"
+      ]
+     }
+    ]
+   },
+   "success_response": {
+    "properties": [],
+    "required": [],
+    "oneOf": [
+     {
+      "const": "pane",
+      "properties": [
+       "command",
+       "cwd",
+       "env",
+       "label",
+       "pane_id",
+       "type"
+      ],
+      "required": [
+       "type"
+      ]
+     },
+     {
+      "const": "split",
+      "properties": [
+       "direction",
+       "first",
+       "ratio",
+       "second",
+       "type"
+      ],
+      "required": [
+       "direction",
+       "first",
+       "ratio",
+       "second",
+       "type"
+      ]
+     }
+    ]
+   }
+  },
+  "LayoutApplyParams": {
+   "request": {
+    "properties": [
+     "focus",
+     "root",
+     "tab_id",
+     "tab_label",
+     "workspace_id"
+    ],
+    "required": [
+     "root"
+    ]
+   }
+  },
+  "PaneLayoutPane": {
+   "event": {
+    "properties": [
+     "focused",
+     "pane_id",
+     "rect"
+    ],
+    "required": [
+     "focused",
+     "pane_id",
+     "rect"
+    ]
+   },
+   "success_response": {
+    "properties": [
+     "focused",
+     "pane_id",
+     "rect"
+    ],
+    "required": [
+     "focused",
+     "pane_id",
+     "rect"
+    ]
+   }
+  },
+  "PaneMoveParams": {
+   "request": {
+    "properties": [
+     "destination",
+     "focus",
+     "pane_id"
+    ],
+    "required": [
+     "destination",
+     "pane_id"
+    ]
+   }
+  },
+  "PaneSwapParams": {
+   "request": {
+    "properties": [
+     "direction",
+     "pane_id",
+     "source_pane_id",
+     "target_pane_id"
+    ],
+    "required": []
+   }
+  },
+  "PaneRenameParams": {
+   "request": {
+    "properties": [
+     "label",
+     "pane_id"
+    ],
+    "required": [
+     "pane_id"
+    ]
+   }
+  },
+  "PaneReportMetadataParams": {
+   "request": {
+    "properties": [
+     "agent",
+     "applies_to_source",
+     "clear_display_agent",
+     "clear_state_labels",
+     "clear_title",
+     "display_agent",
+     "pane_id",
+     "seq",
+     "source",
+     "state_labels",
+     "title",
+     "tokens",
+     "ttl_ms"
+    ],
+    "required": [
+     "pane_id",
+     "source"
+    ]
+   }
+  },
+  "PluginPaneCloseParams": {
+   "request": {
+    "properties": [
+     "pane_id"
+    ],
+    "required": [
+     "pane_id"
+    ]
+   }
+  },
+  "WorkspaceCreateParams": {
+   "request": {
+    "properties": [
+     "cwd",
+     "env",
+     "focus",
+     "label",
+     "source_workspace_id"
+    ],
+    "required": []
+   }
+  }
+ },
+ "request_methods": [
+  "agent.explain",
+  "agent.focus",
+  "agent.get",
+  "agent.list",
+  "agent.prompt",
+  "agent.read",
+  "agent.rename",
+  "agent.send_keys",
+  "agent.start",
+  "agent.view.clear",
+  "agent.view.set",
+  "agent.wait",
+  "client.window_title.clear",
+  "client.window_title.set",
+  "client_shell.surface.set",
+  "command.invoke",
+  "events.subscribe",
+  "events.wait",
+  "integration.install",
+  "integration.list",
+  "integration.uninstall",
+  "layout.apply",
+  "layout.export",
+  "layout.set_split_ratio",
+  "notification.show",
+  "pane.clear_agent_authority",
+  "pane.close",
+  "pane.copy_motion",
+  "pane.copy_search",
+  "pane.current",
+  "pane.edges",
+  "pane.edit_scrollback",
+  "pane.focus",
+  "pane.focus_direction",
+  "pane.get",
+  "pane.graphics.clear",
+  "pane.graphics.info",
+  "pane.graphics.set",
+  "pane.input.set",
+  "pane.layout",
+  "pane.link.activate",
+  "pane.link.resolve",
+  "pane.list",
+  "pane.move",
+  "pane.neighbor",
+  "pane.process_info",
+  "pane.read",
+  "pane.release_agent",
+  "pane.rename",
+  "pane.report_agent",
+  "pane.report_agent_session",
+  "pane.report_metadata",
+  "pane.resize",
+  "pane.scroll",
+  "pane.selection.read",
+  "pane.send_input",
+  "pane.send_keys",
+  "pane.send_text",
+  "pane.split",
+  "pane.swap",
+  "pane.wait_for_output",
+  "pane.zoom",
+  "ping",
+  "plugin.action.invoke",
+  "plugin.action.list",
+  "plugin.disable",
+  "plugin.enable",
+  "plugin.link",
+  "plugin.list",
+  "plugin.log.list",
+  "plugin.pane.close",
+  "plugin.pane.focus",
+  "plugin.pane.open",
+  "plugin.unlink",
+  "popup.close",
+  "product_announcement.dismiss",
+  "release_notes.dismiss",
+  "server.agent_manifests",
+  "server.live_handoff",
+  "server.reload_agent_manifests",
+  "server.reload_config",
+  "server.stop",
+  "session.snapshot",
+  "tab.close",
+  "tab.create",
+  "tab.focus",
+  "tab.get",
+  "tab.list",
+  "tab.move",
+  "tab.rename",
+  "workspace.close",
+  "workspace.create",
+  "workspace.focus",
+  "workspace.get",
+  "workspace.list",
+  "workspace.move",
+  "workspace.move_block",
+  "workspace.rename",
+  "workspace.report_metadata",
+  "worktree.create",
+  "worktree.list",
+  "worktree.open",
+  "worktree.remove"
+ ],
+ "top_level": {
+  "error_response": {
+   "properties": [
+    "error",
+    "id"
+   ],
+   "required": [
+    "error",
+    "id"
+   ]
+  },
+  "event": {
+   "properties": [
+    "data",
+    "event"
+   ],
+   "required": [
+    "data",
+    "event"
+   ]
+  },
+  "request": {
+   "properties": [
+    "id"
+   ],
+   "required": [
+    "id"
+   ]
+  },
+  "subscription_event": {
+   "properties": [
+    "data",
+    "event"
+   ],
+   "required": [
+    "data",
+    "event"
+   ]
+  },
+  "success_response": {
+   "properties": [
+    "id",
+    "result"
+   ],
+   "required": [
+    "id",
+    "result"
+   ]
+  }
+ }
+}
