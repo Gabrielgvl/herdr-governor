@@ -41,6 +41,10 @@ def a1_trace_records():
             .decode().splitlines() if line.strip()]
 
 
+def a2_sub_evidence():
+    return fixture_json("a2-subscription-evidence.json")
+
+
 def trace_records():
     return [json.loads(line)
             for line in fixture_bytes("a2-tools-daemon-trace.jsonl")
@@ -241,6 +245,130 @@ class A1ExecutorTransport(unittest.TestCase):
         self.assertEqual(auth["loopback_name_derivation"],
                          "every loopback variant derives the source name "
                          "local-mcp")
+
+
+class A2HerdrSubscription(unittest.TestCase):
+    """contract-a2.md § Real-Herdr subscription leg — protocol-22 socket
+    evidence from the isolated named session `herdr-governor-contract`
+    (raw NDJSON only, no live-socket traffic). Confirmed behaviors only;
+    the three need-owner-decision items (scroll-changed delivery, silent
+    stream teardown on malformed input, schema drift) have no test by
+    design. The raw JSONL carries owner prompt lines and stays in the
+    artifact bundle — this fixture is the scrubbed distillation."""
+
+    def setUp(self):
+        self.ev = a2_sub_evidence()
+
+    def test_a2sub_isolation_socket_scoped(self):
+        iso = self.ev["isolation"]
+        self.assertEqual(iso["connect_calls_total"], 67)
+        self.assertEqual(iso["connect_calls_to_session_socket"], 67)
+        self.assertEqual(iso["connect_calls_to_live_socket"], 0)
+        self.assertEqual(iso["gov_a2_request_id_hits_live_server_log"], 0)
+        self.assertGreater(iso["gov_a2_request_id_hits_session_server_log"], 0)
+        self.assertTrue(iso["spawned_shell_env_carries_session_socket"])
+        self.assertTrue(iso["live_socket_stat_unchanged_before_after"])
+        self.assertEqual(iso["session_snapshot_final_workspaces"], 0)
+        # the two stated caveats stay stated, not absorbed
+        self.assertIn("not a /tmp root", iso["caveat_not_a_temp_root"])
+        self.assertIn("carries the live endpoint", iso["caveat_server_env"])
+
+    def test_a2sub_one_request_per_connection(self):
+        framing = self.ev["framing"]
+        self.assertTrue(framing["one_request_per_connection"])
+        self.assertEqual(framing["pipelined_second_frame"], "dropped")
+        self.assertTrue(framing["subscription_connection_stays_open"])
+
+    def test_a2sub_subscription_ack(self):
+        sub = self.ev["subscription"]
+        self.assertEqual(sub["ack_type"], "subscription_started")
+        self.assertTrue(sub["event_envelope"]["carries_data"])
+
+    def test_a2sub_subscription_pane_filter(self):
+        self.assertEqual(self.ev["subscription"]["unsubscribed_pane_leaked"], [])
+
+    def test_a2sub_output_match_one_shot(self):
+        one = self.ev["subscription"]["one_shot"]
+        self.assertEqual(one["same_marker_again_after_clear"], [])
+        self.assertTrue(one["connection_still_open_after_fire"])
+        self.assertTrue(
+            self.ev["subscription"]["armed_while_marker_on_screen_fires_immediately"])
+
+    def test_a2sub_subscribe_empty_ok(self):
+        empty = self.ev["subscription"]["subscribe_variants"]["empty_list"]
+        self.assertFalse(empty["serverClosed"])
+        self.assertTrue(empty["idMatches"])
+
+    def test_a2sub_subscribe_error_id_derived(self):
+        """Confirmed-negative: per-sub failure reports a DERIVED id and closes."""
+        bogus = self.ev["subscription"]["subscribe_variants"]["bogus_pane"]
+        self.assertTrue(bogus["replyIdSuffix"].endswith(":sub:0:probe"))
+        self.assertTrue(bogus["serverClosed"])
+        self.assertFalse(bogus["idMatches"])
+        live = self.ev["subscription"]["subscribe_variants"]["live_workspace_pane_id"]
+        self.assertEqual(live["error"], "pane_not_found")
+
+    def test_a2sub_concurrent_connections_independent(self):
+        con = self.ev["concurrency"]
+        self.assertEqual(con["unary_during_armed_subscription"],
+                         ["pong", "session_snapshot", "pane_read", "ok"])
+        self.assertEqual(con["four_unary_plus_one_event_elapsed_ms"], 201)
+        self.assertTrue(con["same_id_on_two_connections_both_answered"])
+
+    def test_a2sub_no_multiplex(self):
+        nm = self.ev["no_multiplex"]
+        self.assertIsNone(nm["second_frame_on_subscription_connection"]["reply"])
+        self.assertTrue(nm["second_frame_on_subscription_connection"]["connectionClosed"])
+        self.assertEqual(nm["pipelined_two_unary_one_connection"]["replies"], 1)
+        self.assertTrue(nm["pipelined_two_unary_one_connection"]["connectionClosed"])
+
+    def test_a2sub_reconnect_no_replay_state_catchup(self):
+        rec = self.ev["reconnect"]
+        self.assertTrue(rec["no_replay_no_buffer"])
+        self.assertEqual(rec["marker_cleared_before_resubscribe"],
+                         "NO EVENT (lost)")
+        self.assertTrue(rec["state_catchup_when_marker_on_screen"])
+        self.assertTrue(rec["subscribe_has_no_cursor_or_revision_param"])
+        self.assertEqual(rec["read_revision_in_observed_events"], 0)
+
+    def test_a2sub_malformed_closes_and_empty_error_id(self):
+        mal = self.ev["malformed"]
+        self.assertEqual(len(mal["cases_closed_connection"]), 9)
+        self.assertEqual(mal["fresh_connection_error_id"], "")
+        self.assertEqual(mal["error_code"], "invalid_request")
+        self.assertIn("too large", mal["oversize_session_log_warning"])
+
+    def test_a2sub_line_bound_oversize_rejected(self):
+        mal = self.ev["malformed"]
+        self.assertIn("oversize_2mib", mal["cases_closed_connection"])
+
+    def test_a2sub_peer_failure_containment(self):
+        mal = self.ev["malformed"]
+        self.assertTrue(mal["on_armed_subscription_no_error_frame"])
+        self.assertTrue(self.ev["timeouts"]["server_healthy_after_abandoned_wait"])
+
+    def test_a2sub_partial_frame_reassembled(self):
+        self.assertTrue(self.ev["malformed"]["partial_frame_reassembled"])
+
+    def test_a2sub_wait_server_timeout(self):
+        to = self.ev["timeouts"]
+        self.assertEqual(to["wait_timeout_code"], "timeout")
+        self.assertTrue(to["wait_timeout_closes_connection"])
+        self.assertTrue(to["concurrent_ping_answered_during_wait"])
+        self.assertEqual(to["pane_wait_for_output_timeout_code"], "timeout")
+
+    def test_a2sub_wait_no_timeout_blocks(self):
+        self.assertFalse(
+            self.ev["timeouts"]["wait_without_timeout_ms_replied_within_3s"])
+
+    def test_a2sub_subscription_survives_idle_8s(self):
+        self.assertTrue(
+            self.ev["timeouts"]["subscription_idle_8s_still_delivers"])
+
+    def test_a2sub_events_wait_agent_status_only(self):
+        """Confirmed-negative: every non-agent-status EventMatch is refused."""
+        self.assertEqual(self.ev["timeouts"]["wait_unsupported_match_code"],
+                         "unsupported_event_wait_match")
 
 
 class A2ToolsDaemonTransport(unittest.TestCase):

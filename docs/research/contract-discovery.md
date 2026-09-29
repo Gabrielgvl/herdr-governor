@@ -76,8 +76,9 @@ fixtures `a1-transport-trace.jsonl`, `a1-gateway-observations.json`.
 
 ## A2 — Socket concurrency
 
-**Status: confirmed for the isolated herdr-tools daemon transport;
-Herdr protocol-22 subscription leg unverified.**
+**Status: confirmed for the isolated herdr-tools daemon transport and for
+the Herdr protocol-22 subscription leg (isolated named session); three
+items need-owner-decision.**
 
 The probe (`contract-a2-probe.mjs`, protocol fixture revision 22) stood up
 a private herdr-tools daemon and drove its Unix socket directly. The
@@ -107,16 +108,80 @@ Confirmed-negative (tools daemon): `events.subscribe` was rejected with
 `DAEMON_UNKNOWN_METHOD` after the daemon hello/ack. This characterizes
 the **tools daemon only**.
 
-**Unverified — do not read as confirmed:** the Herdr protocol-22 socket
-contract — subscription plus concurrent short-lived requests on a real
-Herdr session. The isolated daemon is not Herdr; its hello/ack, method
-surface, and error codes are daemon-specific. Production external
-execution was forbidden in the probe, and production recovery was
-replaced by mailbox binding. A2's Herdr leg still needs a live probe in
-the `herdr-governor-contract` session or an explicit owner ruling.
-
 Source: `contract-a2.md`, `contract-a2-probe.mjs`;
 fixture `a2-tools-daemon-trace.jsonl`.
+
+### A2 subscription leg — Herdr protocol-22 socket (isolated named session)
+
+The leg the tools-daemon probe could not cover was run against the real
+Herdr server socket protocol (the one the pinned fixture describes,
+protocol `22`) on the already-running isolated named session
+`herdr-governor-contract`, raw NDJSON only — no live-socket connection,
+no live-daemon signal, no restart. Probe source:
+`contract-a2-herdr-probe.mjs` (artifact bundle); raw evidence
+`contract-a2-subscription-evidence/` (304-record JSONL — contains owner
+prompt lines inside pane text, kept out of the tree; the committed
+fixture is the scrubbed distillation).
+
+Isolation proof (gathered before any session-socket traffic): all `67`
+`connect()` calls in the strace targeted the session socket, zero the
+live socket; `gov-a2:`-prefixed request ids appear 0 times in the live
+server log and 121 times in the session log; shells spawned by the
+session server carry the session endpoint in their environment; the live
+socket's stat is unchanged before/after; session snapshot is
+`workspaces:[]` before and after. Two caveats stated rather than
+absorbed: the session directory is Herdr's per-session private
+directory, not a `/tmp` root (config shared read-only), and the session
+server's own environment carries the live endpoint while its listener
+and spawned shells use the session socket.
+
+Confirmed behaviors and their tests:
+
+| Behavior | Test ID |
+|---|---|
+| Isolation: every connect targets the session socket; live log untouched; live socket unchanged; clean session teardown | `a2sub_isolation_socket_scoped` |
+| Framing: exactly one unary request per connection, closed ~100 ms after the reply; a pipelined second frame is dropped; only `events.subscribe` holds the connection | `a2sub_one_request_per_connection` |
+| Subscription arm is acknowledged (`subscription_started`) and events carry the `event`+`data` envelope | `a2sub_subscription_ack` |
+| Pane filter: an identical marker in the unsubscribed pane delivers nothing | `a2sub_subscription_pane_filter` |
+| `pane.output_matched` fires at most once per subscription (state-triggered on arm, then dead); the connection stays open after the fire; arming while the marker is on screen fires immediately | `a2sub_output_match_one_shot` |
+| Empty subscription list is accepted and the connection is held | `a2sub_subscribe_empty_ok` |
+| Confirmed-negative: a per-subscription failure is reported with a **derived id** `<request id>:sub:<index>:probe`, not the request id, and closes the connection; a live-workspace pane id yields `pane_not_found` (the session cannot see live panes) | `a2sub_subscribe_error_id_derived` |
+| Concurrency model: unary requests on separate connections proceed while a subscription is armed (4 unary + 1 event in 201 ms); the same request id on two connections is answered independently | `a2sub_concurrent_connections_independent` |
+| Confirmed-negative: there is **no same-connection multiplexing** — a second frame on a subscription connection resets it silently; a pipelined second unary is dropped | `a2sub_no_multiplex` |
+| Disconnect mid-stream: events are neither replayed nor buffered; re-subscription fires immediately from current `recent` text (state catch-up) and is silently lost if the text was cleared; no cursor/revision resume token (`read.revision` is constant 0) | `a2sub_reconnect_no_replay_state_catchup` |
+| Every malformed frame (invalid JSON, empty line, non-object, missing id/method, unknown method, array params, subscription missing `pane_id`, 2 MiB line) closes the connection; on a fresh connection the correlated-less error carries `id:""` | `a2sub_malformed_closes_and_empty_error_id` |
+| A line bound exists: 2 MiB is rejected server-side (`api request line is too large`); the exact bound was not measured | `a2sub_line_bound_oversize_rejected` |
+| Peer failure containment: a poisoned connection never stalls the server or other connections (server healthy after abandoned waits and malformed peers) | `a2sub_peer_failure_containment` |
+| A frame split across two writes 200 ms apart parses fine | `a2sub_partial_frame_reassembled` |
+| `events.wait` / `pane.wait_for_output` honour server-side `timeout_ms` with a correlated `timeout` error, then close; a concurrent ping on another connection is answered during the wait | `a2sub_wait_server_timeout` |
+| Without `timeout_ms` a wait does not reply (3 s observation); the client close is silent and the server stays healthy | `a2sub_wait_no_timeout_blocks` |
+| An armed subscription idle 8 s still delivers (longer idle bounds untested) | `a2sub_subscription_survives_idle_8s` |
+| Confirmed-negative: `events.wait` rejects every `EventMatch` except pane agent-status matches (`unsupported_event_wait_match`) although the fixture union lists 25+ kinds | `a2sub_events_wait_agent_status_only` |
+
+Needs-owner-decision (documented, no test): **`A2-HERDR-SCROLL-CHANGED-UNVERIFIED`**
+(a `pane.scroll_changed` subscription produced no event in 1.5 s — request
+no-op vs non-delivery not distinguished; `pane.agent_status_changed` was
+subscribed but never triggered, since starting an agent was outside the
+read-only probe); **`A2-HERDR-MALFORMED-ON-STREAM-SILENT`** (a malformed
+frame on a subscription connection tears the stream down with no error
+frame — a governor must treat unexpected EOF on a subscription as
+"re-arm and catch up", never as "server gone"); **`A2-HERDR-SCHEMA-DRIFT-GRAPHICS-STREAM`**
+(server 0.9.1 enumerates 104 methods vs the fixture's 103, server-only
+`pane.graphics.stream`, same protocol number — `just schema-live` is the
+sanctioned check and was not run).
+
+Implication for the spec's A2 assumption: the Herdr socket offers **no
+durable, multiplexed event stream**. A governor needing "subscription
+plus concurrent requests" holds one connection per armed one-shot
+subscription and one per in-flight unary request, and re-arms after every
+EOF with a state read (`pane.read`/`session.snapshot`) as the catch-up.
+
+Source: `contract-a2.md` § subscription leg,
+`contract-a2-herdr-probe.mjs`, `contract-a2-subscription-evidence/`;
+fixture `a2-subscription-evidence.json`.
+
+The two legs together close the A2 subscription question at evidence
+level; the three need-owner-decision items above go to the §19 batch.
 
 ## A3 — Start and prompt semantics
 
@@ -251,7 +316,9 @@ Jev availability, latency, or judgment shape.
 |---|---|---|
 | A1 full OAuth round-trip | open sub-case — auth proven up to metadata discovery only | trial against a real authorization server (owner-decision material) |
 | A1 offline error typing | confirmed untyped transport failure | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
-| A2 Herdr socket subscription leg | unverified | live probe in `herdr-governor-contract`, or owner ruling that the tools-daemon contract is the contract |
+| A2 Herdr socket: scroll-changed delivery | needs-owner-decision | distinguished probe (scroll-inducing pane or agent-status transition in the session) |
+| A2 Herdr socket: silent stream teardown on malformed input | needs-owner-decision | owner adopts the re-arm-and-catch-up contract for unexpected subscription EOF |
+| A2 Herdr socket: schema drift (`pane.graphics.stream`) | needs-owner-decision | `just schema-live` against the session server, then re-pin the fixture |
 | A3 start/prompt semantics | untested | wave-2 probe of agent start and prompt delivery |
 | A4 incarnation proof | confirmed-negative | spec fallback already defined — no action needed |
 | A5 AGY transcript source | unqualified | an AGY native-reader probe, or owner ruling that AGY stays terminal-only |
@@ -266,6 +333,7 @@ Jev availability, latency, or judgment shape.
 | `a1-transport-trace.jsonl` | 8-record probe-server frame log over two runs: handshake, headers, SSE GET, restart, self-contained re-call | `/tmp/mcp-probe-server.log` |
 | `a1-gateway-observations.json` | recorded gateway-side strings: install result, echoed args, untyped offline error, OAuth discovery, HTTPS refusal, no-uninstall surface | `contract-a1.md` |
 | `a2-tools-daemon-trace.jsonl` | 91-record wire log: hello/ack, multiplex, malformed frames, timeout, close | `/tmp/gov-p2-a2-evidence.jsonl` |
+| `a2-subscription-evidence.json` | scrubbed distillation of the Herdr protocol-22 subscription leg: isolation counts, framing, subscription semantics, concurrency, reconnect, malformed, timeouts, schema drift | `contract-a2-subscription-evidence/evidence.jsonl` (artifact bundle) |
 | `a46-identity-evidence.json` | 27 three-surface captures + 47 command receipts + kill/session records | `gov-p2-a46` lane `contract-a4-a6-raw.jsonl` |
 | `a46-restart-history.json` | one restart window, mailbox record kinds, persisted run identities | `contract-a4-a6-historical-summary.json` |
 | `a5-probe-outcomes.json` | 27 recorded case outcomes from the reference readers | `/tmp/gov-a5-*/results.json` |
@@ -273,5 +341,5 @@ Jev availability, latency, or judgment shape.
 | `a5-samples/` | byte-faithful synthetic transcript inputs (Pi JSONL, Devin ATIF, Claude JSONL) | `/tmp/gov-a5-*/cases-*` |
 | `protocol22-subset.json` | pinned schema subset: envelopes + objects the evidence exercised | `tests/fixtures/herdr-api-schema.json` |
 
-`just contract` runs the suite — 66 checks, fail-closed on absent or
+`just contract` runs the suite — 84 checks, fail-closed on absent or
 malformed fixtures.

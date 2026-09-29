@@ -1,0 +1,76 @@
+{
+  "source": "contract-a2.md section 'Real-Herdr subscription leg' (2026-09-29); raw evidence contract-a2-subscription-evidence/evidence.jsonl (304 records, sha256 5d6b47bce74bfcf6069ebace9fc23605ead37ef176c180d815b9b7ec64a7a17a — contains owner prompt lines inside pane text, not redistributable verbatim); probe source contract-a2-herdr-probe.mjs (artifact bundle). Host paths scrubbed to /home/user/ placeholders.",
+  "protocol": 22,
+  "server_version": "0.9.1",
+  "isolation": {
+    "named_session": "herdr-governor-contract",
+    "connect_calls_total": 67,
+    "connect_calls_to_session_socket": 67,
+    "connect_calls_to_live_socket": 0,
+    "gov_a2_request_id_hits_live_server_log": 0,
+    "gov_a2_request_id_hits_session_server_log": 121,
+    "spawned_shell_env_carries_session_socket": true,
+    "live_socket_stat_unchanged_before_after": true,
+    "session_snapshot_final_workspaces": 0,
+    "caveat_not_a_temp_root": "session dir is Herdr's per-session private directory, not a /tmp root; config.toml shared read-only with the live server",
+    "caveat_server_env": "the session server's own environment carries the live endpoint; its API listener and spawned shells use the session socket"
+  },
+  "framing": {
+    "one_request_per_connection": true,
+    "close_after_reply_ms_approx": 100,
+    "pipelined_second_frame": "dropped",
+    "subscription_connection_stays_open": true
+  },
+  "subscription": {
+    "ack_type": "subscription_started",
+    "event_envelope": {"event": "pane.output_matched", "carries_data": true},
+    "unsubscribed_pane_leaked": [],
+    "one_shot": {"same_marker_again_after_clear": [], "connection_still_open_after_fire": true},
+    "armed_while_marker_on_screen_fires_immediately": true,
+    "subscribe_variants": {
+      "empty_list": {"serverClosed": false, "idMatches": true},
+      "bogus_pane": {"replyIdSuffix": ":sub:0:probe", "serverClosed": true, "idMatches": false},
+      "live_workspace_pane_id": {"error": "pane_not_found", "serverClosed": true, "idMatches": false}
+    }
+  },
+  "concurrency": {
+    "unary_during_armed_subscription": ["pong", "session_snapshot", "pane_read", "ok"],
+    "four_unary_plus_one_event_elapsed_ms": 201,
+    "same_id_on_two_connections_both_answered": true
+  },
+  "no_multiplex": {
+    "second_frame_on_subscription_connection": {"reply": null, "connectionClosed": true},
+    "pipelined_two_unary_one_connection": {"replies": 1, "connectionClosed": true}
+  },
+  "reconnect": {
+    "no_replay_no_buffer": true,
+    "marker_cleared_before_resubscribe": "NO EVENT (lost)",
+    "state_catchup_when_marker_on_screen": true,
+    "subscribe_has_no_cursor_or_revision_param": true,
+    "read_revision_in_observed_events": 0
+  },
+  "malformed": {
+    "cases_closed_connection": ["invalid_json", "empty_line", "non_object", "missing_id", "missing_method", "unknown_method", "array_params", "subscription_missing_pane_id", "oversize_2mib"],
+    "fresh_connection_error_id": "",
+    "error_code": "invalid_request",
+    "oversize_session_log_warning": "api request line is too large",
+    "on_armed_subscription_no_error_frame": true,
+    "partial_frame_reassembled": true
+  },
+  "timeouts": {
+    "wait_unsupported_match_code": "unsupported_event_wait_match",
+    "wait_timeout_code": "timeout",
+    "wait_timeout_closes_connection": true,
+    "concurrent_ping_answered_during_wait": true,
+    "wait_without_timeout_ms_replied_within_3s": false,
+    "pane_wait_for_output_timeout_code": "timeout",
+    "subscription_idle_8s_still_delivers": true,
+    "server_healthy_after_abandoned_wait": true
+  },
+  "schema_drift": {
+    "server_methods": 104,
+    "fixture_methods": 103,
+    "server_only": ["pane.graphics.stream"],
+    "fixture_only": []
+  }
+}
