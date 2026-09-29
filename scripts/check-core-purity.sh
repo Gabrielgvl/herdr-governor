@@ -11,17 +11,21 @@
 #       std::net, std::io, std::process, std::env, std::time::,
 #       Instant::now, SystemTime, tokio, reqwest, rusqlite, unsafe — plus
 #       the escape forms a flat token scan cannot see: grouped/aliased
-#       `use` trees that reach those modules, glob imports of std/core/
-#       alloc (`use std::*` names no banned module but reaches all of
-#       them), whitespace-split paths, include/include_str/include_bytes
-#       identifiers (invocations, imports/aliases, raw identifiers),
-#       env!/option_env!, #[path], and every `extern crate
-#       std` spelling (r#std, `as` aliases, #[macro_use]) — all pull
-#       unscanned code or host state into the crate. The scan runs on the
-#       comment-stripped, literal-blanked view (scripts/
-#       strip_rust_comments.py), so comments and strings can neither hide
-#       a token nor false-fire one. governor-core/clippy.toml carries the
-#       compiler-enforced half of this boundary (disallowed
+#       `use` trees that reach those modules, glob imports of the
+#       std/core/alloc crate roots (a glob names no module — `use
+#       std::*` reaches all of them), whitespace-split paths,
+#       include/include_str/include_bytes identifiers (invocations,
+#       imports/aliases, raw identifiers), env!/option_env!, #[path],
+#       and every `extern crate std|core` spelling (r#std, `as` aliases,
+#       #[macro_use]) — all pull unscanned code or host state into the
+#       crate. `extern crate alloc;` plus `alloc::` paths are the
+#       sanctioned allocation spellings under no_std (owner decision:
+#       alloc collections are intended to work); only the alloc-root
+#       glob stays banned, since a glob defeats the module-path check.
+#       The scan runs on the comment-stripped, literal-blanked view
+#       (scripts/strip_rust_comments.py), so comments and strings can
+#       neither hide a token nor false-fire one. governor-core/clippy.toml
+#       carries the compiler-enforced half of this boundary (disallowed
 #       methods/types/macros — the macro entries name their core:: paths,
 #       which is what they resolve to under no_std) — this script stays
 #       the pre-compile tripwire. Core inputs are values, including time,
@@ -170,6 +174,9 @@ import strip_rust_comments as S
 
 SRC = sys.argv[2]
 BANNED = ("fs", "net", "io", "process", "env", "time", "os", "backtrace")
+# Glob leaves on the sysroot roots stay banned outright: a glob names no
+# module, so the path check cannot see what `use std::*` reaches. alloc's
+# named imports and alloc:: paths are allowed — only `use alloc::*` fails.
 GLOB_ROOTS = ("std", "core", "alloc")
 
 TOKEN_RX = re.compile(
@@ -178,8 +185,10 @@ TOKEN_RX = re.compile(
     r"|tokio|reqwest|rusqlite|\bunsafe\b"
     # Include macros expand before Clippy: reject the identifiers themselves,
     # including raw spellings, so imports cannot rename unscanned ingress.
+    # extern crate std|core is banned in every spelling; alloc is the
+    # owner-sanctioned no_std exception — its paths are pure.
     r"|\b(?:r#)?include(?:_str|_bytes)?\b|\benv\s*!|\boption_env\s*!"
-    r"|\bextern\s+crate\s+(?:r#)?(?:std|core|alloc)\b")
+    r"|\bextern\s+crate\s+(?:r#)?(?:std|core)\b")
 
 
 def split_top(s):
