@@ -1256,6 +1256,18 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         self.assertIn("FAIL R0", proc.stdout)
         self.assertIn("unreadable.rs", proc.stdout)
 
+    def test_untracked_dangling_symlink_source_fails(self):
+        # pi-review F1: a dangling symlink named like an in-scope source is
+        # not a regular file — the isfile guard must not skip it; R0 names
+        # it unscannable.
+        p = self.repo.dir / CORE / "src" / "dangling.rs"
+        os.symlink("/nonexistent-target", p)
+        proc = self.check()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("FAIL R0", proc.stdout)
+        self.assertIn("dangling.rs", proc.stdout)
+        self.assertIn("symlink", proc.stdout)
+
     @case("snapshot-self-accept", "control", "policy files legitimately quote the forbidden patterns — R1 gates them, R7 stays silent")
     def test_r7_exempts_protected_policy_files(self):
         self.repo.write(

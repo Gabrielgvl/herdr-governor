@@ -4,8 +4,10 @@
 #   `git ls-files --others`; staged/tracked changes on protected paths ->
 #   FAIL R1; still-untracked -> REPORT R1 and join the R2/R6/R7/R8 content scans.
 #   An untracked in-scope file the scan cannot read — over the 8 MiB scan
-#   limit or failing to open/stat — is FAIL R0 naming the file (and the
-#   limit): a skipped scan is not a clean one.
+#   limit, failing to open/stat, or not a regular file at all (a dangling
+#   symlink is the known cheat: isfile follows the link and misses it) —
+#   is FAIL R0 naming the file (and the limit or the reason): a skipped
+#   scan is not a clean one.
 # CI mode (BASE arg): `git diff BASE...HEAD`; any protected path -> FAIL R1.
 # GOV_PROTECTED_OK=1 is the owner override: every failure that concerns a
 # protected path or a protected Cargo.toml section (R1, R4, R5, R6)
@@ -535,6 +537,19 @@ for st, p in changes:
 if not ci:
     for p in untracked:
         if not os.path.isfile(p):
+            # git lists whatever occupies the path, not just regular
+            # files — a dangling symlink is the known cheat. A path
+            # that vanished between ls-files and this scan hides
+            # nothing; anything still present but not a readable
+            # regular file is an unscannable in-scope source.
+            if os.path.lexists(p):
+                if os.path.islink(p):
+                    why = ("dangling symlink" if not os.path.exists(p)
+                           else "symlink to a non-regular file")
+                else:
+                    why = "not a regular file"
+                fail("R0", "%s: unscannable untracked in-scope source — %s"
+                     % (p, why))
             continue
         if r6_scoped(p) and not os.access(p, os.X_OK):
             fail("R6", "%s new file not executable — hook/gate scripts must stay 100755" % p)

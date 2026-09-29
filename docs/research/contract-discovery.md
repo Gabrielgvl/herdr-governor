@@ -100,7 +100,7 @@ Confirmed behaviors and their tests:
 | Frame over `maxLineBytes` (262144) → protocol error + close | `a2_oversize_close` |
 | A poisoned peer does not stall healthy connections | `a2_peer_failure_containment` |
 | Client-side timeout rejects the request (`DAEMON_UNAVAILABLE`) without closing the client | `a2_client_timeout_nonfatal` |
-| A late reply for a timed-out request is ignored; subsequent requests resolve normally | `a2_late_reply_ignored` |
+| A reply for a timed-out request lands after the recorded client-side rejection — it cannot re-settle the request, and the next request resolves to its own response. The wire log shows the reply is *inert*; the client's internal pending map is not observable on the wire, so discard is not directly proven | `a2_late_reply_inert_after_timeout` |
 | Closing the client rejects pending requests (`DAEMON_UNAVAILABLE`, "closed by the client") | `a2_client_close_rejects_pending` |
 | Recorded probe verdict is PASS (fixture completeness guard) | `a2_recorded_probe_passed` |
 

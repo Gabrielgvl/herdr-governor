@@ -502,15 +502,32 @@ class A2ToolsDaemonTransport(unittest.TestCase):
         self.assertIn("herdr-daemon-1",
                       json.loads(held["rx"])["result"]["held"])
 
-    def test_a2_late_reply_ignored(self):
-        frames = peer_frames(self.records, "official-client")
-        rx = rx_json_of(frames)
+    def test_a2_late_reply_inert_after_timeout(self):
+        # The client's rejection of herdr-daemon-1 is recorded BEFORE the
+        # late reply lands on the wire — a settled rejection cannot be
+        # re-resolved, so the frame is inert and the next request resolves
+        # to its own response. The client's pending map is not observable
+        # on the wire, so discard is proven as inertness, not by
+        # inspecting client internals.
+        timeout_i = self.records.index(next(
+            r for r in self.records
+            if r.get("evidence") == "request_timeout"))
+        late_i = self.records.index(next(
+            r for r in self.records
+            if r.get("peer") == "official-client"
+            and r.get("rx", "").startswith(
+                '{"id":"herdr-daemon-1","result":{"released"')))
+        self.assertLess(timeout_i, late_i)
+        rx = rx_json_of(peer_frames(self.records, "official-client"))
         late = next(r for r in rx
                     if r.get("id") == "herdr-daemon-1"
                     and "released" in r.get("result", {}))
         follow = next(r for r in rx if r.get("id") == "herdr-daemon-2")
         self.assertLess(rx.index(late), rx.index(follow))
         self.assertEqual(follow["result"]["held"], [])
+        # the release really happened daemon-side — real work the client
+        # no longer awaited, not a fabricated frame
+        self.assertIn("herdr-daemon-1", follow["result"]["completed"])
 
     def test_a2_client_close_rejects_pending(self):
         ev = next(r for r in self.records
@@ -577,13 +594,17 @@ class A4A6Identity(unittest.TestCase):
         res = out["result"]["move_result"]
         self.assertTrue(res["changed"])
         self.assertEqual(res["previous_pane_id"], "w1:p1")
+        bsnap, bpane, bagent = child_identity(self.cap["after-cross-tab-swap"])
         snap, pane, agent = child_identity(self.cap["after-workspace-move"])
         self.assertEqual(pane["pane_id"], "w2:p1")
         self.assertEqual(pane["workspace_id"], "w2")
-        before = self.cap["after-cross-tab-swap"]
-        self.assertEqual(pane["terminal_id"], get_pane(before)["terminal_id"])
-        self.assertEqual(pane["agent_session"], get_pane(before)["agent_session"])
-        self.assertEqual(agent["name"], agent_row(before, "w1:p1")["name"])
+        # label and tokens are preserved across the move on every identity
+        # surface — captured before, compared against after
+        for field in ("terminal_id", "agent_session", "label", "tokens"):
+            self.assertEqual(bpane[field], pane[field])
+            self.assertEqual(bsnap[field], snap[field])
+        self.assertEqual(bagent["tokens"], agent["tokens"])
+        self.assertEqual(bagent["name"], agent["name"])
 
     def test_a4_old_locator_apis_diverge(self):
         rec = next(r for r in commands(self.ev)
@@ -886,6 +907,13 @@ class A5Transcript(unittest.TestCase):
     def test_a5_claude_partial_corrupt_quota(self):
         with self.assertRaises(json.JSONDecodeError):
             json.loads(self.sample("claude-quota-partial.jsonl"))
+        corrupt = self.sample("claude-malformed-then-quota.jsonl")
+        recs, consumed, failure = jsonl_scan(corrupt)
+        # the malformed first line fails the scan before the quota record
+        self.assertEqual(recs, [])
+        self.assertEqual(failure, ("source_malformed", 0))
+        self.assertEqual(json.loads(corrupt.split(b"\n")[1])
+                         ["apiErrorStatus"], 429)
         tail = self.sample("claude-quota-plus-partial-tool.jsonl")
         recs, consumed, failure = jsonl_scan(tail)
         self.assertEqual(len(recs), 1)  # quota record consumed; tail pending
@@ -908,14 +936,19 @@ class A5Transcript(unittest.TestCase):
                               "detail": {"code": "EACCES"}})
         self.assertIs(case(self.out, "claude-permission-denied")["result"],
                       False)
-        # mechanism check on a fixture sample: a 000-mode file really raises
+        # mechanism check on a fixture sample: a 000-mode file really raises.
+        # Under DAC override (root, CAP_DAC_OVERRIDE) the mode denies nothing —
+        # the same privileged-runner guard the gate selftests apply
+        # (scripts/test_guardrails.py). The committed EACCES outcomes above
+        # still pin the contract in that environment.
         with tempfile.NamedTemporaryFile(delete=False) as fh:
             fh.write(self.sample("devin-session.json"))
             target = fh.name
         try:
             os.chmod(target, 0)
-            with self.assertRaises(PermissionError):
-                Path(target).read_bytes()
+            if not os.access(target, os.R_OK):
+                with self.assertRaises(PermissionError):
+                    Path(target).read_bytes()
         finally:
             os.chmod(target, 0o600)
             os.unlink(target)
