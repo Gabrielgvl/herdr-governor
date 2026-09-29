@@ -35,6 +35,12 @@ def fixture_json(rel: str):
     return json.loads(fixture_bytes(rel))
 
 
+def a1_trace_records():
+    return [json.loads(line)
+            for line in fixture_bytes("a1-transport-trace.jsonl")
+            .decode().splitlines() if line.strip()]
+
+
 def trace_records():
     return [json.loads(line)
             for line in fixture_bytes("a2-tools-daemon-trace.jsonl")
@@ -129,6 +135,112 @@ def jsonl_scan(data: bytes):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return records, consumed, ("source_malformed", consumed)
         consumed = nl + 1
+
+
+class A1ExecutorTransport(unittest.TestCase):
+    """contract-a1.md — gateway/Executor Streamable HTTP transport trial
+    against a purpose-built probe server. Wire frames come from the probe
+    server's own log (two runs, split at its `listening` records);
+    gateway-side strings come from the recorded observation fixture. The
+    full OAuth round-trip against a real authorization server is the one
+    remaining sub-case and has no test by design."""
+
+    def setUp(self):
+        self.records = a1_trace_records()
+        self.obs = fixture_json("a1-gateway-observations.json")
+
+    def runs(self):
+        """Server runs in order; element 0 of each run is its listening record."""
+        runs, current = [], None
+        for rec in self.records:
+            if rec["kind"] == "listening":
+                current = [rec]
+                runs.append(current)
+            elif current is not None:
+                current.append(rec)
+        return runs
+
+    def requests(self, run):
+        return [r["detail"] for r in run if r["kind"] == "request"]
+
+    def test_a1_register_streamable_http_source(self):
+        install = self.obs["install"]
+        self.assertEqual(install["result"], "Installed and connected")
+        self.assertEqual(install["url"], "http://127.0.0.1:8877/mcp")
+        self.assertEqual(install["tool_exposed"], "local_probe_echo")
+        self.assertEqual(install["protocol_version_accepted"], "2025-06-18")
+
+    def test_a1_handshake_sequence(self):
+        methods = [r["method"] for r in self.requests(self.runs()[0])]
+        self.assertEqual(methods, ["initialize", "notifications/initialized",
+                                   "tools/list", "tools/call"])
+
+    def test_a1_caller_arguments_forwarded_verbatim(self):
+        fwd = self.obs["caller_forwarding"]
+        self.assertEqual(fwd["request"],
+                         {"text": "caller-forwarding-probe-1",
+                          "nested": {"k": 42}})
+        self.assertEqual(fwd["echoed"], "byte-identical")
+
+    def test_a1_sse_stream_optional(self):
+        run = self.runs()[0]
+        kinds = [r["kind"] for r in run]
+        get_at = kinds.index("get")
+        following = run[get_at + 1]
+        self.assertEqual(following["kind"], "request")
+        self.assertEqual(following["detail"]["method"], "tools/list")
+        sse = self.obs["sse_validation_get"]
+        self.assertTrue(sse["gateway_issued"])
+        self.assertEqual(sse["server_status"], 405)
+        self.assertTrue(sse["session_continued"])
+
+    def test_a1_stateless_session(self):
+        for run in self.runs():
+            for detail in self.requests(run):
+                self.assertNotIn("mcp-session-id", detail["headers"])
+
+    def test_a1_reconnect_transparent_after_restart(self):
+        runs = self.runs()
+        self.assertEqual(len(runs), 2)
+        pids = [run[0]["detail"]["pid"] for run in runs]
+        self.assertNotEqual(pids[0], pids[1])
+        self.assertEqual(self.requests(runs[1])[0]["method"], "tools/call")
+
+    def test_a1_offline_is_untyped_fetch_failure(self):
+        off = self.obs["offline_failure"]
+        self.assertEqual(off["observed_error"],
+                         "Failed to call tool: fetch failed")
+        self.assertIsNone(off["typed_error_class"])
+
+    def test_a1_no_per_caller_process_recreation(self):
+        runs = self.runs()
+        self.assertEqual(len(runs), 2)
+        for run in runs:
+            self.assertEqual(sum(1 for r in run if r["kind"] == "listening"), 1)
+            for detail in self.requests(run):
+                self.assertEqual(detail["headers"]["user-agent"], "undici")
+        pm = self.obs["process_model"]
+        self.assertTrue(pm["persistent_server_process_for_all_calls"])
+        self.assertEqual(pm["child_spawns_observed"], 0)
+
+    def test_a1_non_loopback_requires_https(self):
+        self.assertTrue(self.obs["auth"]["non_loopback_http_refused"])
+
+    def test_a1_auth_is_oauth_metadata_discovery(self):
+        on401 = self.obs["auth"]["on_401"]
+        self.assertEqual(on401["www_authenticate"], "Bearer")
+        self.assertIn("/.well-known/oauth-authorization-server",
+                      on401["triggers"])
+        self.assertEqual(on401["mcp_spec"], "2026-07-28")
+        self.assertTrue(on401["observed_failure_prefix"]
+                        .startswith("HTTP 501 trying to load OAuth metadata"))
+
+    def test_a1_stale_loopback_blocks_reregistration(self):
+        auth = self.obs["auth"]
+        self.assertFalse(auth["uninstall_verb_present"])
+        self.assertEqual(auth["loopback_name_derivation"],
+                         "every loopback variant derives the source name "
+                         "local-mcp")
 
 
 class A2ToolsDaemonTransport(unittest.TestCase):

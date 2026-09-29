@@ -20,7 +20,7 @@ four wave-1 evidence reports into per-assumption verdicts.
 **Sources** (evidence reports under the p0p1 artifact bundle;
 `contract-a2-probe.mjs` is the probe source):
 `contract-a4-a6.md`, `contract-a5.md`, `contract-a2.md`,
-`contract-a2-probe.mjs`, `p1-clone-verify.md`. Proposed check IDs in
+`contract-a2-probe.mjs`, `contract-a1.md`, `p1-clone-verify.md`. Proposed check IDs in
 those reports (`CT-*`, `A5-*`) are labels for the recorded observations;
 the test IDs in this document are the checks that actually exist in this
 tree.
@@ -34,13 +34,45 @@ arguments, and credential material are excluded by construction.
 
 ## A1 — Executor transport
 
-**Status: untested.** Not probed in wave 1 — no Executor leg exists in any
-of the four reports. The spec's candidate contract (Streamable HTTP MCP,
-authentication, caller-argument forwarding, no per-caller process
-recreation) is unverified. The `relay` subcommand fallback question in
-spec §9 stays open pending this probe.
+**Status: confirmed for the trial sub-behaviors below; two open sub-cases
+stay owner-decision material (full OAuth round-trip; typed offline error).**
 
-Source: none (explicitly out of scope for wave 1).
+The trial registered a purpose-built minimal MCP Streamable HTTP server
+(loopback) through the gateway's install action and drove it over the real
+transport. The wire record is `tests/fixtures/contract/a1-transport-trace.jsonl`
+(the probe server's own frame log, two server runs split at their
+`listening` records); gateway-side strings are recorded in
+`a1-gateway-observations.json`.
+
+Confirmed behaviors and their tests:
+
+| Behavior | Test ID |
+|---|---|
+| Install of a Streamable HTTP source connects and lists tools; `protocolVersion 2025-06-18` accepted | `a1_register_streamable_http_source` |
+| Handshake: `initialize` → `notifications/initialized` → `tools/list` → `tools/call` | `a1_handshake_sequence` |
+| Caller arguments forwarded byte-identical through `tools/call` | `a1_caller_arguments_forwarded_verbatim` |
+| An SSE GET (`405`) during validation does not break the session; requests continue after it | `a1_sse_stream_optional` |
+| Stateless mode: no `mcp-session-id` header on any request; calls are self-contained | `a1_stateless_session` |
+| Reconnect after a server restart is transparent — new process, first call a self-contained `tools/call`, no reinstall/revalidation | `a1_reconnect_transparent_after_restart` |
+| Offline failure surfaces as an **untyped** `Failed to call tool: fetch failed` — no error class separates transport-down from a tool error (FLAG) | `a1_offline_is_untyped_fetch_failure` |
+| No per-caller/per-call process recreation: one persistent server process per run, all traffic from the gateway's in-process fetch client (`undici`), zero child spawns (the feared behavior does not occur) | `a1_no_per_caller_process_recreation` |
+| Non-loopback registration must be HTTPS — a plain-LAN-HTTP source is refused at install | `a1_non_loopback_requires_https` |
+| A 401 source with `WWW-Authenticate: Bearer` triggers OAuth metadata discovery at `/.well-known/oauth-authorization-server` (RFC 8414, MCP spec 2026-07-28) — auth is OAuth-based, not caller-supplied static tokens | `a1_auth_is_oauth_metadata_discovery` |
+| The gateway has **no uninstall verb** and every loopback variant derives the same source name, so a dead loopback source permanently blocks re-registration in this gateway version (FLAG) | `a1_stale_loopback_blocks_reregistration` |
+
+Flags and open sub-cases: the offline error is untyped (callers cannot
+distinguish transport-down from tool failure — the spec should require a
+typed transport-unavailable error from callers; Phase 3 contract work);
+authentication is exercised up to OAuth metadata discovery only — a full
+OAuth round-trip needs a real authorization server and stays owner-decision
+material (§19); the one-way registration surface (no uninstall verb) is
+recorded as-is. An unrelated isolation note: the trial's first port choice
+was already held by another flow's server; the probe moved ports and the
+gateway behavior was unaffected. The spec §9 `relay` fallback question is
+unaffected by this trial and stays open.
+
+Source: `contract-a1.md` (raw probe log `/tmp/mcp-probe-server.log`);
+fixtures `a1-transport-trace.jsonl`, `a1-gateway-observations.json`.
 
 ## A2 — Socket concurrency
 
@@ -217,7 +249,8 @@ Jev availability, latency, or judgment shape.
 
 | Item | Status | What unblocks it |
 |---|---|---|
-| A1 Executor transport | untested | wave-2 probe of the real Executor leg |
+| A1 full OAuth round-trip | open sub-case — auth proven up to metadata discovery only | trial against a real authorization server (owner-decision material) |
+| A1 offline error typing | confirmed untyped transport failure | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
 | A2 Herdr socket subscription leg | unverified | live probe in `herdr-governor-contract`, or owner ruling that the tools-daemon contract is the contract |
 | A3 start/prompt semantics | untested | wave-2 probe of agent start and prompt delivery |
 | A4 incarnation proof | confirmed-negative | spec fallback already defined — no action needed |
@@ -230,6 +263,8 @@ Jev availability, latency, or judgment shape.
 
 | Fixture | Content | Source |
 |---|---|---|
+| `a1-transport-trace.jsonl` | 8-record probe-server frame log over two runs: handshake, headers, SSE GET, restart, self-contained re-call | `/tmp/mcp-probe-server.log` |
+| `a1-gateway-observations.json` | recorded gateway-side strings: install result, echoed args, untyped offline error, OAuth discovery, HTTPS refusal, no-uninstall surface | `contract-a1.md` |
 | `a2-tools-daemon-trace.jsonl` | 91-record wire log: hello/ack, multiplex, malformed frames, timeout, close | `/tmp/gov-p2-a2-evidence.jsonl` |
 | `a46-identity-evidence.json` | 27 three-surface captures + 47 command receipts + kill/session records | `gov-p2-a46` lane `contract-a4-a6-raw.jsonl` |
 | `a46-restart-history.json` | one restart window, mailbox record kinds, persisted run identities | `contract-a4-a6-historical-summary.json` |
@@ -238,5 +273,5 @@ Jev availability, latency, or judgment shape.
 | `a5-samples/` | byte-faithful synthetic transcript inputs (Pi JSONL, Devin ATIF, Claude JSONL) | `/tmp/gov-a5-*/cases-*` |
 | `protocol22-subset.json` | pinned schema subset: envelopes + objects the evidence exercised | `tests/fixtures/herdr-api-schema.json` |
 
-`just contract` runs the suite — 55 checks, fail-closed on absent or
+`just contract` runs the suite — 66 checks, fail-closed on absent or
 malformed fixtures.
