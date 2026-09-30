@@ -336,10 +336,13 @@ pub enum EffectReceipt {
     /// `jev_evaluate` resolved — the judgment set and its answers (F12/F23/
     /// F24); persisted with the result commit.
     Judgments(JudgmentRecord),
-    /// `tab_create` — the tab that was created.
+    /// `tab_create` — the created tab and its initial pane (H#102: it hosts
+    /// the child, never orphaned).
     TabCreated {
         /// The created tab.
         tab: TabId,
+        /// The initial pane — a `NewTab` placement's `agent_start` target.
+        pane: PaneId,
     },
     /// `pane_split` — the pane that was created.
     PaneCreated {
@@ -384,31 +387,30 @@ pub struct EffectResult {
 }
 
 /// F8/Appendix B `effects.target_json` — the captured target identity an
-/// effect addresses, persisted with the journal row so a `planned` effect
-/// stays dispatchable after restart.
+/// effect addresses, persisted with the row so a `planned` effect stays
+/// dispatchable after restart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EffectTarget {
-    /// F14 — `pane_split` targets a tab: `ExistingTab` names it now; `NewTab`
-    /// resolves at dispatch to the tab the sibling `tab_create` produced
-    /// (`EffectReceipt::TabCreated`).
-    Placement(PlacementPlan),
-    /// F14 — `tab_create` targets the caller context the new tab opens in:
-    /// the caller's pane, whose workspace receives it (resolved fresh at
-    /// dispatch).
-    CallerContext {
-        /// The caller's pane — the workspace locator.
-        pane: PaneId,
-    },
-    /// F2/F10 — `prompt` and `close` target the captured child identity,
-    /// re-verified fresh before every dispatch.
+    /// F14 — `pane_split`'s target: the tab an `ExistingTab` placement named
+    /// (right split, no focus). `NewTab` never splits — `tab.create` already
+    /// yields an initial pane (H#102).
+    ExistingTab(TabId),
+    /// F14 — `tab_create`'s caller context: the caller's pane locates the
+    /// workspace the new tab opens in (resolved fresh at dispatch).
+    CallerContext(PaneId),
+    /// F14/F15 — `agent_start`'s pane: `PaneCreated` for `ExistingTab`,
+    /// `TabCreated`'s initial pane for `NewTab`.
+    AgentPane(PlacementPlan),
+    /// F2/F10 — `prompt`/`close`'s captured child identity (re-verified
+    /// fresh before dispatch).
     Child(ChildIdentity),
 }
 
 /// F8/Appendix B `effects` — one journaled mutation. Every kind's dispatch
-/// payload is rebuilt from persisted state (`agent_start` from the Decision's
-/// candidate, `prompt` from the Task or the outbox message, `jev_evaluate`
-/// from the Task, `tab_create`/`pane_split`/`close` from the persisted
-/// `target`); `payload_digest` identifies the rendered form.
+/// payload is rebuilt from persisted state: `agent_start` from the Decision's
+/// candidate plus the resolved `AgentPane`, `prompt` from the Task or outbox
+/// message, `jev_evaluate` from the Task, `tab_create`/`pane_split`/`close`
+/// from the persisted `target`; `payload_digest` names the rendered form.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Effect {
     /// `effect_id`.
@@ -424,10 +426,9 @@ pub struct Effect {
     /// `subject_run_id` — the Run it serves.
     pub subject_run: Option<RunId>,
     /// `target_json` — the captured identity the mutation addresses (F8):
-    /// `Placement` for `pane_split`, `CallerContext` for `tab_create`,
-    /// `Child` for `prompt`/`close`; `None` for `jev_evaluate` (no external
-    /// target) and `agent_start` (its pane is the topology effect's product,
-    /// resolved from that receipt at dispatch).
+    /// `ExistingTab` for `pane_split`, `CallerContext` for `tab_create`,
+    /// `AgentPane` for `agent_start`, `Child` for `prompt`/`close`; `None`
+    /// for `jev_evaluate` (no external target). F10 re-verifies `Child`.
     pub target: Option<EffectTarget>,
     /// `payload_digest` — digest of the rendered operation.
     pub payload_digest: Option<Digest>,
@@ -653,142 +654,4 @@ pub enum Event {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        DeadlineKind, EffectCertainty, EffectKind, EffectState, EffectTarget, PromptCertainty,
-        Settlement, State, UnresolvedReason,
-    };
-    use crate::identity::{
-        AgentKind, AgentName, ChildIdentity, HerdrIncarnation, NativeSession, PaneId, TabId,
-        TerminalId,
-    };
-    use crate::routing::PlacementPlan;
-
-    #[test]
-    fn appendix_c_state_spellings() {
-        assert_eq!(State::Reserved.as_str(), "reserved");
-        assert_eq!(State::Starting.as_str(), "starting");
-        assert_eq!(State::Prompting.as_str(), "prompting");
-        assert_eq!(State::Active.as_str(), "active");
-        assert_eq!(State::Judging.as_str(), "judging");
-        assert_eq!(State::Repair.as_str(), "repair");
-        assert_eq!(State::Settled.as_str(), "settled");
-    }
-
-    #[test]
-    fn f16_prompt_certainty_spellings() {
-        assert_eq!(PromptCertainty::Acknowledged.as_str(), "acknowledged");
-        assert_eq!(PromptCertainty::Unconfirmed.as_str(), "unconfirmed");
-    }
-
-    #[test]
-    fn appendix_c_deadline_kind_spellings() {
-        assert_eq!(DeadlineKind::Idle.as_str(), "idle");
-        assert_eq!(DeadlineKind::Repair.as_str(), "repair");
-        assert_eq!(DeadlineKind::Judgment.as_str(), "judgment");
-        assert_eq!(DeadlineKind::MaxAge.as_str(), "max_age");
-    }
-
-    #[test]
-    fn f20_unresolved_reason_spellings() {
-        assert_eq!(
-            UnresolvedReason::LaunchNotStarted.as_str(),
-            "launch_not_started"
-        );
-        assert_eq!(UnresolvedReason::LaunchFailed.as_str(), "launch_failed");
-        assert_eq!(
-            UnresolvedReason::JudgmentUnavailable.as_str(),
-            "judgment_unavailable"
-        );
-        assert_eq!(
-            UnresolvedReason::IdentityUnprovable.as_str(),
-            "identity_unprovable"
-        );
-        assert_eq!(UnresolvedReason::MaxAge.as_str(), "max_age");
-    }
-
-    #[test]
-    fn f20_settlement_spellings() {
-        assert_eq!(Settlement::Accepted.as_str(), "accepted");
-        assert_eq!(Settlement::Rejected.as_str(), "rejected");
-        assert_eq!(Settlement::NoHandoff.as_str(), "no_handoff");
-        assert_eq!(Settlement::PaneLost.as_str(), "pane_lost");
-        assert_eq!(Settlement::Cancelled.as_str(), "cancelled");
-        assert_eq!(Settlement::ProviderLimited.as_str(), "provider_limited");
-        // `unresolved` never carries its reason in the settlement spelling —
-        // the reason rides `runs.settlement_reason` (Appendix B).
-        for reason in [
-            UnresolvedReason::LaunchNotStarted,
-            UnresolvedReason::LaunchFailed,
-            UnresolvedReason::JudgmentUnavailable,
-            UnresolvedReason::IdentityUnprovable,
-            UnresolvedReason::MaxAge,
-        ] {
-            assert_eq!(Settlement::Unresolved { reason }.as_str(), "unresolved");
-        }
-    }
-
-    #[test]
-    fn f8_effect_kind_spellings() {
-        assert_eq!(EffectKind::JevEvaluate.as_str(), "jev_evaluate");
-        assert_eq!(EffectKind::TabCreate.as_str(), "tab_create");
-        assert_eq!(EffectKind::PaneSplit.as_str(), "pane_split");
-        assert_eq!(EffectKind::AgentStart.as_str(), "agent_start");
-        assert_eq!(EffectKind::Prompt.as_str(), "prompt");
-        assert_eq!(EffectKind::Close.as_str(), "close");
-    }
-
-    #[test]
-    fn f8_effect_state_spellings() {
-        assert_eq!(EffectState::Planned.as_str(), "planned");
-        assert_eq!(EffectState::Dispatching.as_str(), "dispatching");
-        assert_eq!(EffectState::Acknowledged.as_str(), "acknowledged");
-        assert_eq!(EffectState::Failed.as_str(), "failed");
-        assert_eq!(EffectState::Unconfirmed.as_str(), "unconfirmed");
-    }
-
-    #[test]
-    fn f8_effect_certainty_spellings() {
-        assert_eq!(EffectCertainty::Absent.as_str(), "absent");
-        assert_eq!(EffectCertainty::Unknown.as_str(), "unknown");
-    }
-
-    #[test]
-    fn f8_f14_effect_target_matches_kind() {
-        let identity = ChildIdentity {
-            herdr_incarnation: HerdrIncarnation("inc-1".into()),
-            terminal_id: TerminalId("term-1".into()),
-            agent_kind: AgentKind("kind-1".into()),
-            agent_name: AgentName("gov-deadbeef".into()),
-            native_session: Some(NativeSession("sess-1".into())),
-            pane_id: PaneId("w6:p2".into()),
-        };
-        let split = EffectTarget::Placement(PlacementPlan::ExistingTab {
-            tab: TabId("t1".into()),
-        });
-        let new_tab = EffectTarget::Placement(PlacementPlan::NewTab);
-        let caller = EffectTarget::CallerContext {
-            pane: PaneId("w6:p1".into()),
-        };
-        let child = EffectTarget::Child(identity);
-        // Every variant pairs with the spec kind that addresses it — the
-        // exhaustive match is the shape pin (F8/F14/F10).
-        let kind_of = |target: &EffectTarget| match target {
-            EffectTarget::Placement(_) => EffectKind::PaneSplit,
-            EffectTarget::CallerContext { pane: _ } => EffectKind::TabCreate,
-            EffectTarget::Child(_) => EffectKind::Prompt,
-        };
-        assert_eq!(kind_of(&split), EffectKind::PaneSplit);
-        assert_eq!(
-            kind_of(&new_tab),
-            EffectKind::PaneSplit,
-            "NewTab resolves at dispatch to the sibling tab_create's TabCreated receipt (F14)"
-        );
-        assert_eq!(kind_of(&caller), EffectKind::TabCreate);
-        assert_eq!(
-            kind_of(&child),
-            EffectKind::Prompt,
-            "prompt and close share the captured-identity target (F10)"
-        );
-    }
-}
+mod tests;
