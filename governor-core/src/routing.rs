@@ -7,9 +7,25 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::config::{ConfigVersion, OperatingPointId, Provider, Tier};
-use crate::identity::{AgentKind, Digest, JudgmentSetId, LaunchId, RunId, TabId};
-use crate::lifecycle::VersionTriple;
+use sha2::{Digest as _, Sha256};
+
+use crate::config::{
+    Capability, Config, ConfigVersion, OperatingPointId, Provider, Qualification, Tier,
+};
+use crate::identity::{
+    AgentKind, CallerKey, Digest, IdempotencyKey, JudgmentSetId, LaunchId, RunId, TabId, Timestamp,
+};
+use crate::lifecycle::{Run, VersionTriple};
+use crate::recovery::Cooldown;
+use crate::task::{AbstainReason, Launch};
+
+mod eval;
+mod steps;
+
+pub use eval::{
+    evaluation_abstention, evaluation_effect_abstention, evaluation_questions, evaluation_verdict,
+    request_size_outcome, validate_evaluation,
+};
 
 /// N5 — a Jev request over 96 KiB abstains (it is never sent).
 pub const JEV_REQUEST_MAX_BYTES: usize = 96 * 1024;
@@ -337,8 +353,208 @@ pub enum PlacementPlan {
     NewTab,
 }
 
+/// The position of `tier` in the policy order; a name outside
+/// `policy.tiers` has no defined order (`Tier` is deliberately not `Ord`).
+fn tier_index(tiers: &[Tier], tier: &Tier) -> Option<usize> {
+    tiers.iter().position(|candidate| candidate == tier)
+}
+
+/// A configured policy tier (`no_change_cap`, `security_floor`,
+/// `broad_change_floor`) resolved to its position. A policy tier that is not
+/// in `tiers` cannot be ordered — it is skipped here and left to F27 config
+/// validation, which owns rejecting it.
+fn policy_tier<'t>(tiers: &'t [Tier], configured: Option<&'t Tier>) -> Option<(&'t Tier, usize)> {
+    let tier = configured?;
+    tier_index(tiers, tier).map(|index| (tier, index))
+}
+
+/// A probability is contract-valid only finite and inside `[0, 1]`
+/// (`jev_noul_answer_shape`); anything else is a malformed answer.
+fn valid_probability(probability: Probability) -> bool {
+    probability.0.is_finite() && (0.0..=1.0).contains(&probability.0)
+}
+
+/// The noul verdict: `P(yes)` at or above the bound resolves "yes". The
+/// launch nouls carry no policy threshold — `threshold` is `None` and the
+/// verdict bound is 0.5 (the calibrated majority; the spec names a threshold
+/// only for `provider_limited`, F21).
+fn noul_yes(probability: Probability, threshold: Option<f64>) -> bool {
+    probability.0 >= threshold.unwrap_or(0.5)
+}
+
+/// F26 — the digest a qualification row binds: sha256 over the exact arg
+/// list, each arg length-prefixed (`u64` big-endian length then bytes, in
+/// order). `qualify` and routing share this rendering, so an args change
+/// re-keys the row and invalidates the old pass (F26).
+#[must_use]
+pub fn args_digest(args: &[String]) -> Digest {
+    digest_parts(args.iter().map(String::as_str))
+}
+
+/// The canonical string-list encoding behind `args_digest` and the
+/// exploration seed: each part as `u64` big-endian length then bytes, so no
+/// concatenation ambiguity exists.
+fn digest_parts<'p>(parts: impl Iterator<Item = &'p str>) -> Digest {
+    let mut body = Vec::new();
+    for part in parts {
+        body.extend_from_slice(&u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
+        body.extend_from_slice(part.as_bytes());
+    }
+    Digest(Sha256::digest(&body).into())
+}
+
+/// F13 step 5 — the exploration lottery: `sha256(caller ‖ idempotencyKey)`,
+/// with `caller` the durable caller key, read as a uniform fraction below
+/// the policy rate.
+fn exploration_assigned(caller: &CallerKey, key: &IdempotencyKey, rate: f64) -> bool {
+    let digest = digest_parts(
+        [
+            caller.agent_kind.0.as_str(),
+            caller.native_session.0.as_str(),
+            key.0.as_str(),
+        ]
+        .into_iter(),
+    );
+    let [b0, b1, b2, b3, ..] = digest.0;
+    let fraction = f64::from(u32::from_be_bytes([b0, b1, b2, b3])) / 4_294_967_296.0;
+    fraction < rate
+}
+
+/// F13 — the ordered routing function. Steps run in order and the decision
+/// is persisted before any topology effect (the caller owns the write):
+///
+/// 1. The typed evaluation is trusted only after `validate_evaluation`;
+///    here the judged tier must still be a policy tier and every carried
+///    probability still in contract.
+/// 2. Policy adjustments: `no_change_cap` caps a Task with no file changes
+///    and no security boundary; a security boundary or broad change raises
+///    the floor.
+/// 3. Caller uplift (`Task::tier`): at most one tier above the step-2 tier,
+///    never lower (H#49). A request naming a tier outside `policy.tiers`
+///    cannot be ordered — it is recorded and not applied.
+/// 4. Recovery (F21): `predecessor` is the settled Run this Launch
+///    continues. The start is at least one tier above the predecessor's
+///    start — impossible at the top tier, or when that start no longer
+///    names a policy tier, is `no_higher_tier` — and every operating point
+///    on the predecessor's provider is excluded in step 6. A predecessor
+///    that never started contributes only the provider exclusion.
+/// 5. Exploration: only when the Task changes no files, touches no security
+///    boundary and is not a recovery, and `sha256(caller ‖ idempotencyKey)`
+///    falls below `policy.exploration_rate`. It lowers the start one tier,
+///    never below the recovery minimum or the lowest tier.
+/// 6. Candidates: catalog order filtered to points at or above the start
+///    tier, outside every cooling provider and the predecessor's provider,
+///    and offering each of `required` — claimed in `capabilities` AND backed
+///    by a current `passed` qualification (`args_digest` of the live args);
+///    ordered by cost class, then catalog order. Empty is `no_candidates`.
+///
+/// Call `evaluation_verdict` first — a `rejected` Launch is never routed.
+/// `required` is the policy-resolved capability set for the Task's
+/// judgments; the names are catalog data (N8), never literals here.
+pub fn route(
+    launch: &Launch,
+    predecessor: Option<&Run>,
+    evaluation: &Evaluation,
+    config: &Config,
+    required: &[Capability],
+    qualifications: &[Qualification],
+    cooling: &[Provider],
+) -> Result<Decision, AbstainReason> {
+    let policy = &config.policy;
+    let tiers = policy.tiers.as_slice();
+    let mut rank = steps::evaluated_rank(evaluation, tiers)?;
+    let boundary = noul_yes(evaluation.security_boundary, None);
+    let no_change = matches!(evaluation.changes_files, ChangesFiles::None) && !boundary;
+    let (adjusted, policy_cap, policy_floor) =
+        steps::policy_adjusted(evaluation, policy, no_change, boundary, rank);
+    rank = adjusted;
+    let (uplifted, caller_uplift) = steps::caller_uplifted(tiers, launch.task.tier.as_ref(), rank);
+    rank = uplifted;
+    let (floored, recovery_minimum, minimum_rank, excluded_provider) =
+        steps::recovery_floored(predecessor, tiers, rank)?;
+    rank = floored;
+    let recovery = predecessor.is_some() || launch.task.recovery_of.is_some();
+    let (explored, exploration) = steps::explore(
+        &launch.caller,
+        &launch.idempotency_key,
+        policy.exploration_rate,
+        no_change,
+        recovery,
+        rank,
+        minimum_rank,
+    );
+    rank = explored;
+    let Some(start_tier) = tiers.get(rank).cloned() else {
+        return Err(AbstainReason::EvaluationFailed);
+    };
+    let candidates = steps::eligible_candidates(
+        config,
+        tiers,
+        rank,
+        excluded_provider.as_ref(),
+        required,
+        qualifications,
+        cooling,
+    )?;
+    Ok(Decision {
+        judged_tier: evaluation.weakest_sufficient_tier.clone(),
+        requested_tier: launch.task.tier.clone(),
+        policy_cap,
+        policy_floor,
+        caller_uplift,
+        recovery_minimum,
+        exploration,
+        start_tier,
+        candidates,
+        config_version: config.version.clone(),
+    })
+}
+
+/// F21/F13 step 6 — the providers currently cooling down: a cooldown holds
+/// until its absolute `until`.
+#[must_use]
+pub fn cooling_down(cooldowns: &[Cooldown], now: Timestamp) -> Vec<Provider> {
+    cooldowns
+        .iter()
+        .filter(|cooldown| cooldown.until > now)
+        .map(|cooldown| cooldown.provider.clone())
+        .collect()
+}
+
+/// F14 — where the new pane goes: the tab Jev picked while it still holds
+/// fewer than `TAB_PANE_MAX` panes (the right split, no focus — H#53), else
+/// a new tab. `open_tabs` is the caller's current open governor tabs with
+/// their pane counts; a picked tab that has since closed or filled plans a
+/// new tab, whose initial pane is used, never split (H#102).
+#[must_use]
+pub fn placement_plan(
+    related_tab: Option<&TabChoice>,
+    open_tabs: &[(TabId, usize)],
+) -> PlacementPlan {
+    match related_tab {
+        Some(TabChoice::Tab(tab)) => {
+            let fits = open_tabs
+                .iter()
+                .any(|(id, panes)| id == tab && *panes < TAB_PANE_MAX);
+            if fits {
+                PlacementPlan::ExistingTab { tab: tab.clone() }
+            } else {
+                PlacementPlan::NewTab
+            }
+        }
+        Some(TabChoice::New) | None => PlacementPlan::NewTab,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    mod builders;
+    mod f12;
+    mod f13;
+    mod f13_eval;
+    mod f13_explore;
+    mod f14;
+
     use alloc::vec::Vec;
 
     use super::{
