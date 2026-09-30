@@ -290,8 +290,9 @@ def iter_metas(text):
 # ---------------------------------------------------------------------------
 # Shared attribute-rule engine: I3 (committed tree) and R2/R8 (added lines /
 # untracked files) run the same findings so the rules cannot drift apart.
-# kind labels: suppress, expect-reason, expect-target, ignore, mutants-skip,
-# not-test. The caller maps kinds to its own rule ids and message wording.
+# kind labels: suppress, expect-reason, expect-target, expect-target-anywhere,
+# ignore, mutants-skip, not-test. The caller maps kinds to its own rule ids
+# and message wording.
 # ---------------------------------------------------------------------------
 
 _SUPPRESS = re.compile(r"^(allow|deny|warn|forbid)\(")
@@ -304,15 +305,29 @@ _NOT_TEST = re.compile(r"\bnot\s*\(\s*test\s*,?\s*\)")
 
 # #[expect] targets banned on member src/** files: the purity lints
 # themselves (any spelling) and the lint groups that would silence them —
-# clippy::all and clippy::style contain disallowed_methods/types/macros,
-# and `warnings` subsumes everything. A reasoned expect of one of these
+# clippy::all and clippy::style contain disallowed_methods/types/macros
+# (warnings, which would also subsume them, is already unreachable: it sits
+# in the unsilenceable set below). A reasoned expect of one of these
 # in a member tests/ dir is the sanctioned escape hatch (e.g. fixture
 # I/O), so the ban is scoped by src_scope.
 _BANNED_EXPECT_TARGETS = frozenset((
     "disallowed_methods", "disallowed_types", "disallowed_macros",
     "clippy::disallowed_methods", "clippy::disallowed_types",
     "clippy::disallowed_macros",
-    "clippy::all", "clippy::style", "warnings",
+    "clippy::all", "clippy::style",
+))
+
+# #[expect] targets banned everywhere the engine scans — member src/ AND
+# member tests/ trees alike, the tests/ escape never reaches them: the
+# 100-line function limit (clippy too_many_lines; the threshold is
+# I2-pinned in both clippy.toml files, and `just hygiene` carries the
+# sibling 500-line file cap) is a calibrated bound no attribute may
+# silence. Banned in every spelling unraw()/squash() canonicalize to:
+# the lint itself (bare and clippy::-prefixed) and the groups containing
+# it — clippy::pedantic holds too_many_lines; warnings subsumes all.
+_UNSILENCEABLE_EXPECT_TARGETS = frozenset((
+    "too_many_lines", "clippy::too_many_lines",
+    "clippy::pedantic", "warnings",
 ))
 
 
@@ -336,8 +351,9 @@ def _expect_args(body):
 def lint_findings(text, src_scope=True):
     """Yield (kind, line, detail) for each violation on stripped `text`.
 
-    src_scope=False disables the member-src-only rules (the banned
-    #[expect] targets); every other rule applies everywhere.
+    src_scope=False (member tests/ trees) disables only the src-scoped
+    banned #[expect] targets; the unsilenceable function-length targets
+    and every other rule apply everywhere.
     """
     text = unraw(text)
     for ln, body in iter_metas(text):
@@ -347,7 +363,13 @@ def lint_findings(text, src_scope=True):
         elif _EXPECT.match(sq):
             targets, has_reason = _expect_args(body)
             bad = [t for t in targets if t in _BANNED_EXPECT_TARGETS]
-            if src_scope and bad:
+            unsilenceable = [
+                t for t in targets if t in _UNSILENCEABLE_EXPECT_TARGETS]
+            if unsilenceable:
+                yield ("expect-target-anywhere", ln,
+                       "#[expect(%s, ...)] names the unsilenceable function-length "
+                       "lint or a group containing it" % unsilenceable[0])
+            elif src_scope and bad:
                 yield ("expect-target", ln,
                        "#[expect(%s, ...)] names a banned purity lint or silencing group"
                        % bad[0])

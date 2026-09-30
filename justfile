@@ -33,7 +33,7 @@ hygiene:
     cargo shear
     shellcheck -S warning scripts/*.sh .githooks/*
     shfmt -d -i 2 -ci scripts/ .githooks/
-    find . \( -path ./target -o -path ./.git -o -name 'mutants.out*' \) -prune -o -type f -name '*.rs' -print0 | xargs -0 wc -l | awk '$1 > 800 && $2 != "total" { print; bad = 1 } END { exit bad }'
+    find . \( -path ./target -o -path ./.git -o -name 'mutants.out*' \) -prune -o -type f -name '*.rs' -print0 | xargs -0 wc -l | awk '$1 > 500 && $2 != "total" { print; bad = 1 } END { exit bad }'
 
 wf:
     actionlint .github/workflows/*.yml

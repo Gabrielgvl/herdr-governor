@@ -28,6 +28,7 @@ Cargo.toml	^rust-version[[:space:]]*=[[:space:]]*"1\.98\.1"
 clippy.toml	^allow-unwrap-in-tests[[:space:]]*=[[:space:]]*true
 clippy.toml	^allow-panic-in-tests[[:space:]]*=[[:space:]]*true
 clippy.toml	^disallowed-methods[[:space:]]*=
+clippy.toml	^too-many-lines-threshold[[:space:]]*=[[:space:]]*100([^0-9]|$)
 # governor-core/clippy.toml shadows the root config for that crate — it must
 # carry the shared test-ergonomics options AND the purity disallowed-* bans.
 governor-core/clippy.toml	^allow-unwrap-in-tests[[:space:]]*=[[:space:]]*true
@@ -35,6 +36,7 @@ governor-core/clippy.toml	^allow-panic-in-tests[[:space:]]*=[[:space:]]*true
 governor-core/clippy.toml	^disallowed-methods[[:space:]]*=
 governor-core/clippy.toml	^disallowed-types[[:space:]]*=
 governor-core/clippy.toml	^disallowed-macros[[:space:]]*=
+governor-core/clippy.toml	^too-many-lines-threshold[[:space:]]*=[[:space:]]*100([^0-9]|$)
 governor-core/clippy.toml	std::fs::read_to_string
 governor-core/clippy.toml	std::net::TcpListener
 governor-core/clippy.toml	std::process::Command
