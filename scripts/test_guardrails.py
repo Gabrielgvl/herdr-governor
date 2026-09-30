@@ -142,17 +142,22 @@ def harness_dir(name):
 
 
 def base_repo():
-    """Mini two-crate workspace: virtual root manifest, two members with
-    [lints] workspace = true, member src/ and tests/ trees, the schema
-    fixture, and the gate scripts installed."""
+    """Mini two-crate workspace mirroring the real one: virtual root
+    manifest, the real Cargo.lock (cargo's --locked recipes need a lockfile
+    consistent with the real manifests and their dependencies), two members
+    with [lints] workspace = true, every real file under each member's src/
+    tree, member tests/ files, the schema fixture, and the gate scripts
+    installed."""
     r = Repo()
     r.write("Cargo.toml", real_file("Cargo.toml"))
-    r.write("Cargo.lock", "# fake lockfile\n")
+    r.write("Cargo.lock", real_file("Cargo.lock"))
     r.write("clippy.toml", 'allow-unwrap-in-tests = true\n')
     r.write(CORE_MANI, real_file(CORE_MANI))
     r.write(BIN_MANI, real_file(BIN_MANI))
-    r.write(CORE_LIB, real_file(CORE_LIB))
-    r.write(BIN_MAIN, real_file(BIN_MAIN))
+    for member in (CORE, BIN):
+        for src in sorted((ROOT / member / "src").rglob("*")):
+            if src.is_file():
+                r.write(str(src.relative_to(ROOT)), src.read_text())
     r.write(
         CORE_TEST,
         '#[test]\nfn test_it() {\n    assert_eq!(1 + 1, 2, "math works");\n}\n',
