@@ -1759,5 +1759,335 @@ class JevWireContract(unittest.TestCase):
         self.assertEqual(set(self.ev["key_seam"]), {"resolved", "length"})
 
 
+class A1PrimeNativeStdio(unittest.TestCase):
+    """contract-a1prime.md (p0p1 artifact bundle, probe 2026-09-29) — the
+    A1' native per-session stdio relay probe behind ADR-0004: each harness
+    spawned the probe MCP server (one `probe_env` tool, newline-delimited
+    JSON-RPC over stdio) from inside a Herdr pane. The fixture distills the
+    probe's own spawn logs: event records kept verbatim, env names filtered
+    to HERDR_*/PWD plus harness markers (dropped count recorded), env
+    values limited to the five whitelisted names, paths scrubbed to
+    /home/user/ placeholders; model-facing facts come from the recorded
+    run transcripts."""
+
+    HERDR_PWD = {"HERDR_PANE_ID", "HERDR_WORKSPACE_ID", "HERDR_TAB_ID",
+                 "HERDR_ENV", "PWD"}
+
+    def setUp(self):
+        self.ev = fixture_json("a1prime-native-stdio.json")
+
+    def sessions(self, harness):
+        """Process groups in log order; each opens with its `start` record."""
+        groups, cur = [], None
+        for rec in self.ev["harnesses"][harness]["events"]:
+            if rec["kind"] == "start":
+                cur = [rec]
+                groups.append(cur)
+            elif cur is not None:
+                cur.append(rec)
+        return groups
+
+    def methods(self, sess):
+        return [r["method"] for r in sess if r["kind"] == "request"]
+
+    def respawn_pairs(self, harness):
+        """(dead, respawned) session pairs: an exit_after_calls session
+        followed within 1 s by a fresh start under the same ppid."""
+        pairs = []
+        sess = self.sessions(harness)
+        for prev, nxt in zip(sess, sess[1:]):
+            exits = [r for r in prev if r["kind"] == "exit_after_calls"]
+            if (exits and prev[0]["ppid"] == nxt[0]["ppid"]
+                    and nxt[0]["t"] - exits[-1]["t"] < 1.0):
+                pairs.append((prev, nxt))
+        return pairs
+
+    def call_session(self, harness):
+        """The normal (die_after=0) session that served tools/calls."""
+        for sess in self.sessions(harness):
+            if (not sess[0]["die_after"]
+                    and sum(1 for r in sess if r["kind"] == "tools_call") > 1):
+                return sess
+        raise AssertionError(f"no recorded {harness} session with calls")
+
+    def assert_env_inherited(self, harness):
+        for sess in self.sessions(harness):
+            vals = sess[0]["env_values"]
+            self.assertEqual(vals["HERDR_PANE_ID"], "w6:pKQ")
+            self.assertEqual(vals["HERDR_WORKSPACE_ID"], "w6")
+            self.assertEqual(vals["HERDR_TAB_ID"], "w6:tCR")
+            self.assertEqual(vals["HERDR_ENV"], "1")
+            self.assertTrue(vals["PWD"].startswith("/home/user/"))
+            for rec in sess:
+                if "env_names" in rec:
+                    self.assertTrue(self.HERDR_PWD <= set(rec["env_names"]))
+                    self.assertGreater(rec["env_names_dropped"], 0)
+
+    def assert_spawn_at_session_start(self, harness):
+        """start opens the session, initialize follows within a second,
+        and the process stays resident seconds before the first call —
+        one pid for every record in the session."""
+        sess = self.call_session(harness)
+        self.assertEqual(sess[0]["kind"], "start")
+        init = next(r for r in sess if r.get("method") == "initialize")
+        self.assertLess(init["t"] - sess[0]["t"], 1.0)
+        first_call = next(r for r in sess
+                          if r.get("method") == "tools/call")
+        self.assertGreater(first_call["t"] - sess[0]["t"], 1.0)
+        self.assertTrue(all(r["pid"] == sess[0]["pid"] for r in sess))
+        self.assertGreater(
+            self.ev["harnesses"][harness]
+            ["observations"]["spawn_after_launch_s_approx"], 0)
+
+    def assert_respawn_after_crash(self, harness, relisted):
+        pairs = self.respawn_pairs(harness)
+        self.assertEqual(len(pairs), 1)
+        dead, new = pairs[0]
+        self.assertNotEqual(dead[0]["pid"], new[0]["pid"])
+        self.assertEqual(dead[0]["ppid"], new[0]["ppid"])
+        methods = self.methods(new)
+        self.assertEqual(methods[:2],
+                         ["initialize", "notifications/initialized"])
+        self.assertIn("tools/call", methods)
+        self.assertEqual(
+            self.ev["harnesses"][harness]
+            ["observations"]["respawn_tools_list_rerun"], relisted)
+        self.assertEqual("tools/list" in methods, relisted)
+
+    def test_a1prime_pi_env_inherited(self):
+        """(a) HERDR_* + PWD arrive verbatim; pi's own markers ride along."""
+        self.assert_env_inherited("pi")
+        names = set()
+        for sess in self.sessions("pi"):
+            names.update(sess[0]["env_names"])
+        self.assertTrue(
+            set(self.ev["harnesses"]["pi"]["observations"]["env_markers"])
+            <= names)
+
+    def test_a1prime_pi_spawn_at_session_start(self):
+        """(c) spawn at session start, one process per session — the two
+        recorded calls share the pid."""
+        self.assert_spawn_at_session_start("pi")
+        self.assertEqual(
+            self.methods(self.call_session("pi")),
+            ["initialize", "notifications/initialized", "tools/list",
+             "tools/call", "tools/call"])
+
+    def test_a1prime_pi_shutdown_stdin_eof(self):
+        """(c) clean sessions end on stdin EOF; no signals were sent."""
+        ev = self.ev["harnesses"]["pi"]["events"]
+        self.assertFalse(any(r["kind"] == "signal" for r in ev))
+        for sess in self.sessions("pi"):
+            if not any(r["kind"] == "exit_after_calls" for r in sess):
+                self.assertEqual(sess[-1]["kind"], "stdin_eof")
+        self.assertEqual(self.ev["harnesses"]["pi"]
+                         ["observations"]["shutdown"], "stdin_eof")
+
+    def test_a1prime_pi_respawn_after_crash(self):
+        """(e) next call after a crash runs on a new pid ~40 ms later with
+        a full re-init — pi re-runs tools/list on the respawn."""
+        self.assert_respawn_after_crash("pi", relisted=True)
+
+    def test_a1prime_pi_cwd_config_key_honored(self):
+        """(b) cwd defaults to the invocation cwd; the config `cwd` key is
+        honored — spawn cwd diverged from PWD exactly once."""
+        keyed = [s for s in self.sessions("pi")
+                 if s[0]["cwd"] != s[0]["env_values"]["PWD"]]
+        self.assertEqual(len(keyed), 1)
+        self.assertEqual(keyed[0][0]["cwd"], "/home/user/probe")
+        self.assertEqual(keyed[0][0]["env_values"]["PWD"],
+                         "/home/user/probe/runs/pi")
+        for sess in self.sessions("pi"):
+            if sess not in keyed:
+                self.assertEqual(sess[0]["cwd"],
+                                 sess[0]["env_values"]["PWD"])
+        self.assertEqual(self.ev["harnesses"]["pi"]
+                         ["observations"]["cwd_config_key"], "honored")
+
+    def test_a1prime_pi_codemode_surface_and_tools_flag(self):
+        """(d) under codemode exposure the model reaches the tool as
+        mcp__<server>__<tool> inside codemode and `--tools` cannot scope
+        to it — but with direct exposure (toolExposure) `--tools` does
+        allowlist mcp__<server>__<tool> (proven 2026-09-29 for
+        mcp__executor__execute). The server still spawned and served
+        tools/list under `--tools` restriction."""
+        obs = self.ev["harnesses"]["pi"]["observations"]
+        self.assertIn("codemode", obs["tool_surface"])
+        self.assertEqual(obs["model_tool_name"], "mcp__govprobe__probe_env")
+        scoping = obs["tools_flag_scoping"]
+        self.assertIn("cannot scope", scoping["verdict"])
+        self.assertIn("tool not available",
+                      scoping["--tools mcp__govprobe__probe_env"])
+        self.assertIn("ALL_TOOLS=0", scoping["--tools codemode"])
+        self.assertIn("mcp__executor__execute",
+                      scoping["direct_exposure"])
+        self.assertTrue(obs["spawn_under_tools_restriction"])
+        restricted = [s for s in self.sessions("pi")
+                      if self.methods(s) == ["initialize",
+                                             "notifications/initialized",
+                                             "tools/list"]]
+        self.assertTrue(restricted)
+
+    def test_a1prime_claude_env_inherited(self):
+        """(a) HERDR_* + PWD arrive verbatim; claude's markers ride along."""
+        self.assert_env_inherited("claude")
+        names = set()
+        for sess in self.sessions("claude"):
+            names.update(sess[0]["env_names"])
+        self.assertTrue(
+            {"CLAUDECODE", "CLAUDE_CODE_SESSION_ID"} <= names)
+
+    def test_a1prime_claude_spawn_at_session_start(self):
+        """(c) spawn at session start, one process per session."""
+        self.assert_spawn_at_session_start("claude")
+        self.assertEqual(
+            self.methods(self.call_session("claude")),
+            ["initialize", "notifications/initialized", "tools/list",
+             "tools/call", "tools/call"])
+
+    def test_a1prime_claude_shutdown_sigint(self):
+        """(c) claude shuts the relay down with SIGINT (signum 2), never
+        stdin EOF — a relay must exit on either."""
+        ev = self.ev["harnesses"]["claude"]["events"]
+        self.assertFalse(any(r["kind"] == "stdin_eof" for r in ev))
+        for sess in self.sessions("claude"):
+            if not any(r["kind"] == "exit_after_calls" for r in sess):
+                self.assertEqual(sess[-1]["kind"], "signal")
+                self.assertEqual(sess[-1]["signum"], 2)
+        self.assertEqual(self.ev["harnesses"]["claude"]
+                         ["observations"]["shutdown"], "sigint")
+
+    def test_a1prime_claude_respawn_after_crash(self):
+        """(e) respawn ~100 ms later on a new pid; the re-init skips
+        tools/list (tools cached)."""
+        self.assert_respawn_after_crash("claude", relisted=False)
+
+    def test_a1prime_claude_cwd_is_invocation(self):
+        """(b) cwd always equals the invocation cwd (PWD); the config
+        `cwd` key is ignored."""
+        for sess in self.sessions("claude"):
+            self.assertEqual(sess[0]["cwd"],
+                             sess[0]["env_values"]["PWD"])
+        self.assertEqual(
+            {s[0]["cwd"] for s in self.sessions("claude")},
+            {"/home/user/probe", "/home/user/probe/runs/claude"})
+        self.assertEqual(self.ev["harnesses"]["claude"]
+                         ["observations"]["cwd_config_key"], "ignored")
+
+    def test_a1prime_claude_first_class_allowlist(self):
+        """(d) mcp__<server>__<tool> is a first-class tool and
+        --allowedTools scopes exactly to it."""
+        obs = self.ev["harnesses"]["claude"]["observations"]
+        self.assertEqual(obs["tool_surface"], "first_class")
+        self.assertEqual(obs["model_tool_name"], "mcp__govprobe__probe_env")
+        self.assertIn("--allowedTools", obs["allowlist"])
+        self.assertIn("mcp__govprobe__probe_env", obs["allowlist"])
+
+    def test_a1prime_devin_env_inherited(self):
+        """(a) HERDR_* + PWD arrive verbatim; devin injects no markers."""
+        self.assert_env_inherited("devin")
+        self.assertEqual(
+            self.ev["harnesses"]["devin"]["observations"]["env_markers"],
+            [])
+        for sess in self.sessions("devin"):
+            for n in sess[0]["env_names"]:
+                self.assertTrue(n.startswith("HERDR_") or n == "PWD")
+
+    def test_a1prime_devin_spawn_at_session_start(self):
+        """(c) spawn at session start, one process per session."""
+        self.assert_spawn_at_session_start("devin")
+        self.assertEqual(
+            self.methods(self.call_session("devin")),
+            ["initialize", "notifications/initialized", "tools/list",
+             "tools/call", "tools/call"])
+
+    def test_a1prime_devin_tools_list_lazy(self):
+        """(c) initialize runs at spawn but tools/list is lazy — ~6 s
+        later, at first need."""
+        sess = self.call_session("devin")
+        init = next(r for r in sess if r.get("method") == "initialize")
+        listed = next(r for r in sess if r.get("method") == "tools/list")
+        self.assertGreater(listed["t"] - init["t"], 1.0)
+        self.assertTrue(self.ev["harnesses"]["devin"]
+                        ["observations"]["tools_list_lazy"])
+
+    def test_a1prime_devin_shutdown_stdin_eof(self):
+        """(c) clean sessions end on stdin EOF; no signals were sent."""
+        ev = self.ev["harnesses"]["devin"]["events"]
+        self.assertFalse(any(r["kind"] == "signal" for r in ev))
+        for sess in self.sessions("devin"):
+            if not any(r["kind"] == "exit_after_calls" for r in sess):
+                self.assertEqual(sess[-1]["kind"], "stdin_eof")
+        self.assertEqual(self.ev["harnesses"]["devin"]
+                         ["observations"]["shutdown"], "stdin_eof")
+
+    def test_a1prime_devin_respawn_after_crash(self):
+        """(e) respawn ~107 ms later on a new pid; the re-init skips
+        tools/list."""
+        self.assert_respawn_after_crash("devin", relisted=False)
+
+    def test_a1prime_devin_cwd_is_invocation(self):
+        """(b) cwd always equals the invocation cwd — the config schema
+        has no `cwd` key, and the project config discovered upward does
+        not anchor the spawn cwd."""
+        for sess in self.sessions("devin"):
+            self.assertEqual(sess[0]["cwd"],
+                             sess[0]["env_values"]["PWD"])
+        self.assertEqual(
+            {s[0]["cwd"] for s in self.sessions("devin")},
+            {"/home/user/probe", "/home/user/probe/runs/devin"})
+        self.assertEqual(self.ev["harnesses"]["devin"]
+                         ["observations"]["cwd_config_key"], "ignored")
+
+    def test_a1prime_devin_first_class_allowlist(self):
+        """(d) mcp__<server>__<tool> is first-class; project
+        permissions.allow patterns auto-approved it in print mode."""
+        obs = self.ev["harnesses"]["devin"]["observations"]
+        self.assertEqual(obs["tool_surface"], "first_class")
+        self.assertEqual(obs["model_tool_name"], "mcp__govprobe__probe_env")
+        for pat in ("mcp__<server>__<tool>", "mcp__<server>__*", "mcp__*"):
+            self.assertIn(pat, obs["allowlist"])
+        self.assertIn("--respect-workspace-trust false",
+                      obs["print_mode_trust"])
+
+    def test_a1prime_forwarder_footprint(self):
+        """The Rust stdio->unix-socket forwarder is negligible against a
+        daemon: 2000 kB RSS after 100 round-trips, ~463 KiB zero-dep
+        binary, exit 0 on stdin EOF."""
+        f = self.ev["forwarder"]
+        self.assertEqual(f["vm_rss_kb"], 2000)
+        self.assertEqual(f["vm_hwm_kb"], 2000)
+        self.assertEqual(f["binary_bytes"], 474144)
+        self.assertEqual(f["deps"], 0)
+        self.assertEqual(f["exit_code_on_stdin_eof"], 0)
+
+    def test_a1prime_user_configs_untouched(self):
+        """No user-scope harness config changed across the probe; the one
+        session-state churn carried zero probe references."""
+        ci = self.ev["config_integrity"]
+        self.assertEqual(len(ci["unchanged_user_configs"]), 4)
+        self.assertTrue(
+            ci["session_state_churn_without_probe_config"])
+        self.assertTrue(ci["probe_configs_removed_after_measurement"])
+
+    def test_a1prime_fixture_scrubbed(self):
+        """Committed evidence carries no host paths and no env names
+        beyond HERDR_*/PWD plus the recorded harness markers — env values
+        only ever the five whitelisted names."""
+        blob = fixture_bytes("a1prime-native-stdio.json").decode()
+        for bad in ("/home/gabriel", "worktrees/", "/tmp/", "NPM_TOKEN",
+                    "TYPESAFE_API_KEY", "_TOKEN", "SECRET", "PASSWORD"):
+            self.assertNotIn(bad, blob)
+        for harness, hv in self.ev["harnesses"].items():
+            allowed = (set(hv["observations"]["env_markers"])
+                       | self.HERDR_PWD)
+            for rec in hv["events"]:
+                for n in rec.get("env_names", []):
+                    self.assertTrue(n.startswith("HERDR_") or n in allowed,
+                                    f"{harness}: {n}")
+                self.assertTrue(
+                    set(rec.get("env_values", {})) <= self.HERDR_PWD)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

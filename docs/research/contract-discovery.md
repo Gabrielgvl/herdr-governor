@@ -20,7 +20,8 @@ four wave-1 evidence reports into per-assumption verdicts.
 **Sources** (evidence reports under the p0p1 artifact bundle;
 `contract-a2-probe.mjs` is the probe source):
 `contract-a4-a6.md`, `contract-a5.md`, `contract-a3.md`, `contract-a2.md`,
-`contract-a2-probe.mjs`, `contract-jev.md`, `contract-a1.md`, `p1-clone-verify.md`. Proposed check IDs in
+`contract-a2-probe.mjs`, `contract-jev.md`, `contract-a1.md`,
+`contract-a1prime.md`, `p1-clone-verify.md`. Proposed check IDs in
 those reports (`CT-*`, `A5-*`) are labels for the recorded observations;
 the test IDs in this document are the checks that actually exist in this
 tree.
@@ -44,9 +45,10 @@ registered the probe into **pi's MCP adapter** (`pi-mcp-adapter`, retired
 in pi 0.99): those results are re-labelled pi-adapter evidence, kept, and
 do not describe the gateway real callers use. The Executor catalog path
 and pi 0.99's native `pi mcp` client were probed on 2026-09-29 and are
-pinned by the second table below. **A1 transport itself is under
-re-decision (owner direction 2026-09-29: native per-session stdio relay;
-ADR + A1' evidence pending).**
+pinned by the Executor-catalog-path and pi-native tables below. **A1
+transport itself is owner-decided 2026-09-30 — native per-session stdio
+relay (ADR-0004); the A1' spawn evidence is pinned by the last table
+below.**
 
 ### pi-adapter evidence (the earlier A1 trial, re-labelled)
 
@@ -68,7 +70,7 @@ Confirmed behaviors and their tests (pi adapter):
 | Stateless mode: no `mcp-session-id` header on any request; calls are self-contained | `a1_stateless_session` |
 | Reconnect after a server restart is transparent — new process, first call a self-contained `tools/call`, no reinstall/revalidation | `a1_reconnect_transparent_after_restart` |
 | Offline failure surfaces as an **untyped** `Failed to call tool: fetch failed` — no error class separates transport-down from a tool error (FLAG) | `a1_offline_is_untyped_fetch_failure` |
-| No per-caller/per-call process recreation: one persistent server process per run, all traffic from the gateway's in-process fetch client (`undici`), zero child spawns (the feared behavior does not occur) | `a1_no_per_caller_process_recreation` |
+| No per-caller/per-call process recreation: one persistent server process per run, all traffic from the pi adapter's in-process fetch client (`undici`), zero child spawns (the feared behavior does not occur) | `a1_no_per_caller_process_recreation` |
 | Non-loopback registration must be HTTPS — a plain-LAN-HTTP source is refused at install | `a1_non_loopback_requires_https` |
 | A 401 source with `WWW-Authenticate: Bearer` names `/.well-known/oauth-authorization-server` (RFC 8414, MCP spec 2026-07-28) in its error — but the pi adapter's OAuth metadata loader is **unimplemented** (adapter-local `HTTP 501`; server-side request log proves no metadata, register, authorize, or token request is ever issued, even against a fully compliant authorization server): authenticated registration is **confirmed-negative on the pi adapter**, loopback + no-auth was the only supported source shape there | `a1_auth_round_trip_confirmed_negative` |
 | The pi adapter has **no uninstall verb** and every loopback variant derives the same source name, so a dead loopback source permanently blocks re-registration in that adapter version (FLAG) | `a1_stale_loopback_blocks_reregistration` |
@@ -141,12 +143,50 @@ against the same probe server (`pi mcp add`/`list`/`login` surface, not
 | Configured static headers are sent on every request (`Authorization` present, `bearer`, match on `initialize`/`notifications/initialized`/`GET`/`tools/list`) | `a1_pi_native_static_headers_sent` |
 | An unauthenticated 401 marks the server `needs sign-in` — exactly one unauthenticated request, **zero** `.well-known` fetches; OAuth is deferred to `pi mcp login` | `a1_pi_native_401_defers_oauth` |
 
-**A1 transport: re-decision in progress — native stdio relay (owner
-direction 2026-09-29); ADR + A1' probe pending.** The spec §9 `relay`
-fallback question is subsumed by that re-decision. The untyped-offline-
-error flag holds on both measured paths (pi adapter `fetch failed`,
-Executor `Internal tool error [<id>]`); the Phase-3 requirement for a
-typed transport-unavailable error stands.
+**A1 transport: owner-decided 2026-09-30 — native per-session stdio
+relay (ADR-0004); the A1' evidence is confirmed in the subsection
+below.** The spec §9 `relay` fallback question is subsumed by that
+decision. The untyped-offline-error flag holds on both measured paths
+(pi adapter `fetch failed`, Executor `Internal tool error [<id>]`); the
+Phase-3 requirement for a typed transport-unavailable error stands.
+
+### A1' native stdio relay — measured 2026-09-29
+
+Probed against the shape ADR-0004 decided: each harness spawning a
+per-session stdio MCP server. The probe server spoke newline-delimited
+JSON-RPC 2.0 with one `probe_env` tool (reporting pid/ppid/cwd, env
+names, and the whitelisted `HERDR_*`/`PWD` values) and logged every
+process start and inbound message itself — the committed fixture
+`a1prime-native-stdio.json` is the scrubbed distillation of those spawn
+logs plus the recorded run transcripts, so the rows below cite log
+records, not model paraphrase. All runs executed inside a Herdr pane
+(`HERDR_ENV=1`), in print mode, from a scratch repo subdirectory.
+
+Confirmed behaviors and their tests:
+
+| Behavior | Test ID |
+|---|---|
+| Env inheritance: `HERDR_PANE_ID`/`HERDR_WORKSPACE_ID`/`HERDR_TAB_ID`/`HERDR_ENV`/`PWD` reach the spawned relay verbatim on pi, claude, and devin; pi additionally injects `PI_CODING_AGENT` and extension/session vars, claude injects `CLAUDECODE`/`CLAUDE_CODE_*`, devin injects nothing | `a1prime_pi_env_inherited`, `a1prime_claude_env_inherited`, `a1prime_devin_env_inherited` |
+| Spawn at session start (the `initialize` handshake rides process start, the first `tools/call` arrives seconds later), one process per session — repeat calls share the pid | `a1prime_pi_spawn_at_session_start`, `a1prime_claude_spawn_at_session_start`, `a1prime_devin_spawn_at_session_start` |
+| Shutdown differs per harness: pi and devin close the relay via stdin EOF; claude sends SIGINT (signum 2) and no EOF — a relay must exit on either | `a1prime_pi_shutdown_stdin_eof`, `a1prime_devin_shutdown_stdin_eof`, `a1prime_claude_shutdown_sigint` |
+| Crash respawn: after the server dies mid-session the next call lands on a NEW pid under the same parent ~40–110 ms later through a full `initialize` re-handshake; pi re-runs `tools/list` on the respawn, claude and devin skip it (tools cached) | `a1prime_pi_respawn_after_crash`, `a1prime_claude_respawn_after_crash`, `a1prime_devin_respawn_after_crash` |
+| cwd: the relay's cwd is the invocation cwd on all three harnesses; only pi honors a `cwd` config key (spawn cwd diverged from `PWD`); claude ignores it, devin's schema has no such key (its project config is discovered upward but does not anchor the spawn cwd) | `a1prime_pi_cwd_config_key_honored`, `a1prime_claude_cwd_is_invocation`, `a1prime_devin_cwd_is_invocation` |
+| Tool naming `mcp__<server>__<tool>` holds on all three; the allowlist mechanism differs — claude `--allowedTools 'mcp__<server>__<tool>'` scopes exactly (session ran with no other permissions), devin project `permissions.allow` patterns auto-approve | `a1prime_claude_first_class_allowlist`, `a1prime_devin_first_class_allowlist` |
+| pi exposure caveat, reconciled: under codemode exposure `--tools` cannot scope a single MCP tool (`--tools probe_env` → zero tools; `--tools mcp__govprobe__probe_env` → `tool not available`; `--tools codemode` → codemode mounted, MCP registry empty `ALL_TOOLS=0`) — **with direct exposure (`toolExposure`) pi's `--tools` does allowlist `mcp__<server>__<tool>`, proven live 2026-09-29 for `mcp__executor__execute`**; the server still spawned and served `tools/list` under `--tools` restriction | `a1prime_pi_codemode_surface_and_tools_flag` |
+| devin's `initialize` runs at spawn but `tools/list` is lazy (~6 s later, at first need) | `a1prime_devin_tools_list_lazy` |
+| Rust stdio→unix-socket forwarder footprint: VmRSS/VmHWM 2000 kB after 100 round-trips, a 474,144-byte zero-dependency binary, exit 0 on stdin EOF | `a1prime_forwarder_footprint` |
+| Config integrity: all four user-scope harness configs sha256-unchanged across the probe (the one session-state churn file carried zero probe references); probe configs removed after measurement | `a1prime_user_configs_untouched` |
+
+Caveats for the relay contract (recorded, not separately tested): pi
+surfaces project MCP tools only inside its `codemode` tool — a relay's
+tools appear as `mcp__<server>__<tool>` inside a code-sandbox surface
+unless `toolExposure` (direct exposure) is set; pi's `.pi/mcp.json` is
+read at the session cwd only, so a relay registered for "the project"
+must live in the directory the session launches from; claude's shutdown
+is SIGINT — the relay must handle the signal rather than wait for EOF;
+devin print mode in an untrusted workspace requires
+`--respect-workspace-trust false` (or prior trust). Fixture hygiene is
+pinned by `a1prime_fixture_scrubbed`.
 
 Source: `contract-a1.md` (raw probe log `/tmp/mcp-probe-server.log`) —
 pi-adapter trial; fixtures `a1-transport-trace.jsonl`,
@@ -157,6 +197,9 @@ AS request log). Executor catalog + reconnect probes:
 `reconnect/contract-a1-reconnect.md`, `reconnect/request-log.jsonl`,
 `reconnect/per-call-analysis.txt` (p0p1 artifact bundle); fixtures
 `a1-executor-bearer-requests.json`, `a1-executor-reconnect-requests.json`.
+A1' stdio-relay probe: `contract-a1prime.md`,
+`contract-a1prime-evidence/{pi,claude,devin}-spawn-log.jsonl`,
+`*-run*.txt` (p0p1 artifact bundle); fixture `a1prime-native-stdio.json`.
 
 ## A2 — Socket concurrency
 
@@ -553,7 +596,7 @@ secret-scrubbed JSON in the artifact bundle); fixtures
 
 | Item | Status | What unblocks it |
 |---|---|---|
-| A1 transport | **re-decision in progress** — native stdio relay (owner direction 2026-09-29) | ADR + A1' probe of native per-session stdio (pi, claude, devin: env, cwd, lifecycle, allowlist, relay RSS) |
+| A1 transport | **owner-decided 2026-09-30** — native per-session stdio relay (ADR-0004); A1' evidence confirmed | closed — see section; ruling in ADR-0004 |
 | A1 OAuth round-trip | pi adapter: confirmed-negative (metadata loader unimplemented); Executor catalog: 401 triggers real RFC 8414/OIDC discovery and a static bearer via apiKey template + provider item is confirmed | none at evidence level |
 | A1 offline error typing | confirmed untyped transport failure on both measured paths (pi adapter `fetch failed`; Executor `Internal tool error [<id>]`) | governor/spec contract must require a typed transport-unavailable error (Phase 3 work) |
 | A2 Herdr socket: silent stream teardown on malformed input | owner-decided 2026-09-29 | closed — the re-arm-and-catch-up contract is adopted for unexpected subscription EOF; ruling in spec §19 |
@@ -573,6 +616,7 @@ secret-scrubbed JSON in the artifact bundle); fixtures
 | `a1-gateway-observations.json` | recorded adapter-side strings: install result, echoed args, untyped offline error, OAuth discovery, HTTPS refusal, no-uninstall surface (pi MCP adapter trial) | `contract-a1.md` |
 | `a1-executor-bearer-requests.json` | distilled request log: Executor catalog `probeEndpoint` 401 + OAuth-discovery leg, apiKey-template authenticated path (every request `Authorization: Bearer`), pi 0.99 native `pi mcp` leg (static headers; `needs sign-in` on 401); method/path/header-name/auth fields only | `contract-a1-bearer-evidence/request-log.jsonl` (artifact bundle) |
 | `a1-executor-reconnect-requests.json` | distilled request log of the restart/stale-session probe: four server processes, `Mcp-Session-Id` issue/reuse/404-reinit, untyped server-down error; method/header-name/auth/session fields only | `contract-a1-bearer-evidence/reconnect/request-log.jsonl` (artifact bundle) |
+| `a1prime-native-stdio.json` | scrubbed distillation of the A1' per-harness stdio spawn logs: event records (start/request/tools_call/eof/signal/exit) per pi/claude/devin session, env names filtered to `HERDR_*`/`PWD` + harness markers (dropped count recorded), env values whitelisted, paths as `/home/user/` placeholders; allowlist/codemode observations, forwarder RSS/binary footprint, config-integrity record | `contract-a1prime-evidence/` (`contract-a1prime.md`, `*-spawn-log.jsonl`, `*-run*.txt`; artifact bundle) |
 | `a2-tools-daemon-trace.jsonl` | 91-record wire log: hello/ack, multiplex, malformed frames, timeout, close | `/tmp/gov-p2-a2-evidence.jsonl` |
 | `a2-subscription-evidence.json` | scrubbed distillation of the Herdr protocol-22 subscription leg: isolation counts, framing, subscription semantics, concurrency, reconnect, malformed, timeouts, schema drift | `contract-a2-subscription-evidence/evidence.jsonl` (artifact bundle) |
 | `a3-start-prompt-evidence.json` | scrubbed distillation of the `agent start`/`agent prompt` probe: per-harness start envelopes and readiness shape, registration window, timeout/busy/not-found envelopes, racing starts, in-flight kill, prompt acks, AGY transcript layout, pane-cwd fallback, unreproduced claude limit | `contract-a3.md` (artifact bundle) |
@@ -587,5 +631,5 @@ secret-scrubbed JSON in the artifact bundle); fixtures
 | `jev-launch-evaluation.json` | full request+response capture of one router-path judgment call: `{model, state, questions}` body, exact criteria labels, resolved answer envelope | `fixtures/jev/launch-evaluation.json` (artifact bundle) |
 | `jev-supervision-review.json` | full request+response capture of one reviewer-path judgment call: 6 nouls + one 13-label choice, observed Σ=0.99 probabilities | `fixtures/jev/supervision-review.json` (artifact bundle) |
 
-`just contract` runs the suite — 122 checks, fail-closed on absent or
+`just contract` runs the suite — 144 checks, fail-closed on absent or
 malformed fixtures.
