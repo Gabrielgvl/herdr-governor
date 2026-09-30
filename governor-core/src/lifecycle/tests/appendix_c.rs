@@ -5,12 +5,16 @@
 //! unit test proved get their named proof here, cited like any other.
 
 use crate::lifecycle::{
-    Event, Settlement, State, StateChange, TRANSITION_RULES, UnresolvedReason, settle,
+    Event, JudgmentVerdict, Settlement, State, StateChange, TRANSITION_RULES, UnresolvedReason,
+    settle,
 };
 
 use super::{
-    builders::{NOW, run_in, settlement_of, stamped, test_policy, transact, updated_run},
-    f20, f22, f22_launch, f22_supervision, f25,
+    builders::{
+        NOW, is_quiet, run_in, settlement_of, stale_stamped, stamped, test_policy, transact,
+        updated_run,
+    },
+    f20, f22, f22_active, f22_judging, f22_prompting, f22_repair, f22_reserved, f22_starting, f25,
 };
 
 /// `(state, event)` in the spec's spellings → the named unit test that drives
@@ -71,12 +75,12 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     (
         "reserved",
         "obs(absent)",
-        f22_launch::f22_reserved_absent_is_launch_not_started,
+        f22_reserved::f22_reserved_absent_is_launch_not_started,
     ),
     (
         "reserved",
         "topology effect planned",
-        f22_launch::f22_starting_topology_acknowledgement_plans_first_start,
+        f22_reserved::f22_starting_topology_acknowledgement_plans_first_start,
     ),
     (
         "reserved",
@@ -86,62 +90,62 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     (
         "starting",
         "start acknowledged",
-        f22_launch::f22_starting_start_acknowledged_goes_prompting,
+        f22_starting::f22_starting_start_acknowledged_goes_prompting,
     ),
     (
         "starting",
         "start acknowledged",
-        f22_launch::f22_starting_ack_uses_the_matched_candidates_index,
+        f22_starting::f22_starting_ack_uses_the_matched_candidates_index,
     ),
     (
         "starting",
         "typed pre-interactive failure with another candidate",
-        f22_launch::f22_starting_pre_interactive_failure_tries_next_candidate,
+        f22_starting::f22_starting_pre_interactive_failure_tries_next_candidate,
     ),
     (
         "starting",
         "failure with no candidate, or unconfirmed",
-        f22_launch::f22_starting_failure_with_no_candidates_stays,
+        f22_starting::f22_starting_failure_with_no_candidates_stays,
     ),
     (
         "starting",
         "failure with no candidate, or unconfirmed",
-        f22_launch::f22_starting_unconfirmed_and_failed_stay_starting,
+        f22_starting::f22_starting_unconfirmed_and_failed_stay_starting,
     ),
     (
         "starting",
         "obs(absent)",
-        f22_launch::f22_starting_absent_is_launch_failed,
+        f22_starting::f22_starting_absent_is_launch_failed,
     ),
     (
         "prompting",
         "prompt acknowledged",
-        f22_launch::f22_prompting_acknowledged_goes_active,
+        f22_prompting::f22_prompting_acknowledged_goes_active,
     ),
     (
         "prompting",
         "prompt unconfirmed or failed",
-        f22_launch::f22_prompting_unconfirmed_goes_active_unconfirmed,
+        f22_prompting::f22_prompting_unconfirmed_goes_active_unconfirmed,
     ),
     (
         "prompting",
         "obs(absent)",
-        f22_launch::f22_prompting_absent_is_pane_lost,
+        f22_prompting::f22_prompting_absent_is_pane_lost,
     ),
     (
         "active",
         "obs(working)",
-        f22_supervision::f22_active_working_ends_the_episode,
+        f22_active::f22_active_working_ends_the_episode,
     ),
     (
         "active",
         "obs(working)",
-        f22_supervision::f22_active_working_without_episode_only_records_status,
+        f22_active::f22_active_working_without_episode_only_records_status,
     ),
     (
         "active",
         "obs(working)",
-        f22_supervision::f22_working_after_a_consumed_stall_nudge_ends_the_episode,
+        f22_active::f22_working_after_a_consumed_stall_nudge_ends_the_episode,
     ),
     (
         "active",
@@ -161,12 +165,12 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     (
         "active",
         "obs(blocked)",
-        f22_supervision::f22_active_blocked_asks_the_supervision_questions,
+        f22_active::f22_active_blocked_asks_the_supervision_questions,
     ),
     (
         "active",
         "obs(blocked)",
-        f22_supervision::f22_blocked_observation_records_status_and_writes_once,
+        f22_active::f22_blocked_observation_records_status_and_writes_once,
     ),
     (
         "active",
@@ -176,95 +180,101 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     (
         "active",
         "handoff(valid)",
-        f22_supervision::f22_active_handoff_freezes_and_judges,
+        f22_active::f22_active_handoff_freezes_and_judges,
     ),
     (
         "active",
         "handoff(valid)",
-        f22_supervision::f22_refreeze_preserves_an_armed_judgment_deadline,
+        f22_active::f22_refreeze_preserves_an_armed_judgment_deadline,
     ),
     (
         "active",
         "obs(absent)",
-        f22_supervision::f22_active_absent_reads_the_handoff_once,
+        f22_active::f22_active_absent_reads_the_handoff_once,
     ),
     (
         "active",
         "obs(absent)",
-        f22_supervision::f22_active_absent_without_handoff_is_pane_lost,
+        f22_active::f22_active_absent_without_handoff_is_pane_lost,
     ),
     (
         "active",
         "obs(absent)",
-        f22_supervision::f22_active_absent_with_frozen_handoff_judges,
+        f22_active::f22_active_absent_with_frozen_handoff_judges,
     ),
     (
         "active",
         "obs(absent)",
-        f22_supervision::f22_active_absent_with_frozen_handoff_arms_deadline,
+        f22_active::f22_active_absent_with_frozen_handoff_arms_deadline,
     ),
     (
         "judging",
         "judgment(accept)",
-        f22_supervision::f22_judging_accept_settles_accepted,
+        f22_judging::f22_judging_accept_settles_accepted,
     ),
     (
         "judging",
         "judgment(reject)",
-        f22_supervision::f22_judging_reject_enters_repair_and_arms_deadline_once,
+        f22_judging::f22_judging_reject_enters_repair_and_arms_deadline_once,
     ),
     (
         "judging",
         "judgment(unavailable)",
-        f22_supervision::f22_judging_unavailable_stays_until_deadline,
+        f22_judging::f22_judging_unavailable_stays_until_deadline,
     ),
     (
         "judging",
         "deadline(judgment)",
-        f22_supervision::f22_judging_deadlines,
+        f22_judging::f22_judging_deadlines,
     ),
     (
         "judging",
         "deadline(repair) armed and passed",
-        f22_supervision::f22_judging_deadlines,
+        f22_judging::f22_judging_deadlines,
     ),
     (
         "judging",
         "obs(absent)",
-        f22_supervision::f22_judging_absent_stays_judging,
+        f22_judging::f22_judging_absent_stays_judging,
     ),
     (
         "judging",
         "handoff(new digest)",
-        f22_supervision::f22_judging_new_digest_refreezes_same_digest_is_ignored,
+        f22_judging::f22_judging_new_digest_refreezes_same_digest_is_ignored,
     ),
     // The version guard runs before state dispatch (F20): a stale judgment
     // produces nothing in `judging` because it produces nothing everywhere —
-    // `f20_stamped_events_drop_when_versions_moved` lists `Event::Judgment`.
+    // `f20_stamped_events_drop_when_versions_moved` lists `Event::Judgment`,
+    // and `f20_stale_judgment_in_judging_changes_nothing` drives the state.
     (
         "judging",
         "stale judgment",
         f20::f20_stamped_events_drop_when_versions_moved,
     ),
     (
+        "judging",
+        "stale judgment",
+        f20_stale_judgment_in_judging_changes_nothing,
+    ),
+    (
         "repair",
         "repair follow-up dispatched before repair_deadline",
-        f22_supervision::f22_repair_dispatch_before_deadline_advances_generation,
+        f22_repair::f22_repair_dispatch_before_deadline_advances_generation,
     ),
     (
         "repair",
         "handoff(digest not yet judged)",
-        f22_supervision::f22_repair_new_handoff_freezes_keeping_deadline,
+        f22_repair::f22_repair_new_handoff_freezes_keeping_deadline,
     ),
     (
         "repair",
         "deadline(repair)",
-        f22_supervision::f22_repair_deadline_settles_rejected,
+        f22_repair::f22_repair_deadline_settles_rejected,
     ),
     (
         "repair",
         "obs(absent)",
-        f22_supervision::f22_repair_absent_stays_repair,
+        f22_repair::f22_repair_absent_stays_repair,
     ),
 ];
 
@@ -347,5 +357,22 @@ fn f22_reserved_launch_abstain_settles_not_started() {
         t.events.last().map(|event| event.body.as_str()),
         Some("{\"settlement\":\"unresolved\",\"reason\":\"launch_not_started\"}"),
         "the Launch's reported outcome rides the settle event"
+    );
+}
+
+/// The named proof for `("judging", "stale judgment")`: a `judging` Run
+/// whose `judgment` stamp no longer holds produces nothing — the version
+/// guard drops it before the state dispatch, so there is no state change, no
+/// settlement, no plan and no write (F20).
+#[test]
+fn f20_stale_judgment_in_judging_changes_nothing() {
+    let run = run_in(State::Judging);
+    let t = transact(
+        &run,
+        &stale_stamped(&run, Event::Judgment(JudgmentVerdict::Accept)),
+    );
+    assert!(
+        is_quiet(&t),
+        "a stale judgment produces nothing in judging (F20)"
     );
 }

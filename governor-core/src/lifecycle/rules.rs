@@ -10,7 +10,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "settled",
         "any other event",
-        "ignored — settlement is immutable; a late handoff or judgment is included",
+        "ignored, including a late handoff or judgment — settlement is immutable",
     ),
     (
         "*",

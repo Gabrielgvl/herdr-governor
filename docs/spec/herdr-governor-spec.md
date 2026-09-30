@@ -1138,7 +1138,7 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | State | Event | Outcome |
 |---|---|---|
 | `settled` | `cancel(closePane)` | close the pane only |
-| `settled` | `any other event` | ignored — settlement is immutable; a late handoff or judgment is included |
+| `settled` | `any other event` | ignored, including a late handoff or judgment — settlement is immutable |
 | `*` | `obs(invalid)` | no change except health reporting; deadlines still run |
 | `unsettled` | `deadline(max_age)` | settle unresolved(max_age) |
 | `unsettled` | `cancel` | settle cancelled; closePane also closes |

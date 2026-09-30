@@ -2,8 +2,12 @@ mod appendix_c;
 mod builders;
 mod f20;
 mod f22;
-mod f22_launch;
-mod f22_supervision;
+mod f22_active;
+mod f22_judging;
+mod f22_prompting;
+mod f22_repair;
+mod f22_reserved;
+mod f22_starting;
 mod f23;
 mod f25;
 

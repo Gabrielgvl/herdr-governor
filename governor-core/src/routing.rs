@@ -7,23 +7,23 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::config::{
-    Capability, Config, ConfigVersion, OperatingPointId, Provider, Qualification, Tier, args_digest,
-};
+use crate::config::{ConfigVersion, OperatingPointId, Provider, Tier, args_digest};
 use crate::identity::{
-    AgentKind, CallerKey, Digest, IdempotencyKey, JudgmentSetId, LaunchId, RunId, TabId, Timestamp,
+    AgentKind, CallerKey, Digest, IdempotencyKey, JudgmentSetId, LaunchId, RunId, TabId,
 };
-use crate::lifecycle::{Run, VersionTriple};
-use crate::recovery::Cooldown;
-use crate::task::{AbstainReason, Launch};
+use crate::lifecycle::VersionTriple;
 
 mod eval;
+mod placement;
+mod route;
 mod steps;
 
 pub use eval::{
     evaluation_abstention, evaluation_effect_abstention, evaluation_questions, evaluation_verdict,
     request_size_outcome, validate_evaluation,
 };
+pub use placement::placement_plan;
+pub use route::{cooling_down, route};
 
 /// N5 — a Jev request over 96 KiB abstains (it is never sent).
 pub const JEV_REQUEST_MAX_BYTES: usize = 96 * 1024;
@@ -397,260 +397,5 @@ fn exploration_assigned(caller: &CallerKey, key: &IdempotencyKey, rate: f64) -> 
     fraction < rate
 }
 
-/// F13 — the ordered routing function. Steps run in order and the decision
-/// is persisted before any topology effect (the caller owns the write):
-///
-/// 1. The typed evaluation is trusted only after `validate_evaluation`;
-///    here the judged tier must still be a policy tier and every carried
-///    probability still in contract.
-/// 2. Policy adjustments: `no_change_cap` caps a Task with no file changes
-///    and no security boundary; a security boundary or broad change raises
-///    the floor.
-/// 3. Caller uplift (`Task::tier`): at most one tier above the step-2 tier,
-///    never lower (H#49). A request naming a tier outside `policy.tiers`
-///    cannot be ordered — it is recorded and not applied.
-/// 4. Recovery (F21): `predecessor` is the settled Run this Launch
-///    continues. The start is at least one tier above the predecessor's
-///    start — impossible at the top tier, or when that start no longer
-///    names a policy tier, is `no_higher_tier` — and every operating point
-///    on the predecessor's provider is excluded in step 6. A predecessor
-///    that never started contributes only the provider exclusion.
-/// 5. Exploration: only when the Task changes no files, touches no security
-///    boundary and is not a recovery, and `sha256(caller ‖ idempotencyKey)`
-///    falls below `policy.exploration_rate`. It lowers the start one tier,
-///    never below the recovery minimum or the lowest tier.
-/// 6. Candidates: catalog order filtered to points at or above the start
-///    tier, outside every cooling provider and the predecessor's provider,
-///    and offering each of `required` — claimed in `capabilities` AND backed
-///    by a current `passed` qualification (`args_digest` of the live args);
-///    ordered by cost class, then catalog order. Empty is `no_candidates`.
-///
-/// Call `evaluation_verdict` first — a `rejected` Launch is never routed.
-/// `required` is the policy-resolved capability set for the Task's
-/// judgments; the names are catalog data (N8), never literals here.
-pub fn route(
-    launch: &Launch,
-    predecessor: Option<&Run>,
-    evaluation: &Evaluation,
-    config: &Config,
-    required: &[Capability],
-    qualifications: &[Qualification],
-    cooling: &[Provider],
-) -> Result<Decision, AbstainReason> {
-    let policy = &config.policy;
-    let tiers = policy.tiers.as_slice();
-    let mut rank = steps::evaluated_rank(evaluation, tiers)?;
-    let boundary = noul_yes(evaluation.security_boundary, None);
-    let no_change = matches!(evaluation.changes_files, ChangesFiles::None) && !boundary;
-    let (adjusted, policy_cap, policy_floor) =
-        steps::policy_adjusted(evaluation, policy, no_change, boundary, rank);
-    rank = adjusted;
-    let (uplifted, caller_uplift) = steps::caller_uplifted(tiers, launch.task.tier.as_ref(), rank);
-    rank = uplifted;
-    let (floored, recovery_minimum, minimum_rank, excluded_provider) =
-        steps::recovery_floored(predecessor, tiers, rank)?;
-    rank = floored;
-    let recovery = predecessor.is_some() || launch.task.recovery_of.is_some();
-    let (explored, exploration) = steps::explore(
-        &launch.caller,
-        &launch.idempotency_key,
-        policy.exploration_rate,
-        no_change,
-        recovery,
-        rank,
-        minimum_rank,
-    );
-    rank = explored;
-    let Some(start_tier) = tiers.get(rank).cloned() else {
-        return Err(AbstainReason::EvaluationFailed);
-    };
-    let candidates = steps::eligible_candidates(
-        config,
-        tiers,
-        rank,
-        excluded_provider.as_ref(),
-        required,
-        qualifications,
-        cooling,
-    )?;
-    Ok(Decision {
-        judged_tier: evaluation.weakest_sufficient_tier.clone(),
-        requested_tier: launch.task.tier.clone(),
-        policy_cap,
-        policy_floor,
-        caller_uplift,
-        recovery_minimum,
-        exploration,
-        start_tier,
-        candidates,
-        config_version: config.version.clone(),
-    })
-}
-
-/// F21/F13 step 6 — the providers currently cooling down: a cooldown holds
-/// until its absolute `until`.
-#[must_use]
-pub fn cooling_down(cooldowns: &[Cooldown], now: Timestamp) -> Vec<Provider> {
-    cooldowns
-        .iter()
-        .filter(|cooldown| cooldown.until > now)
-        .map(|cooldown| cooldown.provider.clone())
-        .collect()
-}
-
-/// F14 — where the new pane goes: the tab Jev picked while it still holds
-/// fewer than `TAB_PANE_MAX` panes (the right split, no focus — H#53), else
-/// a new tab. `open_tabs` is the caller's current open governor tabs with
-/// their pane counts; a picked tab that has since closed or filled plans a
-/// new tab, whose initial pane is used, never split (H#102).
-#[must_use]
-pub fn placement_plan(
-    related_tab: Option<&TabChoice>,
-    open_tabs: &[(TabId, usize)],
-) -> PlacementPlan {
-    match related_tab {
-        Some(TabChoice::Tab(tab)) => {
-            let fits = open_tabs
-                .iter()
-                .any(|(id, panes)| id == tab && *panes < TAB_PANE_MAX);
-            if fits {
-                PlacementPlan::ExistingTab { tab: tab.clone() }
-            } else {
-                PlacementPlan::NewTab
-            }
-        }
-        Some(TabChoice::New) | None => PlacementPlan::NewTab,
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    mod builders;
-    mod f12;
-    mod f13;
-    mod f13_eval;
-    mod f13_explore;
-    mod f14;
-
-    use alloc::vec::Vec;
-
-    use super::{
-        Candidate, ChangesFiles, JEV_REQUEST_MAX_BYTES, JudgmentOutcome, JudgmentPurpose, Question,
-        TAB_PANE_MAX, TRANSCRIPT_WINDOW_MAX_BYTES,
-    };
-    use crate::config::{OperatingPointId, Provider, Tier};
-    use crate::identity::AgentKind;
-
-    #[test]
-    fn n5_f14_routing_bound_values() {
-        assert_eq!(
-            JEV_REQUEST_MAX_BYTES, 98_304,
-            "Jev request bound is 96 KiB (N5)"
-        );
-        assert_eq!(
-            TRANSCRIPT_WINDOW_MAX_BYTES, 32_768,
-            "transcript window is 32 KiB (N5)"
-        );
-        assert_eq!(TAB_PANE_MAX, 4, "Jev's tab is used under four panes (F14)");
-    }
-
-    #[test]
-    fn f15_candidate_carries_harness_and_args() {
-        let candidate = Candidate {
-            operating_point: OperatingPointId("op-1".into()),
-            provider: Provider("prov-1".into()),
-            tier: Tier("t0".into()),
-            harness: AgentKind("kind-1".into()),
-            args: Vec::from(["--flag".into()]),
-        };
-        // `agent.start {kind, args}` replays the persisted candidate verbatim
-        // (F15) — a catalog edit must not be able to change either half.
-        assert_eq!(
-            candidate.harness,
-            AgentKind("kind-1".into()),
-            "candidate must carry the persisted harness kind (F15)"
-        );
-        assert_eq!(candidate.args.len(), 1, "candidate carries the exact args");
-        assert!(
-            candidate.args.iter().any(|arg| arg.as_str() == "--flag"),
-            "start args replayed verbatim (F15)"
-        );
-    }
-
-    #[test]
-    fn f12_f23_f24_question_spellings() {
-        let cases = [
-            (Question::DoneWhenVerifiable, "done_when_verifiable"),
-            (Question::WeakestSufficientTier, "weakest_sufficient_tier"),
-            (Question::ChangesFiles, "changes_files"),
-            (Question::SecurityBoundary, "security_boundary"),
-            (Question::NeedsExternal, "needs_external"),
-            (Question::LongRunning, "long_running"),
-            (Question::RelatedTab, "related_tab"),
-            (Question::BlockedOnInput, "blocked_on_input"),
-            (Question::NoRecentProgress, "no_recent_progress"),
-            (Question::OutsideScope, "outside_scope"),
-            (Question::ProviderLimited, "provider_limited"),
-            (Question::HandoffMeetsItem { item: 2 }, "handoff_meets_item"),
-        ];
-        for (question, name) in cases {
-            assert_eq!(
-                question.as_str(),
-                name,
-                "question spelling must match the spec"
-            );
-        }
-    }
-
-    #[test]
-    fn f12_changes_files_spellings() {
-        let cases = [
-            (ChangesFiles::None, "none"),
-            (ChangesFiles::Few, "few"),
-            (ChangesFiles::Broad, "broad"),
-        ];
-        for (value, name) in cases {
-            assert_eq!(
-                value.as_str(),
-                name,
-                "changes_files spelling must match F12"
-            );
-        }
-    }
-
-    #[test]
-    fn appendix_b_judgment_purpose_spellings() {
-        let cases = [
-            (JudgmentPurpose::Launch, "launch"),
-            (JudgmentPurpose::Review, "review"),
-            (JudgmentPurpose::Acceptance, "acceptance"),
-            (JudgmentPurpose::ProviderLimit, "provider_limit"),
-        ];
-        for (purpose, name) in cases {
-            assert_eq!(
-                purpose.as_str(),
-                name,
-                "judgment purpose spelling must match the DDL"
-            );
-        }
-    }
-
-    #[test]
-    fn appendix_b_judgment_outcome_spellings() {
-        let cases = [
-            (JudgmentOutcome::Answered, "answered"),
-            (JudgmentOutcome::TransportFailed, "transport_failed"),
-            (JudgmentOutcome::AuthFailed, "auth_failed"),
-            (JudgmentOutcome::InvalidResponse, "invalid_response"),
-            (JudgmentOutcome::TooLarge, "too_large"),
-            (JudgmentOutcome::Stale, "stale"),
-        ];
-        for (outcome, name) in cases {
-            assert_eq!(
-                outcome.as_str(),
-                name,
-                "judgment outcome spelling must match the DDL"
-            );
-        }
-    }
-}
+mod tests;

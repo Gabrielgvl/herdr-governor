@@ -1,61 +1,19 @@
-//! F22 — the launch lane of the total transition function:
-//! `reserved`, `starting` and `prompting`.
+//! F22 — the launch lane of the total transition function: `starting`.
 
 use alloc::vec::Vec;
 
 use crate::config::{OperatingPointId, Provider, Tier};
-use crate::delivery::MailboxEventKind;
-use crate::identity::{ChildStatus, Digest, Observation, PaneId, TabId};
+use crate::identity::Observation;
 use crate::lifecycle::{
-    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectState,
-    EffectTarget, Event, JudgmentVerdict, PromptCertainty, Settlement, State, UnresolvedReason,
-    transition,
+    EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectState, EffectTarget, Event,
+    Settlement, State, UnresolvedReason, transition,
 };
 use crate::routing::PlacementPlan;
 
 use super::builders::{
-    NOW, decision, effect_keys, effect_writes, event_kinds, identity, is_quiet, journal_effect_at,
-    obs_unique, run_in, run_result, settlement_of, stamped, test_policy, transact, updated_records,
-    updated_run,
+    NOW, decision, effect_keys, effect_writes, identity, journal_effect_at, run_in, run_result,
+    settlement_of, stamped, test_policy, transact, updated_records, updated_run,
 };
-#[test]
-pub(super) fn f22_reserved_absent_is_launch_not_started() {
-    let run = run_in(State::Reserved);
-    let t = transact(
-        &run,
-        &stamped(
-            &run,
-            Event::Obs {
-                observation: Observation::Absent,
-                handoff_reading: None,
-            },
-        ),
-    );
-    assert_eq!(
-        settlement_of(updated_run(&t)),
-        Some(Settlement::Unresolved {
-            reason: UnresolvedReason::LaunchNotStarted
-        }),
-        "the pane that would host the child vanished before it started"
-    );
-}
-
-#[test]
-fn f22_reserved_ignores_the_rest() {
-    let run = run_in(State::Reserved);
-    for event in [
-        obs_unique(Some(ChildStatus::Working)),
-        Event::Handoff {
-            digest: Digest([1; 32]),
-        },
-        Event::Judgment(JudgmentVerdict::Accept),
-        Event::Deadline(DeadlineKind::Idle),
-    ] {
-        let t = transact(&run, &stamped(&run, event));
-        assert!(is_quiet(&t), "reserved has no other answers");
-    }
-}
-
 #[test]
 pub(super) fn f22_starting_start_acknowledged_goes_prompting() {
     let run = run_in(State::Starting);
@@ -106,73 +64,6 @@ pub(super) fn f22_starting_start_acknowledged_goes_prompting() {
         t.effects[0].target,
         Some(EffectTarget::Child(identity())),
         "the task prompt targets the captured identity"
-    );
-}
-
-#[test]
-pub(super) fn f22_starting_topology_acknowledgement_plans_first_start() {
-    let run = run_in(State::Reserved);
-    // a new tab's initial pane hosts the child — no split is planned (H#102).
-    let t = transition(
-        &run,
-        &stamped(
-            &run,
-            run_result(
-                &run,
-                "tab:create",
-                EffectKind::TabCreate,
-                EffectOutcome::Acknowledged,
-                Some(EffectReceipt::TabCreated {
-                    tab: TabId("t9".into()),
-                    pane: PaneId("t9:p1".into()),
-                }),
-            ),
-        ),
-        NOW,
-        &test_policy(),
-        (Some(&decision(2)), &[], &[]),
-        "/fp",
-    );
-    assert_eq!(effect_keys(&t), Vec::from(["run:r-1:start:0"]));
-    assert_eq!(t.effects[0].kind, EffectKind::AgentStart);
-    assert_eq!(
-        t.effects[0].target,
-        Some(EffectTarget::AgentPane(PlacementPlan::NewTab))
-    );
-
-    // a split into a picked tab starts into the resulting pane plan.
-    let journal = Vec::from([journal_effect_at(
-        &run,
-        "split",
-        EffectKind::PaneSplit,
-        EffectState::Dispatching,
-        Some(EffectTarget::ExistingTab(TabId("t3".into()))),
-    )]);
-    let t_split = transition(
-        &run,
-        &stamped(
-            &run,
-            run_result(
-                &run,
-                "split",
-                EffectKind::PaneSplit,
-                EffectOutcome::Acknowledged,
-                Some(EffectReceipt::PaneCreated {
-                    pane: PaneId("t3:p4".into()),
-                }),
-            ),
-        ),
-        NOW,
-        &test_policy(),
-        (Some(&decision(2)), &journal, &[]),
-        "/fp",
-    );
-    assert_eq!(
-        t_split.effects[0].target,
-        Some(EffectTarget::AgentPane(PlacementPlan::ExistingTab {
-            tab: TabId("t3".into())
-        })),
-        "the start plans into the tab the split ran in"
     );
 }
 
@@ -309,118 +200,6 @@ pub(super) fn f22_starting_absent_is_launch_failed() {
             reason: UnresolvedReason::LaunchFailed
         })
     );
-}
-
-#[test]
-pub(super) fn f22_prompting_acknowledged_goes_active() {
-    let run = run_in(State::Prompting);
-    let t = transact(
-        &run,
-        &stamped(
-            &run,
-            run_result(
-                &run,
-                "prompt:task",
-                EffectKind::Prompt,
-                EffectOutcome::Acknowledged,
-                None,
-            ),
-        ),
-    );
-    let record = updated_run(&t);
-    assert_eq!(record.state, State::Active);
-    assert_eq!(record.prompt_certainty, Some(PromptCertainty::Acknowledged));
-}
-
-#[test]
-pub(super) fn f22_prompting_unconfirmed_goes_active_unconfirmed() {
-    for outcome in [
-        EffectOutcome::Unconfirmed,
-        EffectOutcome::PreInteractiveFailed,
-        EffectOutcome::Failed {
-            certainty: EffectCertainty::Unknown,
-        },
-    ] {
-        let run = run_in(State::Prompting);
-        let t = transact(
-            &run,
-            &stamped(
-                &run,
-                run_result(&run, "prompt:task", EffectKind::Prompt, outcome, None),
-            ),
-        );
-        let record = updated_run(&t);
-        assert_eq!(record.state, State::Active);
-        assert_eq!(
-            record.prompt_certainty,
-            Some(PromptCertainty::Unconfirmed),
-            "a possibly-consumed prompt records unconfirmed and never resubmits"
-        );
-        assert_eq!(
-            event_kinds(&t),
-            Vec::from([MailboxEventKind::PromptUnconfirmed])
-        );
-    }
-}
-
-#[test]
-pub(super) fn f22_prompting_absent_is_pane_lost() {
-    let run = run_in(State::Prompting);
-    let t = transact(
-        &run,
-        &stamped(
-            &run,
-            Event::Obs {
-                observation: Observation::Absent,
-                handoff_reading: None,
-            },
-        ),
-    );
-    assert_eq!(settlement_of(updated_run(&t)), Some(Settlement::PaneLost));
-}
-
-#[test]
-fn f22_prompting_ignores_non_task_prompt_results() {
-    let run = run_in(State::Prompting);
-    // a prompt effect that is not the task prompt (kind matches, key does
-    // not) must not promote the Run — the `||` guard keeps it out.
-    let t = transact(
-        &run,
-        &stamped(
-            &run,
-            run_result(
-                &run,
-                "nudge:0",
-                EffectKind::Prompt,
-                EffectOutcome::Acknowledged,
-                None,
-            ),
-        ),
-    );
-    assert!(
-        updated_records(&t).is_empty(),
-        "only the task prompt's resolution promotes"
-    );
-    assert_eq!(
-        effect_writes(&t),
-        Vec::from([("run:r-1:nudge:0", EffectState::Acknowledged)]),
-        "the journal write still commits"
-    );
-    // and a non-prompt effect under the task key stays out too.
-    let t_kind = transact(
-        &run,
-        &stamped(
-            &run,
-            run_result(
-                &run,
-                "prompt:task",
-                EffectKind::Close,
-                EffectOutcome::Acknowledged,
-                None,
-            ),
-        ),
-    );
-    assert!(updated_records(&t_kind).is_empty());
 }
 
 #[test]

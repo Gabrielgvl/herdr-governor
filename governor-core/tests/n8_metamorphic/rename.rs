@@ -1,18 +1,8 @@
-//! N8 — the metamorphic proof (spec §7): renaming opaque harness and
-//! operating-point ids while keeping declared capabilities changes no
-//! non-transcript behaviour. One generated `World` drives both the F13
-//! routing decision and the Appendix C lifecycle transition; a random
-//! bijective renaming of the catalog's harness kinds and operating-point
-//! ids produces the renamed world; every output must be identical modulo
-//! the renaming. Transcript behaviour is outside the pure core by
-//! construction (ADR-0002), so any difference at all is a
-//! literal-dependence bug, not an intended distinction.
-//!
-//! The generators live in `n8_strategies.rs`; the `Rename` application
-//! methods live here next to the property — the mapping is the relation,
-//! not a generator.
-
-pub mod n8_strategies;
+//! The `Rename` application methods — the metamorphic relation itself.
+//! Each method maps the harness kinds and operating-point ids that appear
+//! in its input through the generated bijection; every other field is
+//! preserved. The methods were file-private when the impl lived next to
+//! the property; the multi-file layout needs `pub(crate)` for `tests.rs`.
 
 use governor_core::config::{Catalog, Config, OperatingPoint, OperatingPointId, Qualification};
 use governor_core::identity::{AgentKind, ChildIdentity};
@@ -22,7 +12,8 @@ use governor_core::lifecycle::{
 };
 use governor_core::routing::{Candidate, Decision};
 use governor_core::task::Launch;
-use n8_strategies::{Rename, World};
+
+use crate::strategies::{Rename, World};
 
 /// The image of a name under a bijection; undeclared names pass through so
 /// the map stays total over stray ids.
@@ -33,18 +24,18 @@ fn image(map: &std::collections::BTreeMap<String, String>, name: &str) -> String
 
 impl Rename {
     /// The image of a harness kind under the renaming.
-    fn kind(&self, kind: &AgentKind) -> AgentKind {
+    pub(crate) fn kind(&self, kind: &AgentKind) -> AgentKind {
         AgentKind(image(&self.kinds, kind.0.as_str()))
     }
 
     /// The image of an operating-point id under the renaming.
-    fn op(&self, id: &OperatingPointId) -> OperatingPointId {
+    pub(crate) fn op(&self, id: &OperatingPointId) -> OperatingPointId {
         OperatingPointId(image(&self.ops, id.0.as_str()))
     }
 
     /// The renamed config: ids and harness kinds map; capabilities, cost
     /// classes, tiers, args, providers and catalog order are preserved.
-    fn config(&self, config: &Config) -> Config {
+    pub(crate) fn config(&self, config: &Config) -> Config {
         Config {
             catalog: Catalog {
                 operating_points: config
@@ -66,14 +57,14 @@ impl Rename {
         }
     }
 
-    fn qualification(&self, qualification: &Qualification) -> Qualification {
+    pub(crate) fn qualification(&self, qualification: &Qualification) -> Qualification {
         Qualification {
             operating_point: self.op(&qualification.operating_point),
             ..qualification.clone()
         }
     }
 
-    fn launch(&self, launch: &Launch) -> Launch {
+    pub(crate) fn launch(&self, launch: &Launch) -> Launch {
         Launch {
             decision: launch.decision.as_ref().map(|d| self.decision(d)),
             ..launch.clone()
@@ -81,7 +72,7 @@ impl Rename {
     }
 
     /// The renamed decision: candidate ids and harness kinds map.
-    fn decision(&self, decision: &Decision) -> Decision {
+    pub(crate) fn decision(&self, decision: &Decision) -> Decision {
         Decision {
             candidates: decision
                 .candidates
@@ -102,7 +93,7 @@ impl Rename {
 
     /// The renamed run record: the started operating point and the captured
     /// child's harness kind map; everything else stays.
-    fn run(&self, run: &Run) -> Run {
+    pub(crate) fn run(&self, run: &Run) -> Run {
         Run {
             operating_point: run.operating_point.as_ref().map(|id| self.op(id)),
             identity: run.identity.as_ref().map(|id| self.identity(id)),
@@ -120,7 +111,7 @@ impl Rename {
     /// The renamed transition output: every run write, effect receipt and
     /// planned effect's child target maps; mailbox events carry no catalog
     /// ids and pass through.
-    fn transition(&self, transition: &Transition) -> Transition {
+    pub(crate) fn transition(&self, transition: &Transition) -> Transition {
         Transition {
             state_changes: transition
                 .state_changes
@@ -168,7 +159,7 @@ impl Rename {
 
     /// The renamed effect journal entry / planned effect: a `Child`
     /// target's harness kind and an `AgentStarted` receipt's kind map.
-    fn effect(&self, effect: &Effect) -> Effect {
+    pub(crate) fn effect(&self, effect: &Effect) -> Effect {
         Effect {
             target: effect.target.as_ref().map(|t| self.target(t)),
             receipt: effect.receipt.as_ref().map(|r| self.receipt(r)),
@@ -176,7 +167,7 @@ impl Rename {
         }
     }
 
-    fn maybe_effect(&self, effect: Option<&Effect>) -> Option<Effect> {
+    pub(crate) fn maybe_effect(&self, effect: Option<&Effect>) -> Option<Effect> {
         effect.map(|e| self.effect(e))
     }
 
@@ -235,7 +226,7 @@ impl Rename {
 
     /// The renamed world — every input the property replays under the
     /// renaming. The renaming itself is the same map in both worlds.
-    fn world(&self, world: &World) -> World {
+    pub(crate) fn world(&self, world: &World) -> World {
         World {
             config: self.config(&world.config),
             launch: self.launch(&world.launch),
@@ -259,105 +250,6 @@ impl Rename {
             freeze_path: world.freeze_path.clone(),
             owner_absent: world.owner_absent,
             rename: self.clone(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::n8_strategies::world;
-    use governor_core::lifecycle::{periodic_review, transition};
-    use governor_core::routing::route;
-    use proptest::prelude::{ProptestConfig, prop_assert, prop_assert_eq, proptest};
-
-    proptest! {
-        // spec §7 N8 — the metamorphic property, >= 10_000 cases.
-        #![proptest_config(ProptestConfig::with_cases(10_000))]
-        #[test]
-        fn n8_renaming_opaque_ids_changes_no_behaviour(case in world()) {
-            let renamed = case.rename.world(&case);
-
-            // F13 — the routing decision is identical modulo the renaming.
-            let routed = route(
-                &case.launch,
-                case.predecessor.as_ref(),
-                &case.evaluation,
-                &case.config,
-                &case.required,
-                &case.qualifications,
-                &case.cooling,
-            );
-            let routed_renamed = route(
-                &renamed.launch,
-                renamed.predecessor.as_ref(),
-                &renamed.evaluation,
-                &renamed.config,
-                &renamed.required,
-                &renamed.qualifications,
-                &renamed.cooling,
-            );
-            match (routed.as_ref(), routed_renamed.as_ref()) {
-                (Ok(decision), Ok(decision_renamed)) => prop_assert_eq!(
-                    case.rename.decision(decision),
-                    decision_renamed.clone(),
-                    "the routing decision must be identical modulo the renaming"
-                ),
-                (Err(reason), Err(reason_renamed)) => prop_assert_eq!(
-                    reason,
-                    reason_renamed,
-                    "the abstention must be identical under the renaming"
-                ),
-                (Ok(_), Err(_)) => prop_assert!(
-                    false,
-                    "renaming a valid decision produced an abstention"
-                ),
-                (Err(_), Ok(_)) => prop_assert!(
-                    false,
-                    "renaming an abstention produced a decision"
-                ),
-            }
-
-            // Appendix C — the lifecycle transition is identical modulo the
-            // renaming. The decision read is the one the route produced;
-            // when the route abstains the launch never happened and the
-            // transition reads no decision.
-            let output = transition(
-                &case.run,
-                &case.event,
-                case.now,
-                &case.config.policy,
-                (routed.as_ref().ok(), &case.journal, &case.handoffs),
-                &case.freeze_path,
-            );
-            let output_renamed = transition(
-                &renamed.run,
-                &renamed.event,
-                renamed.now,
-                &renamed.config.policy,
-                (
-                    routed_renamed.as_ref().ok(),
-                    &renamed.journal,
-                    &renamed.handoffs,
-                ),
-                &renamed.freeze_path,
-            );
-            prop_assert_eq!(
-                case.rename.transition(&output),
-                output_renamed,
-                "the lifecycle transition must be identical modulo the renaming"
-            );
-
-            // F23 — the periodic review ask obeys the same opacity.
-            prop_assert_eq!(
-                case.rename.maybe_effect(periodic_review(
-                    &case.run,
-                    case.owner_absent,
-                    &case.journal,
-                )
-                .as_ref()),
-                periodic_review(&renamed.run, renamed.owner_absent, &renamed.journal),
-                "the periodic review must be identical modulo the renaming"
-            );
         }
     }
 }
