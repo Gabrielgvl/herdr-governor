@@ -9,7 +9,7 @@ use super::builders::{
     NOW, effect_keys, is_quiet, obs_unique, run_in, settlement_of, stamped, transact, updated_run,
 };
 #[test]
-fn f25_idle_episode_opens_nudge_and_deadline() {
+pub(super) fn f25_idle_episode_opens_nudge_and_deadline() {
     let run = run_in(State::Active);
     for status in [ChildStatus::Idle, ChildStatus::Done] {
         let t = transact(&run, &stamped(&run, obs_unique(Some(status))));
@@ -34,7 +34,7 @@ fn f25_idle_episode_opens_nudge_and_deadline() {
 }
 
 #[test]
-fn f25_repeated_idle_does_not_renudge_or_extend() {
+pub(super) fn f25_repeated_idle_does_not_renudge_or_extend() {
     let mut run = run_in(State::Active);
     run.idle_since = Some(Timestamp(10));
     run.idle_deadline = Some(Timestamp(910));
@@ -51,7 +51,7 @@ fn f25_repeated_idle_does_not_renudge_or_extend() {
 }
 
 #[test]
-fn f25_stall_then_idle_shares_one_episode() {
+pub(super) fn f25_stall_then_idle_shares_one_episode() {
     let mut run = run_in(State::Active);
     run.nudged_episode = Some(0); // a stall already spent the episode's nudge
     let t = transact(&run, &stamped(&run, obs_unique(Some(ChildStatus::Idle))));
@@ -64,7 +64,7 @@ fn f25_stall_then_idle_shares_one_episode() {
 }
 
 #[test]
-fn f25_idle_deadline_settles_no_handoff() {
+pub(super) fn f25_idle_deadline_settles_no_handoff() {
     let mut run = run_in(State::Active);
     run.idle_since = Some(Timestamp(10));
     run.idle_deadline = Some(Timestamp(400));

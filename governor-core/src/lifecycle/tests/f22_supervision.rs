@@ -17,7 +17,7 @@ use super::builders::{
     transact, updated_records, updated_run,
 };
 #[test]
-fn f22_active_working_ends_the_episode() {
+pub(super) fn f22_active_working_ends_the_episode() {
     let mut run = run_in(State::Active);
     run.idle_since = Some(Timestamp(10));
     run.idle_deadline = Some(Timestamp(910));
@@ -39,7 +39,7 @@ fn f22_active_working_ends_the_episode() {
 }
 
 #[test]
-fn f22_active_working_without_episode_only_records_status() {
+pub(super) fn f22_active_working_without_episode_only_records_status() {
     let run = run_in(State::Active);
     let t = transact(&run, &stamped(&run, obs_unique(Some(ChildStatus::Working))));
     let record = updated_run(&t);
@@ -58,7 +58,7 @@ fn f22_active_working_without_episode_only_records_status() {
 }
 
 #[test]
-fn f22_active_blocked_asks_the_supervision_questions() {
+pub(super) fn f22_active_blocked_asks_the_supervision_questions() {
     let run = run_in(State::Active);
     let t = transact(&run, &stamped(&run, obs_unique(Some(ChildStatus::Blocked))));
     assert_eq!(
@@ -89,7 +89,7 @@ fn f22_active_blocked_asks_the_supervision_questions() {
 }
 
 #[test]
-fn f22_active_handoff_freezes_and_judges() {
+pub(super) fn f22_active_handoff_freezes_and_judges() {
     let mut run = run_in(State::Active);
     run.idle_since = Some(Timestamp(10));
     run.idle_deadline = Some(Timestamp(910));
@@ -135,7 +135,7 @@ fn f22_active_handoff_freezes_and_judges() {
 }
 
 #[test]
-fn f22_active_absent_reads_the_handoff_once() {
+pub(super) fn f22_active_absent_reads_the_handoff_once() {
     let run = run_in(State::Active);
     // a valid marked file on the one-shot read freezes and judges (F25).
     let t = transition(
@@ -159,7 +159,7 @@ fn f22_active_absent_reads_the_handoff_once() {
 }
 
 #[test]
-fn f22_active_absent_without_handoff_is_pane_lost() {
+pub(super) fn f22_active_absent_without_handoff_is_pane_lost() {
     let run = run_in(State::Active);
     for reading in [None, Some(HandoffReading::NotWritten)] {
         let t = transition(
@@ -185,7 +185,7 @@ fn f22_active_absent_without_handoff_is_pane_lost() {
 }
 
 #[test]
-fn f22_active_absent_with_frozen_handoff_judges() {
+pub(super) fn f22_active_absent_with_frozen_handoff_judges() {
     let run = run_in(State::Active);
     let handoffs = Vec::from([frozen(&run, 0, 9)]);
     let t = transition(
@@ -219,7 +219,7 @@ fn f22_active_absent_with_frozen_handoff_judges() {
 }
 
 #[test]
-fn f22_judging_accept_settles_accepted() {
+pub(super) fn f22_judging_accept_settles_accepted() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     run.judgment_deadline = Some(Timestamp(800));
@@ -235,7 +235,7 @@ fn f22_judging_accept_settles_accepted() {
 }
 
 #[test]
-fn f22_judging_reject_enters_repair_and_arms_deadline_once() {
+pub(super) fn f22_judging_reject_enters_repair_and_arms_deadline_once() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     run.judgment_deadline = Some(Timestamp(800));
@@ -280,7 +280,7 @@ fn f22_judging_reject_enters_repair_and_arms_deadline_once() {
 }
 
 #[test]
-fn f22_judging_unavailable_stays_until_deadline() {
+pub(super) fn f22_judging_unavailable_stays_until_deadline() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     run.judgment_deadline = Some(Timestamp(800));
@@ -307,7 +307,7 @@ fn f22_judging_unavailable_stays_until_deadline() {
 }
 
 #[test]
-fn f22_judging_deadlines() {
+pub(super) fn f22_judging_deadlines() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     run.judgment_deadline = Some(Timestamp(400));
@@ -356,7 +356,7 @@ fn f22_judging_deadlines() {
 }
 
 #[test]
-fn f22_judging_absent_stays_judging() {
+pub(super) fn f22_judging_absent_stays_judging() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     let t = transact(
@@ -373,7 +373,7 @@ fn f22_judging_absent_stays_judging() {
 }
 
 #[test]
-fn f22_judging_new_digest_refreezes_same_digest_is_ignored() {
+pub(super) fn f22_judging_new_digest_refreezes_same_digest_is_ignored() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
     let handoffs = Vec::from([frozen(&run, 0, 9)]);
@@ -413,7 +413,7 @@ fn f22_judging_new_digest_refreezes_same_digest_is_ignored() {
 }
 
 #[test]
-fn f22_repair_dispatch_before_deadline_advances_generation() {
+pub(super) fn f22_repair_dispatch_before_deadline_advances_generation() {
     let mut run = run_in(State::Repair);
     run.evidence_generation = 1;
     run.repair_deadline = Some(Timestamp(700));
@@ -480,7 +480,7 @@ fn f22_repair_dispatch_after_deadline_does_not_count() {
 }
 
 #[test]
-fn f22_repair_deadline_settles_rejected() {
+pub(super) fn f22_repair_deadline_settles_rejected() {
     let mut run = run_in(State::Repair);
     run.evidence_generation = 1;
     run.repair_deadline = Some(Timestamp(400));
@@ -511,7 +511,7 @@ fn f22_repair_deadline_settles_rejected() {
 }
 
 #[test]
-fn f22_repair_new_handoff_freezes_keeping_deadline() {
+pub(super) fn f22_repair_new_handoff_freezes_keeping_deadline() {
     let mut run = run_in(State::Repair);
     run.evidence_generation = 1;
     run.repair_deadline = Some(Timestamp(700));
@@ -557,7 +557,7 @@ fn f22_repair_new_handoff_freezes_keeping_deadline() {
 }
 
 #[test]
-fn f22_repair_absent_stays_repair() {
+pub(super) fn f22_repair_absent_stays_repair() {
     let run = run_in(State::Repair);
     let t = transact(
         &run,
@@ -573,7 +573,7 @@ fn f22_repair_absent_stays_repair() {
 }
 
 #[test]
-fn f22_working_after_a_consumed_stall_nudge_ends_the_episode() {
+pub(super) fn f22_working_after_a_consumed_stall_nudge_ends_the_episode() {
     // the episode's nudge was spent on a stall while the child kept working —
     // no idle episode is open, yet the episode still ends on work.
     let mut run = run_in(State::Active);
@@ -588,7 +588,7 @@ fn f22_working_after_a_consumed_stall_nudge_ends_the_episode() {
 }
 
 #[test]
-fn f22_blocked_observation_records_status_and_writes_once() {
+pub(super) fn f22_blocked_observation_records_status_and_writes_once() {
     let run = run_in(State::Active);
     let t = transact(&run, &stamped(&run, obs_unique(Some(ChildStatus::Blocked))));
     assert_eq!(
@@ -675,7 +675,7 @@ fn f22_repair_dispatch_at_the_deadline_does_not_count() {
 }
 
 #[test]
-fn f22_active_absent_with_frozen_handoff_arms_deadline() {
+pub(super) fn f22_active_absent_with_frozen_handoff_arms_deadline() {
     let mut run = run_in(State::Active);
     run.judgment_deadline = None;
     let handoffs = Vec::from([frozen(&run, 0, 9)]);
@@ -722,7 +722,7 @@ fn f22_active_absent_with_frozen_handoff_arms_deadline() {
 }
 
 #[test]
-fn f22_refreeze_preserves_an_armed_judgment_deadline() {
+pub(super) fn f22_refreeze_preserves_an_armed_judgment_deadline() {
     let mut run = run_in(State::Active);
     run.judgment_deadline = Some(Timestamp(700));
     let t = transition(

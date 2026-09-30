@@ -95,7 +95,7 @@ fn f22_rule_list_is_exposed_as_data() {
 }
 
 #[test]
-fn f22_obs_invalid_changes_nothing_in_every_state() {
+pub(super) fn f22_obs_invalid_changes_nothing_in_every_state() {
     for state in [
         State::Reserved,
         State::Starting,
@@ -121,7 +121,7 @@ fn f22_obs_invalid_changes_nothing_in_every_state() {
 }
 
 #[test]
-fn f22_max_age_settles_any_unsettled_run() {
+pub(super) fn f22_max_age_settles_any_unsettled_run() {
     for state in [
         State::Reserved,
         State::Starting,
@@ -161,7 +161,7 @@ fn f22_max_age_settles_any_unsettled_run() {
 }
 
 #[test]
-fn f22_restart_converts_dispatching_to_unconfirmed() {
+pub(super) fn f22_restart_converts_dispatching_to_unconfirmed() {
     let run = run_in(State::Active);
     let journal = Vec::from([
         journal_effect(
@@ -204,7 +204,7 @@ fn f22_restart_converts_dispatching_to_unconfirmed() {
 }
 
 #[test]
-fn f22_restart_never_changes_deadlines() {
+pub(super) fn f22_restart_never_changes_deadlines() {
     let mut run = run_in(State::Judging);
     run.judgment_deadline = Some(Timestamp(800));
     run.repair_deadline = Some(Timestamp(700));
@@ -230,7 +230,7 @@ fn f22_restart_never_changes_deadlines() {
 }
 
 #[test]
-fn f22_restart_re_derives_prompting_from_the_journal() {
+pub(super) fn f22_restart_re_derives_prompting_from_the_journal() {
     let run = run_in(State::Prompting);
     let journal = Vec::from([journal_effect(
         &run,

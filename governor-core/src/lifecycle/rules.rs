@@ -10,9 +10,13 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "settled",
         "any other event",
-        "ignored — settlement is immutable",
+        "ignored — settlement is immutable; a late handoff or judgment is included",
     ),
-    ("*", "obs(invalid)", "no change; deadlines still run"),
+    (
+        "*",
+        "obs(invalid)",
+        "no change except health reporting; deadlines still run",
+    ),
     (
         "unsettled",
         "deadline(max_age)",
@@ -26,7 +30,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "*",
         "restart",
-        "dispatching effects become unconfirmed; deadlines unchanged",
+        "dispatching effects become unconfirmed (F8); every Run re-derived from its persisted state; deadlines unchanged",
     ),
     (
         "unsettled",
@@ -46,7 +50,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "reserved",
         "launch abstains or fails before any effect",
-        "unresolved(launch_not_started) via settle",
+        "unresolved(launch_not_started) via settle; the Launch reports its outcome",
     ),
     (
         "starting",
@@ -128,6 +132,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "stays judging; the frozen handoff is judged",
     ),
     ("judging", "handoff(new digest)", "re-freeze; stays judging"),
+    ("judging", "stale judgment", "ignored (F20)"),
     (
         "repair",
         "repair follow-up dispatched before repair_deadline",

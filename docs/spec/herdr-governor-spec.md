@@ -1133,20 +1133,42 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 - `effect_result`;
 - `restart`.
 
-**Rules for every state:**
-- `settled` accepts no event except `cancel` with `closePane`, which only closes the pane. A late handoff or judgment is ignored.
-- `obs(invalid)` changes nothing in any state, except health reporting. Deadlines still run.
-- `deadline(max_age)` in any unsettled state settles `unresolved(max_age)`.
-- `cancel` in any unsettled state settles `cancelled`.
-- `restart` converts `dispatching` effects to `unconfirmed` (F8) and re-derives every Run from its persisted state. No deadline changes.
+The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-core — `*` reads "any state" and `unsettled` reads "any state but `settled`". `governor-core/tests/appendix_c.rs` proves the table matches `TRANSITION_RULES` byte for byte, and `governor-core/src/lifecycle/tests/appendix_c.rs` names the unit test that proves `transition` agrees with every row.
 
-**Rules for each state:**
-
-| State | Event → next |
-|---|---|
-| `reserved` | a topology effect planned → `starting`; launch abstains or fails before any effect → `unresolved(launch_not_started)`, and the Launch reports its outcome |
-| `starting` | start acknowledged → `prompting`; typed pre-interactive failure with another candidate → stays `starting`; failure with no candidate, or `unconfirmed` → `unresolved(launch_failed)` if `obs(absent)`, otherwise stays `starting` until `obs(absent)` or `max_age` |
-| `prompting` | prompt acknowledged or unconfirmed → `active`; `obs(absent)` → `pane_lost` |
-| `active` | `obs(working)` → clear `idle_since` and end the episode; `obs(idle/done)` with no handoff → start the idle episode, nudge once, set `idle_deadline`; `deadline(idle)` → `no_handoff`; `obs(blocked)` → ask `blocked_on_input` and `provider_limited`; `provider_limited` → `provider_limited` (F21); `handoff` → freeze, then `judging`; `obs(absent)` → read the handoff once: valid → freeze, then `judging`; otherwise `pane_lost` |
-| `judging` | `judgment(accept)` → `accepted`; `judgment(reject)` → `repair`, setting `repair_deadline` if not already set for this work generation; `deadline(judgment)` → `unresolved(judgment_unavailable)`; `obs(absent)` → stays `judging` (the frozen handoff is still judged); a stale judgment is ignored |
-| `repair` | a repair follow-up dispatched before `repair_deadline` → work generation+1, then `active`; a valid handoff with a digest not yet judged → freeze, then `judging` (the repair deadline stays as it is, and a rejection returns to `repair`); `deadline(repair)` → `rejected`; `obs(absent)` → stays `repair` until the deadline |
+| State | Event | Outcome |
+|---|---|---|
+| `settled` | `cancel(closePane)` | close the pane only |
+| `settled` | `any other event` | ignored — settlement is immutable; a late handoff or judgment is included |
+| `*` | `obs(invalid)` | no change except health reporting; deadlines still run |
+| `unsettled` | `deadline(max_age)` | settle unresolved(max_age) |
+| `unsettled` | `cancel` | settle cancelled; closePane also closes |
+| `*` | `restart` | dispatching effects become unconfirmed (F8); every Run re-derived from its persisted state; deadlines unchanged |
+| `unsettled` | `provider_limited` | settle provider_limited (F21) |
+| `reserved` | `obs(absent)` | settle unresolved(launch_not_started) |
+| `reserved` | `topology effect planned` | starting (the launch plan write moves it) |
+| `reserved` | `launch abstains or fails before any effect` | unresolved(launch_not_started) via settle; the Launch reports its outcome |
+| `starting` | `start acknowledged` | prompting; task prompt planned |
+| `starting` | `typed pre-interactive failure with another candidate` | stays starting; next candidate planned in the same pane |
+| `starting` | `failure with no candidate, or unconfirmed` | stays starting until obs(absent) or max_age |
+| `starting` | `obs(absent)` | settle unresolved(launch_failed) |
+| `prompting` | `prompt acknowledged` | active; prompt_certainty acknowledged |
+| `prompting` | `prompt unconfirmed or failed` | active; prompt_certainty unconfirmed + prompt_unconfirmed event |
+| `prompting` | `obs(absent)` | settle pane_lost |
+| `active` | `obs(working)` | clear idle_since; the episode ends |
+| `active` | `obs(idle|done) with no handoff` | open the idle episode; one nudge; idle_deadline set |
+| `active` | `obs(blocked)` | ask blocked_on_input and provider_limited |
+| `active` | `deadline(idle)` | settle no_handoff |
+| `active` | `handoff(valid)` | freeze; judging |
+| `active` | `obs(absent)` | one-shot handoff read: valid → freeze + judging; otherwise pane_lost |
+| `judging` | `judgment(accept)` | settle accepted |
+| `judging` | `judgment(reject)` | repair; repair_deadline armed once per work generation |
+| `judging` | `judgment(unavailable)` | stays judging until judgment_deadline |
+| `judging` | `deadline(judgment)` | settle unresolved(judgment_unavailable) |
+| `judging` | `deadline(repair) armed and passed` | settle rejected |
+| `judging` | `obs(absent)` | stays judging; the frozen handoff is judged |
+| `judging` | `handoff(new digest)` | re-freeze; stays judging |
+| `judging` | `stale judgment` | ignored (F20) |
+| `repair` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active |
+| `repair` | `handoff(digest not yet judged)` | freeze; judging (repair_deadline kept) |
+| `repair` | `deadline(repair)` | settle rejected |
+| `repair` | `obs(absent)` | stays repair until the deadline |

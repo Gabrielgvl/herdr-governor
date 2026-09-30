@@ -1,3 +1,4 @@
+mod appendix_c;
 mod builders;
 mod f20;
 mod f22;

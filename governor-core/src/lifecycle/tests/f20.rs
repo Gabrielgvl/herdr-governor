@@ -52,7 +52,7 @@ fn f20_settlement_first_commit_wins() {
 }
 
 #[test]
-fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
+pub(super) fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
     let run = run_in(State::Active);
     let t = settle(&run, Settlement::ProviderLimited, NOW, &test_policy());
     let record = updated_run(&t);
@@ -143,7 +143,7 @@ fn f20_accepted_and_rejected_emit_their_events() {
 }
 
 #[test]
-fn f20_stamped_events_drop_when_versions_moved() {
+pub(super) fn f20_stamped_events_drop_when_versions_moved() {
     let run = run_in(State::Active);
     let events = Vec::from([
         obs_unique(Some(ChildStatus::Working)),
@@ -219,7 +219,7 @@ fn f20_synchronous_events_apply_regardless_of_stamp() {
 }
 
 #[test]
-fn f20_cancel_on_unsettled_settles_cancelled() {
+pub(super) fn f20_cancel_on_unsettled_settles_cancelled() {
     for state in [
         State::Reserved,
         State::Starting,
@@ -241,7 +241,7 @@ fn f20_cancel_on_unsettled_settles_cancelled() {
 }
 
 #[test]
-fn f20_cancel_with_close_pane_plans_one_verified_close() {
+pub(super) fn f20_cancel_with_close_pane_plans_one_verified_close() {
     let run = run_in(State::Active);
     let t = transact(&run, &stamped(&run, Event::Cancel { close_pane: true }));
     assert_eq!(effect_keys(&t), Vec::from(["run:r-1:close"]));
@@ -278,7 +278,7 @@ fn f20_cancel_with_close_pane_plans_one_verified_close() {
 }
 
 #[test]
-fn f20_settled_accepts_only_cancel_with_close_pane() {
+pub(super) fn f20_settled_accepts_only_cancel_with_close_pane() {
     let mut run = run_in(State::Settled);
     run.settlement = Some(Settlement::Accepted);
     run.settled_at = Some(Timestamp(1));

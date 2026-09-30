@@ -19,7 +19,7 @@ use super::builders::{
     updated_run,
 };
 #[test]
-fn f22_reserved_absent_is_launch_not_started() {
+pub(super) fn f22_reserved_absent_is_launch_not_started() {
     let run = run_in(State::Reserved);
     let t = transact(
         &run,
@@ -57,7 +57,7 @@ fn f22_reserved_ignores_the_rest() {
 }
 
 #[test]
-fn f22_starting_start_acknowledged_goes_prompting() {
+pub(super) fn f22_starting_start_acknowledged_goes_prompting() {
     let run = run_in(State::Starting);
     let started_receipt = EffectReceipt::AgentStarted {
         identity: identity(),
@@ -110,7 +110,7 @@ fn f22_starting_start_acknowledged_goes_prompting() {
 }
 
 #[test]
-fn f22_starting_topology_acknowledgement_plans_first_start() {
+pub(super) fn f22_starting_topology_acknowledgement_plans_first_start() {
     let run = run_in(State::Reserved);
     // a new tab's initial pane hosts the child — no split is planned (H#102).
     let t = transition(
@@ -177,7 +177,7 @@ fn f22_starting_topology_acknowledgement_plans_first_start() {
 }
 
 #[test]
-fn f22_starting_pre_interactive_failure_tries_next_candidate() {
+pub(super) fn f22_starting_pre_interactive_failure_tries_next_candidate() {
     let run = run_in(State::Starting);
     let journal = Vec::from([journal_effect_at(
         &run,
@@ -221,7 +221,7 @@ fn f22_starting_pre_interactive_failure_tries_next_candidate() {
 }
 
 #[test]
-fn f22_starting_failure_with_no_candidates_stays() {
+pub(super) fn f22_starting_failure_with_no_candidates_stays() {
     let run = run_in(State::Starting);
     let journal = Vec::from([journal_effect_at(
         &run,
@@ -255,7 +255,7 @@ fn f22_starting_failure_with_no_candidates_stays() {
 }
 
 #[test]
-fn f22_starting_unconfirmed_and_failed_stay_starting() {
+pub(super) fn f22_starting_unconfirmed_and_failed_stay_starting() {
     let run = run_in(State::Starting);
     for outcome in [
         EffectOutcome::Unconfirmed,
@@ -291,7 +291,7 @@ fn f22_starting_unconfirmed_and_failed_stay_starting() {
 }
 
 #[test]
-fn f22_starting_absent_is_launch_failed() {
+pub(super) fn f22_starting_absent_is_launch_failed() {
     let run = run_in(State::Starting);
     let t = transact(
         &run,
@@ -312,7 +312,7 @@ fn f22_starting_absent_is_launch_failed() {
 }
 
 #[test]
-fn f22_prompting_acknowledged_goes_active() {
+pub(super) fn f22_prompting_acknowledged_goes_active() {
     let run = run_in(State::Prompting);
     let t = transact(
         &run,
@@ -333,7 +333,7 @@ fn f22_prompting_acknowledged_goes_active() {
 }
 
 #[test]
-fn f22_prompting_unconfirmed_goes_active_unconfirmed() {
+pub(super) fn f22_prompting_unconfirmed_goes_active_unconfirmed() {
     for outcome in [
         EffectOutcome::Unconfirmed,
         EffectOutcome::PreInteractiveFailed,
@@ -364,7 +364,7 @@ fn f22_prompting_unconfirmed_goes_active_unconfirmed() {
 }
 
 #[test]
-fn f22_prompting_absent_is_pane_lost() {
+pub(super) fn f22_prompting_absent_is_pane_lost() {
     let run = run_in(State::Prompting);
     let t = transact(
         &run,
@@ -424,7 +424,7 @@ fn f22_prompting_ignores_non_task_prompt_results() {
 }
 
 #[test]
-fn f22_starting_ack_uses_the_matched_candidates_index() {
+pub(super) fn f22_starting_ack_uses_the_matched_candidates_index() {
     let run = run_in(State::Starting);
     let journal = Vec::from([
         journal_effect_at(
