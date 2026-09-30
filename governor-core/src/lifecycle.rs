@@ -15,7 +15,7 @@ use crate::identity::{
     LaunchId, Observation, PaneId, RunId, TabId, Timestamp,
 };
 use crate::recovery::{Cooldown, RecoveryObligation};
-use crate::routing::JudgmentRecord;
+use crate::routing::{JudgmentRecord, PlacementPlan};
 use crate::task::Launch;
 
 /// Appendix C — the lifecycle states: `reserved` → `starting` → `prompting` →
@@ -383,9 +383,32 @@ pub struct EffectResult {
     pub receipt: Option<EffectReceipt>,
 }
 
-/// F8/Appendix B `effects` — one journaled mutation. `payload_digest`
-/// identifies the rendered operation (`target_json` holds the captured target
-/// identity, stored typed here as `target`).
+/// F8/Appendix B `effects.target_json` — the captured target identity an
+/// effect addresses, persisted with the journal row so a `planned` effect
+/// stays dispatchable after restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EffectTarget {
+    /// F14 — `pane_split` targets a tab: `ExistingTab` names it now; `NewTab`
+    /// resolves at dispatch to the tab the sibling `tab_create` produced
+    /// (`EffectReceipt::TabCreated`).
+    Placement(PlacementPlan),
+    /// F14 — `tab_create` targets the caller context the new tab opens in:
+    /// the caller's pane, whose workspace receives it (resolved fresh at
+    /// dispatch).
+    CallerContext {
+        /// The caller's pane — the workspace locator.
+        pane: PaneId,
+    },
+    /// F2/F10 — `prompt` and `close` target the captured child identity,
+    /// re-verified fresh before every dispatch.
+    Child(ChildIdentity),
+}
+
+/// F8/Appendix B `effects` — one journaled mutation. Every kind's dispatch
+/// payload is rebuilt from persisted state (`agent_start` from the Decision's
+/// candidate, `prompt` from the Task or the outbox message, `jev_evaluate`
+/// from the Task, `tab_create`/`pane_split`/`close` from the persisted
+/// `target`); `payload_digest` identifies the rendered form.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Effect {
     /// `effect_id`.
@@ -400,9 +423,12 @@ pub struct Effect {
     pub subject_launch: Option<LaunchId>,
     /// `subject_run_id` — the Run it serves.
     pub subject_run: Option<RunId>,
-    /// `target_json` — the captured identity the mutation targets (F10
-    /// re-verification reads it fresh before every prompt and close).
-    pub target: Option<ChildIdentity>,
+    /// `target_json` — the captured identity the mutation addresses (F8):
+    /// `Placement` for `pane_split`, `CallerContext` for `tab_create`,
+    /// `Child` for `prompt`/`close`; `None` for `jev_evaluate` (no external
+    /// target) and `agent_start` (its pane is the topology effect's product,
+    /// resolved from that receipt at dispatch).
+    pub target: Option<EffectTarget>,
     /// `payload_digest` — digest of the rendered operation.
     pub payload_digest: Option<Digest>,
     /// `state`.
@@ -629,163 +655,140 @@ pub enum Event {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeadlineKind, EffectCertainty, EffectKind, EffectState, PromptCertainty, Settlement, State,
-        UnresolvedReason,
+        DeadlineKind, EffectCertainty, EffectKind, EffectState, EffectTarget, PromptCertainty,
+        Settlement, State, UnresolvedReason,
     };
+    use crate::identity::{
+        AgentKind, AgentName, ChildIdentity, HerdrIncarnation, NativeSession, PaneId, TabId,
+        TerminalId,
+    };
+    use crate::routing::PlacementPlan;
 
     #[test]
     fn appendix_c_state_spellings() {
-        let cases = [
-            (State::Reserved, "reserved"),
-            (State::Starting, "starting"),
-            (State::Prompting, "prompting"),
-            (State::Active, "active"),
-            (State::Judging, "judging"),
-            (State::Repair, "repair"),
-            (State::Settled, "settled"),
-        ];
-        for (state, name) in cases {
-            assert_eq!(state.as_str(), name, "state spelling must match Appendix C");
-        }
+        assert_eq!(State::Reserved.as_str(), "reserved");
+        assert_eq!(State::Starting.as_str(), "starting");
+        assert_eq!(State::Prompting.as_str(), "prompting");
+        assert_eq!(State::Active.as_str(), "active");
+        assert_eq!(State::Judging.as_str(), "judging");
+        assert_eq!(State::Repair.as_str(), "repair");
+        assert_eq!(State::Settled.as_str(), "settled");
     }
 
     #[test]
     fn f16_prompt_certainty_spellings() {
-        let cases = [
-            (PromptCertainty::Acknowledged, "acknowledged"),
-            (PromptCertainty::Unconfirmed, "unconfirmed"),
-        ];
-        for (certainty, name) in cases {
-            assert_eq!(
-                certainty.as_str(),
-                name,
-                "prompt certainty spelling must match the DDL"
-            );
-        }
+        assert_eq!(PromptCertainty::Acknowledged.as_str(), "acknowledged");
+        assert_eq!(PromptCertainty::Unconfirmed.as_str(), "unconfirmed");
     }
 
     #[test]
     fn appendix_c_deadline_kind_spellings() {
-        let cases = [
-            (DeadlineKind::Idle, "idle"),
-            (DeadlineKind::Repair, "repair"),
-            (DeadlineKind::Judgment, "judgment"),
-            (DeadlineKind::MaxAge, "max_age"),
-        ];
-        for (kind, name) in cases {
-            assert_eq!(
-                kind.as_str(),
-                name,
-                "deadline kind spelling must match Appendix C"
-            );
-        }
+        assert_eq!(DeadlineKind::Idle.as_str(), "idle");
+        assert_eq!(DeadlineKind::Repair.as_str(), "repair");
+        assert_eq!(DeadlineKind::Judgment.as_str(), "judgment");
+        assert_eq!(DeadlineKind::MaxAge.as_str(), "max_age");
     }
 
     #[test]
     fn f20_unresolved_reason_spellings() {
-        let cases = [
-            (UnresolvedReason::LaunchNotStarted, "launch_not_started"),
-            (UnresolvedReason::LaunchFailed, "launch_failed"),
-            (
-                UnresolvedReason::JudgmentUnavailable,
-                "judgment_unavailable",
-            ),
-            (UnresolvedReason::IdentityUnprovable, "identity_unprovable"),
-            (UnresolvedReason::MaxAge, "max_age"),
-        ];
-        for (reason, name) in cases {
-            assert_eq!(
-                reason.as_str(),
-                name,
-                "unresolved reason spelling must match F20"
-            );
-        }
+        assert_eq!(
+            UnresolvedReason::LaunchNotStarted.as_str(),
+            "launch_not_started"
+        );
+        assert_eq!(UnresolvedReason::LaunchFailed.as_str(), "launch_failed");
+        assert_eq!(
+            UnresolvedReason::JudgmentUnavailable.as_str(),
+            "judgment_unavailable"
+        );
+        assert_eq!(
+            UnresolvedReason::IdentityUnprovable.as_str(),
+            "identity_unprovable"
+        );
+        assert_eq!(UnresolvedReason::MaxAge.as_str(), "max_age");
     }
 
     #[test]
     fn f20_settlement_spellings() {
-        let cases = [
-            (Settlement::Accepted, "accepted"),
-            (Settlement::Rejected, "rejected"),
-            (Settlement::NoHandoff, "no_handoff"),
-            (Settlement::PaneLost, "pane_lost"),
-            (Settlement::Cancelled, "cancelled"),
-            (Settlement::ProviderLimited, "provider_limited"),
-        ];
-        for (settlement, name) in cases {
-            assert_eq!(
-                settlement.as_str(),
-                name,
-                "settlement spelling must match F20"
-            );
-        }
+        assert_eq!(Settlement::Accepted.as_str(), "accepted");
+        assert_eq!(Settlement::Rejected.as_str(), "rejected");
+        assert_eq!(Settlement::NoHandoff.as_str(), "no_handoff");
+        assert_eq!(Settlement::PaneLost.as_str(), "pane_lost");
+        assert_eq!(Settlement::Cancelled.as_str(), "cancelled");
+        assert_eq!(Settlement::ProviderLimited.as_str(), "provider_limited");
         // `unresolved` never carries its reason in the settlement spelling —
         // the reason rides `runs.settlement_reason` (Appendix B).
-        let reasons = [
+        for reason in [
             UnresolvedReason::LaunchNotStarted,
             UnresolvedReason::LaunchFailed,
             UnresolvedReason::JudgmentUnavailable,
             UnresolvedReason::IdentityUnprovable,
             UnresolvedReason::MaxAge,
-        ];
-        for reason in reasons {
-            assert_eq!(
-                Settlement::Unresolved { reason }.as_str(),
-                "unresolved",
-                "unresolved spelling is constant across reasons"
-            );
+        ] {
+            assert_eq!(Settlement::Unresolved { reason }.as_str(), "unresolved");
         }
     }
 
     #[test]
     fn f8_effect_kind_spellings() {
-        let cases = [
-            (EffectKind::JevEvaluate, "jev_evaluate"),
-            (EffectKind::TabCreate, "tab_create"),
-            (EffectKind::PaneSplit, "pane_split"),
-            (EffectKind::AgentStart, "agent_start"),
-            (EffectKind::Prompt, "prompt"),
-            (EffectKind::Close, "close"),
-        ];
-        for (kind, name) in cases {
-            assert_eq!(
-                kind.as_str(),
-                name,
-                "effect kind spelling must match the DDL"
-            );
-        }
+        assert_eq!(EffectKind::JevEvaluate.as_str(), "jev_evaluate");
+        assert_eq!(EffectKind::TabCreate.as_str(), "tab_create");
+        assert_eq!(EffectKind::PaneSplit.as_str(), "pane_split");
+        assert_eq!(EffectKind::AgentStart.as_str(), "agent_start");
+        assert_eq!(EffectKind::Prompt.as_str(), "prompt");
+        assert_eq!(EffectKind::Close.as_str(), "close");
     }
 
     #[test]
     fn f8_effect_state_spellings() {
-        let cases = [
-            (EffectState::Planned, "planned"),
-            (EffectState::Dispatching, "dispatching"),
-            (EffectState::Acknowledged, "acknowledged"),
-            (EffectState::Failed, "failed"),
-            (EffectState::Unconfirmed, "unconfirmed"),
-        ];
-        for (state, name) in cases {
-            assert_eq!(
-                state.as_str(),
-                name,
-                "effect state spelling must match the DDL"
-            );
-        }
+        assert_eq!(EffectState::Planned.as_str(), "planned");
+        assert_eq!(EffectState::Dispatching.as_str(), "dispatching");
+        assert_eq!(EffectState::Acknowledged.as_str(), "acknowledged");
+        assert_eq!(EffectState::Failed.as_str(), "failed");
+        assert_eq!(EffectState::Unconfirmed.as_str(), "unconfirmed");
     }
 
     #[test]
     fn f8_effect_certainty_spellings() {
-        let cases = [
-            (EffectCertainty::Absent, "absent"),
-            (EffectCertainty::Unknown, "unknown"),
-        ];
-        for (certainty, name) in cases {
-            assert_eq!(
-                certainty.as_str(),
-                name,
-                "effect certainty spelling must match the DDL"
-            );
-        }
+        assert_eq!(EffectCertainty::Absent.as_str(), "absent");
+        assert_eq!(EffectCertainty::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn f8_f14_effect_target_matches_kind() {
+        let identity = ChildIdentity {
+            herdr_incarnation: HerdrIncarnation("inc-1".into()),
+            terminal_id: TerminalId("term-1".into()),
+            agent_kind: AgentKind("kind-1".into()),
+            agent_name: AgentName("gov-deadbeef".into()),
+            native_session: Some(NativeSession("sess-1".into())),
+            pane_id: PaneId("w6:p2".into()),
+        };
+        let split = EffectTarget::Placement(PlacementPlan::ExistingTab {
+            tab: TabId("t1".into()),
+        });
+        let new_tab = EffectTarget::Placement(PlacementPlan::NewTab);
+        let caller = EffectTarget::CallerContext {
+            pane: PaneId("w6:p1".into()),
+        };
+        let child = EffectTarget::Child(identity);
+        // Every variant pairs with the spec kind that addresses it — the
+        // exhaustive match is the shape pin (F8/F14/F10).
+        let kind_of = |target: &EffectTarget| match target {
+            EffectTarget::Placement(_) => EffectKind::PaneSplit,
+            EffectTarget::CallerContext { pane: _ } => EffectKind::TabCreate,
+            EffectTarget::Child(_) => EffectKind::Prompt,
+        };
+        assert_eq!(kind_of(&split), EffectKind::PaneSplit);
+        assert_eq!(
+            kind_of(&new_tab),
+            EffectKind::PaneSplit,
+            "NewTab resolves at dispatch to the sibling tab_create's TabCreated receipt (F14)"
+        );
+        assert_eq!(kind_of(&caller), EffectKind::TabCreate);
+        assert_eq!(
+            kind_of(&child),
+            EffectKind::Prompt,
+            "prompt and close share the captured-identity target (F10)"
+        );
     }
 }

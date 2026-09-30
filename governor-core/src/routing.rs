@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::config::{ConfigVersion, OperatingPointId, Provider, Tier};
-use crate::identity::{Digest, JudgmentSetId, LaunchId, RunId, TabId};
+use crate::identity::{AgentKind, Digest, JudgmentSetId, LaunchId, RunId, TabId};
 use crate::lifecycle::VersionTriple;
 
 /// N5 — a Jev request over 96 KiB abstains (it is never sent).
@@ -286,6 +286,9 @@ pub struct Candidate {
     pub provider: Provider,
     /// Its tier — at or above `Decision::start_tier` (F13 step 6).
     pub tier: Tier,
+    /// The harness kind `agent.start {kind, args}` launches (F15); persisted
+    /// with the decision so a later catalog edit cannot rename it (F13/F27).
+    pub harness: AgentKind,
     /// The exact `agent.start` arguments (F13/F15).
     pub args: Vec<String>,
 }
@@ -336,10 +339,14 @@ pub enum PlacementPlan {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::{
-        ChangesFiles, JEV_REQUEST_MAX_BYTES, JudgmentOutcome, JudgmentPurpose, Question,
+        Candidate, ChangesFiles, JEV_REQUEST_MAX_BYTES, JudgmentOutcome, JudgmentPurpose, Question,
         TAB_PANE_MAX, TRANSCRIPT_WINDOW_MAX_BYTES,
     };
+    use crate::config::{OperatingPointId, Provider, Tier};
+    use crate::identity::AgentKind;
 
     #[test]
     fn n5_f14_routing_bound_values() {
@@ -352,6 +359,29 @@ mod tests {
             "transcript window is 32 KiB (N5)"
         );
         assert_eq!(TAB_PANE_MAX, 4, "Jev's tab is used under four panes (F14)");
+    }
+
+    #[test]
+    fn f15_candidate_carries_harness_and_args() {
+        let candidate = Candidate {
+            operating_point: OperatingPointId("op-1".into()),
+            provider: Provider("prov-1".into()),
+            tier: Tier("t0".into()),
+            harness: AgentKind("kind-1".into()),
+            args: Vec::from(["--flag".into()]),
+        };
+        // `agent.start {kind, args}` replays the persisted candidate verbatim
+        // (F15) — a catalog edit must not be able to change either half.
+        assert_eq!(
+            candidate.harness,
+            AgentKind("kind-1".into()),
+            "candidate must carry the persisted harness kind (F15)"
+        );
+        assert_eq!(candidate.args.len(), 1, "candidate carries the exact args");
+        assert!(
+            candidate.args.iter().any(|arg| arg.as_str() == "--flag"),
+            "start args replayed verbatim (F15)"
+        );
     }
 
     #[test]
