@@ -191,6 +191,43 @@ def deny_reason(proc):
     return json.loads(proc.stdout)["hookSpecificOutput"]
 
 
+class BaseRepoFixtureTests(unittest.TestCase):
+    """pi-review F1: pin the fixture builder itself. base_repo() must mirror
+    the real tree it stands in for — every file under each member's src/, at
+    any depth, plus the real Cargo.lock — or the gates get exercised against
+    a fixture that can drift from the repo it claims to represent."""
+
+    def test_mirrors_member_src_trees_and_real_lockfile(self):
+        global ROOT
+        seeds = {
+            "Cargo.toml": "[workspace]\nmembers = []\n",
+            "Cargo.lock": "# distinctive lockfile sentinel 0xbeef\n",
+            CORE_MANI: '[package]\nname = "core"\n',
+            BIN_MANI: '[package]\nname = "bin"\n',
+            CORE_LIB: "//! lib\n",
+            CORE + "/src/a/b.rs": "// nested core module\n",
+            BIN_MAIN: "// main\n",
+            BIN + "/src/deep/leaf.rs": "// nested bin module\n",
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, body in seeds.items():
+                p = root / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(body)
+            saved, ROOT = ROOT, root
+            try:
+                repo = base_repo()
+            finally:
+                ROOT = saved
+            self.addCleanup(repo.cleanup)
+            for rel in ("Cargo.lock", CORE + "/src/a/b.rs",
+                        BIN + "/src/deep/leaf.rs"):
+                with self.subTest(path=rel):
+                    self.assertEqual(
+                        (repo.dir / rel).read_text(), seeds[rel])
+
+
 # --------------------------------------------------------------------------
 # Seeded-cheat registry. Every assignment cheat maps to >=1 "cheat" test that
 # must make its gate FAIL and >=1 "control" test that must let it PASS. The
