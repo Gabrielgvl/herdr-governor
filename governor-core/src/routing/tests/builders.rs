@@ -16,7 +16,7 @@ use crate::identity::{
 use crate::lifecycle::{Run, State};
 use crate::routing::{
     ChangesFiles, Decision, Evaluation, Judgment, JudgmentOutcome, JudgmentPurpose, JudgmentRecord,
-    JudgmentSet, Probability, Question, QuestionVersion, args_digest,
+    JudgmentSet, Probability, Question, QuestionVersion,
 };
 use crate::task::{AbstainReason, Launch, LaunchPhase, Task};
 
@@ -77,7 +77,7 @@ pub(super) fn qualification(
 ) -> Qualification {
     Qualification {
         operating_point: point.id.clone(),
-        args_digest: args_digest(&point.args),
+        args_digest: point.args_digest(),
         capability: Capability(capability.into()),
         passed,
         evidence: String::new(),

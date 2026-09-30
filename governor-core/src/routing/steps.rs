@@ -10,8 +10,8 @@ use crate::lifecycle::Run;
 use crate::task::AbstainReason;
 
 use super::{
-    Candidate, ChangesFiles, Evaluation, Exploration, args_digest, exploration_assigned,
-    policy_tier, tier_index, valid_probability,
+    Candidate, ChangesFiles, Evaluation, Exploration, exploration_assigned, policy_tier,
+    tier_index, valid_probability,
 };
 
 /// Step 1 — validate the typed evaluation and rank the judged tier. Every
@@ -189,7 +189,7 @@ fn qualified(
     capability: &Capability,
     qualifications: &[Qualification],
 ) -> bool {
-    let current = args_digest(&point.args);
+    let current = point.args_digest();
     qualifications.iter().any(|qualification| {
         qualification.operating_point == point.id
             && qualification.capability == *capability

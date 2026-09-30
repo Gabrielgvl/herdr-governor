@@ -476,10 +476,11 @@ fn f26_args_digest_encoding_is_unambiguous() {
         "the length prefix separates list boundaries"
     );
 
-    // sha256( len-le ‖ bytes … ) of ["--model", "x"] — pins the encoding.
+    // sha256( u64-be len ‖ bytes … ) of ["--model", "x"] — pins the
+    // platform-independent encoding.
     assert_eq!(
         hex(&valid_point("opus").args_digest().0),
-        "bc7b6462018079c9fe3534c0e3f4a05ec7f0ef0e1414a9fb282632e92524b8cf",
+        "39dfaf531ca7eaac8cd66eb24e604d721e380d35e288123b6644938c3a595eac",
         "the args digest pins the sha-256 length-prefixed encoding"
     );
 }

@@ -7,10 +7,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use sha2::{Digest as _, Sha256};
-
 use crate::config::{
-    Capability, Config, ConfigVersion, OperatingPointId, Provider, Qualification, Tier,
+    Capability, Config, ConfigVersion, OperatingPointId, Provider, Qualification, Tier, args_digest,
 };
 use crate::identity::{
     AgentKind, CallerKey, Digest, IdempotencyKey, JudgmentSetId, LaunchId, RunId, TabId, Timestamp,
@@ -378,36 +376,15 @@ fn valid_probability(probability: Probability) -> bool {
 /// launch nouls carry no policy threshold — `threshold` is `None` and the
 /// verdict bound is 0.5 (the calibrated majority; the spec names a threshold
 /// only for `provider_limited`, F21).
-fn noul_yes(probability: Probability, threshold: Option<f64>) -> bool {
+pub(crate) fn noul_yes(probability: Probability, threshold: Option<f64>) -> bool {
     probability.0 >= threshold.unwrap_or(0.5)
-}
-
-/// F26 — the digest a qualification row binds: sha256 over the exact arg
-/// list, each arg length-prefixed (`u64` big-endian length then bytes, in
-/// order). `qualify` and routing share this rendering, so an args change
-/// re-keys the row and invalidates the old pass (F26).
-#[must_use]
-pub fn args_digest(args: &[String]) -> Digest {
-    digest_parts(args.iter().map(String::as_str))
-}
-
-/// The canonical string-list encoding behind `args_digest` and the
-/// exploration seed: each part as `u64` big-endian length then bytes, so no
-/// concatenation ambiguity exists.
-fn digest_parts<'p>(parts: impl Iterator<Item = &'p str>) -> Digest {
-    let mut body = Vec::new();
-    for part in parts {
-        body.extend_from_slice(&u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
-        body.extend_from_slice(part.as_bytes());
-    }
-    Digest(Sha256::digest(&body).into())
 }
 
 /// F13 step 5 — the exploration lottery: `sha256(caller ‖ idempotencyKey)`,
 /// with `caller` the durable caller key, read as a uniform fraction below
 /// the policy rate.
 fn exploration_assigned(caller: &CallerKey, key: &IdempotencyKey, rate: f64) -> bool {
-    let digest = digest_parts(
+    let digest = args_digest(
         [
             caller.agent_kind.0.as_str(),
             caller.native_session.0.as_str(),

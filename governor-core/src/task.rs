@@ -500,16 +500,29 @@ pub enum Refusal {
     /// F1 — a bound `relayInstanceId` re-resolves to a different caller
     /// (`CALLER_IDENTITY_MISMATCH`, Appendix B/F1).
     CallerIdentityMismatch,
+    /// F1 — the caller envelope is malformed, or its `projectRoot` is set but
+    /// invalid (never re-anchored — H#3).
+    CallerIdentityInvalid,
     /// F4 — the requester is not the Run's owner.
     NotOwner,
+    /// F4 — a Run acts as its own caller (H#24).
+    CallerIsRun,
     /// F11 — the idempotency key exists with a different body digest.
     IdempotencyKeyConflict,
     /// F17 — `messageKey` is already used for this Run.
     MessageKeyConflict,
     /// F17 — a follow-up addressed to a settled Run.
     RunSettled,
+    /// F19 — `adopt` while the previous owner's native session is still
+    /// present.
+    AdoptOwnerLive,
     /// F21 — a recovery obligation already exists for the predecessor.
     RecoveryExists,
+    /// F21 — `recoveryOf` names a predecessor that has not settled.
+    RecoveryPredecessorUnsettled,
+    /// F21 — `recoveryOf` while the predecessor's observation gate is unmet;
+    /// retryable once the gate is met.
+    RecoveryPredecessorActive,
     /// N7 — the relay could not reach the daemon at all.
     DaemonUnavailable,
 }
@@ -523,11 +536,16 @@ impl Refusal {
             Self::CallerIdentityDuplicate => "CALLER_IDENTITY_DUPLICATE",
             Self::CallerIdentitySessionless => "CALLER_IDENTITY_SESSIONLESS",
             Self::CallerIdentityMismatch => "CALLER_IDENTITY_MISMATCH",
+            Self::CallerIdentityInvalid => "CALLER_IDENTITY_INVALID",
             Self::NotOwner => "NOT_OWNER",
+            Self::CallerIsRun => "CALLER_IS_RUN",
             Self::IdempotencyKeyConflict => "IDEMPOTENCY_KEY_CONFLICT",
             Self::MessageKeyConflict => "MESSAGE_KEY_CONFLICT",
             Self::RunSettled => "RUN_SETTLED",
+            Self::AdoptOwnerLive => "ADOPT_OWNER_LIVE",
             Self::RecoveryExists => "RECOVERY_EXISTS",
+            Self::RecoveryPredecessorUnsettled => "RECOVERY_PREDECESSOR_UNSETTLED",
+            Self::RecoveryPredecessorActive => "RECOVERY_PREDECESSOR_ACTIVE",
             Self::DaemonUnavailable => "DAEMON_UNAVAILABLE",
         }
     }
@@ -646,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn f1_f4_f11_f17_f21_n7_refusal_codes() {
+    fn f1_f4_f11_f17_f19_f21_n7_refusal_codes() {
         let cases = [
             (Refusal::CallerIdentityMissing, "CALLER_IDENTITY_MISSING"),
             (
@@ -658,11 +676,22 @@ mod tests {
                 "CALLER_IDENTITY_SESSIONLESS",
             ),
             (Refusal::CallerIdentityMismatch, "CALLER_IDENTITY_MISMATCH"),
+            (Refusal::CallerIdentityInvalid, "CALLER_IDENTITY_INVALID"),
             (Refusal::NotOwner, "NOT_OWNER"),
+            (Refusal::CallerIsRun, "CALLER_IS_RUN"),
             (Refusal::IdempotencyKeyConflict, "IDEMPOTENCY_KEY_CONFLICT"),
             (Refusal::MessageKeyConflict, "MESSAGE_KEY_CONFLICT"),
             (Refusal::RunSettled, "RUN_SETTLED"),
+            (Refusal::AdoptOwnerLive, "ADOPT_OWNER_LIVE"),
             (Refusal::RecoveryExists, "RECOVERY_EXISTS"),
+            (
+                Refusal::RecoveryPredecessorUnsettled,
+                "RECOVERY_PREDECESSOR_UNSETTLED",
+            ),
+            (
+                Refusal::RecoveryPredecessorActive,
+                "RECOVERY_PREDECESSOR_ACTIVE",
+            ),
             (Refusal::DaemonUnavailable, "DAEMON_UNAVAILABLE"),
         ];
         for (refusal, code) in cases {

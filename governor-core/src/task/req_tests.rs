@@ -149,11 +149,11 @@ fn f5_rendered_task_stays_within_64_kib() {
 }
 
 #[test]
-fn f15_render_is_the_label_free_canonical_form() {
+fn f5_render_is_the_label_free_canonical_form() {
     assert_eq!(
         task().render(),
         "task/1\nobjective=12:do the thing\nscope=4:src/\ndone_when=[10:tests pass]\nconstraints=[]\ntier=-\nrecovery_of=-\ncwd=-\n",
-        "fixed order, length-framed, label-free (F15/H#41)"
+        "fixed order, length-framed, label-free (F5/H#41)"
     );
     let optioned = variant(|t| {
         t.tier = Some(Tier("t2".into()));
@@ -169,7 +169,7 @@ fn f15_render_is_the_label_free_canonical_form() {
 }
 
 #[test]
-fn f15_digest_is_sha256_over_the_canonical_render() {
+fn f11_digest_is_sha256_over_the_canonical_render() {
     use sha2::{Digest as _, Sha256};
     let hashed = Sha256::digest(task().render().as_bytes());
     let mut bytes = [0u8; 32];
@@ -177,7 +177,7 @@ fn f15_digest_is_sha256_over_the_canonical_render() {
     assert_eq!(
         task().digest(),
         Digest(bytes),
-        "task_digest is sha256(render()) (F11/F15)"
+        "task_digest is sha256(render()) (F11)"
     );
     let labelled = variant(|t| t.label = Some("display me".into()));
     assert_eq!(

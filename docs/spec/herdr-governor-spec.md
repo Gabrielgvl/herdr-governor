@@ -123,8 +123,8 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 - **F1 Caller identity.** `caller` is not a tool argument: the relay attaches a caller envelope `{paneId, projectRoot, relayInstanceId}` to every forwarded request, as part of the relay-to-daemon framing, so the strict tool schemas are unaffected (ADR-0004). `paneId` comes from the inherited `HERDR_PANE_ID`, `projectRoot` is realpath(`git rev-parse --show-toplevel`) of the relay's cwd, or realpath(cwd) outside a git worktree, and `relayInstanceId` is an immutable random 128-bit id the relay mints once at process start — never persisted by the relay, never configurable. The id is not upstream session state: the relay still reconnects per request and holds nothing mutable.
   - **Caller key:** `(agent kind, native session)`, resolved from one fresh `session.snapshot` that must contain exactly one pane with that ID, whose occupant must have a native session. The first call registers the caller; the idempotency scope stays `(caller key, projectRoot)`.
   - **Binding:** the first request carrying a new `relayInstanceId` resolves the caller key this way and persists the binding `relayInstanceId` → caller key. Every later request with that id must resolve, through a fresh locator check, to the same native session — a replaced occupant in the same pane (`native_session` changed, `pane_id` and `terminal_id` unchanged; `a4_native_new_replaces_session`) is refused instead of silently re-registered. A respawned relay mints a new id and binds afresh; a daemon restart keeps the persisted bindings.
-  - **Refusals:** a missing, duplicate or sessionless occupant, or a bound `relayInstanceId` re-resolving to a different native session, is refused `CALLER_IDENTITY_*` — the last case specifically `CALLER_IDENTITY_MISMATCH` — before any effect (H#21).
-  - **`projectRoot`:** the daemon still requires it absolute, single-line, not `/`, existing and realpath-canonical. A relay-derived root that is invalid is refused, never re-anchored (H#3).
+  - **Refusals:** a malformed caller envelope is refused `CALLER_IDENTITY_INVALID`; a missing, duplicate or sessionless occupant, or a bound `relayInstanceId` re-resolving to a different native session, is refused `CALLER_IDENTITY_*` — the last case specifically `CALLER_IDENTITY_MISMATCH` — before any effect (H#21).
+  - **`projectRoot`:** the daemon still requires it absolute, single-line, not `/`, existing and realpath-canonical. A relay-derived root that is invalid is refused `CALLER_IDENTITY_INVALID`, never re-anchored (H#3).
   - **Trust:** identity is cooperative between processes of the same user, and the docs say so (H#22).
 - **F2 Child identity.** A child's identity has these parts:
   - `herdr_incarnation`, `terminal_id`, `agent_kind`, and `agent_name` (minted as `gov-<runId[0..8]>`, H#52);
@@ -140,7 +140,7 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 - **F4 Ownership.** Every Run and mailbox operation requires the caller to be the current owner.
   - `observe`, `message`, `ack` and `cancel` refuse `NOT_OWNER` otherwise.
   - `handover` and `adopt` change the owner and bump `owner_generation` atomically.
-  - A Run can never become its own caller (H#24).
+  - A Run can never become its own caller — the attempt is refused `CALLER_IS_RUN` (H#24).
 
 ### 6.2 Tools (exactly three)
 
@@ -268,7 +268,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - Conditions: the pane is fresh and `unique`, idle or done, and still holds the owner's native session, and its harness has a qualified `hint_consumption` capability.
     - Limits: at most one per 5 s per owner, never retried, never sent to a busy pane (H#85–87).
 - **F19 Adoption.**
-  - **`adopt {runIds}`** requires a fresh snapshot to show the previous owner's native session gone.
+  - **`adopt {runIds}`** requires a fresh snapshot to show the previous owner's native session gone; while it is still present the request is refused `ADOPT_OWNER_LIVE`.
   - **What can be adopted:**
     - an unsettled Run;
     - a settled Run with unread events or a pending recovery, adopted only for those.
@@ -292,10 +292,9 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - **Dispatch** happens once a fresh snapshot shows the predecessor's identity `absent`. It creates a Launch keyed `recovery:<predecessorRunId>` that carries the predecessor's Task plus a preamble: continue from the observed git and transcript state, and don't repeat side effects that already happened.
   - **Status:** `pending` → `dispatched` (with successor references and its certainty), `blocked` (abstained, no candidates), or `failed`. An obligation still pending after the policy expiry (default 24 h) fails `expired`.
   - **Caller-requested recovery (`recoveryOf`):**
-    - it requires the predecessor to be settled;
+    - it requires the predecessor to be settled — an unsettled predecessor is refused `RECOVERY_PREDECESSOR_UNSETTLED`;
     - it claims the predecessor's obligation if one exists; a second recovery of the same predecessor is refused `RECOVERY_EXISTS`;
-    - a `provider_limited` predecessor must be observed `absent` first;
-    - any other predecessor must be observed idle, done or absent.
+    - a `provider_limited` predecessor must be observed `absent` first, and any other predecessor must be observed idle, done or absent — while the observation gate is unmet the request is refused `RECOVERY_PREDECESSOR_ACTIVE`, retryable once the gate is met.
 - **F22 Transitions.** Appendix C defines them as a total function: every state against every event, where the events are observation classes, child status, handoff, judgment, deadline, cancel, provider limit and restart. The core implements it as exhaustive `match` expressions without wildcard arms, so the compiler enforces totality under the kit's `wildcard_enum_match_arm = deny`.
   - **Deadlines:** stored as absolute times. They are not reset by repeated observations or restarts, and they are not suspended when paid review pauses. Every Run has `max_age_deadline` (default 24 h, set per policy).
   - **Liveness assumption:** the daemon runs eventually and storage is writable.

@@ -7,11 +7,11 @@ use alloc::borrow::ToOwned as _;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::config::{Capability, ConfigVersion, OperatingPointId, Provider, Tier};
+use crate::config::{Capability, ConfigVersion, OperatingPointId, Provider, Tier, args_digest};
 use crate::identity::{RunId, Timestamp};
 use crate::recovery::Cooldown;
 use crate::routing::{
-    Candidate, ChangesFiles, Decision, Exploration, Probability, args_digest, cooling_down, route,
+    Candidate, ChangesFiles, Decision, Exploration, Probability, cooling_down, route,
 };
 use crate::task::AbstainReason;
 
@@ -97,7 +97,7 @@ fn f13_candidate_requires_current_qualification() {
     // `other_args` qualified against different args — its pass is stale.
     let stale_args = {
         let mut qualification = qualification(&other_args, "web", true);
-        qualification.args_digest = args_digest(&["--old".into()]);
+        qualification.args_digest = args_digest(["--old"].into_iter());
         qualification
     };
     let qualifications = Vec::from([
@@ -575,23 +575,55 @@ fn f13_route_rejects_a_malformed_evaluation() {
 
 #[test]
 fn f26_args_digest_rekeys_on_change() {
-    let args = Vec::from(["--one".to_owned(), "--two".to_owned()]);
-    let digest = args_digest(&args);
-    assert_eq!(digest, args_digest(&args), "the digest is deterministic");
+    let digest = args_digest(["--one", "--two"].into_iter());
+    assert_eq!(
+        digest,
+        args_digest(["--one", "--two"].into_iter()),
+        "the digest is deterministic"
+    );
     assert_ne!(
         digest,
-        args_digest(&["--two".to_owned(), "--one".to_owned()]),
+        args_digest(["--two", "--one"].into_iter()),
         "argument order is part of the qualification key"
     );
     assert_ne!(
         digest,
-        args_digest(&["--one--two".to_owned()]),
+        args_digest(["--one--two"].into_iter()),
         "the length-prefixed encoding cannot concatenate-collide"
     );
     assert_ne!(
         digest,
-        args_digest(&["--one".to_owned(), "--two".to_owned(), "--three".to_owned()]),
+        args_digest(["--one", "--two", "--three"].into_iter()),
         "an added argument re-keys the qualification"
+    );
+}
+
+#[test]
+fn f26_routing_and_qualification_share_args_digest() {
+    // `qualify` persists `OperatingPoint::args_digest`; step 6 must consult
+    // the same digest or a recorded pass could never match the live point.
+    let mut qualified_point = point("qualified", "t2", 1, "p-a");
+    qualified_point.capabilities = Vec::from([Capability("web".into())]);
+    let recorded = qualification(&qualified_point, "web", true);
+    assert_eq!(
+        recorded.args_digest,
+        qualified_point.args_digest(),
+        "the qualification key is the point's own args digest"
+    );
+    let config = config_with(policy(), Vec::from([qualified_point]));
+    let decided = decision(route(
+        &launch(None, None, "key"),
+        None,
+        &evaluation("t2", ChangesFiles::Few, 0.1),
+        &config,
+        &[Capability("web".into())],
+        &[recorded],
+        &[],
+    ));
+    assert_eq!(
+        decided.candidates[0].operating_point,
+        OperatingPointId("qualified".into()),
+        "a pass recorded under OperatingPoint::args_digest satisfies step 6"
     );
 }
 

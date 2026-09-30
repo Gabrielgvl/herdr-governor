@@ -4,9 +4,9 @@
 
 use alloc::vec::Vec;
 
-use crate::config::{OperatingPointId, Tier};
+use crate::config::{OperatingPointId, Tier, args_digest};
 use crate::identity::{IdempotencyKey, RunId};
-use crate::routing::{ChangesFiles, Exploration, digest_parts, exploration_assigned, route};
+use crate::routing::{ChangesFiles, Exploration, exploration_assigned, route};
 
 use super::builders::{
     caller, config_with, decision, evaluation, launch, point, policy, predecessor_run,
@@ -118,7 +118,7 @@ fn f13_exploration_is_deterministic_on_caller_and_key() {
 fn f13_exploration_boundary_is_strictly_below_the_rate() {
     let caller = caller();
     let key = IdempotencyKey("boundary".into());
-    let digest = digest_parts(
+    let digest = args_digest(
         [
             caller.agent_kind.0.as_str(),
             caller.native_session.0.as_str(),

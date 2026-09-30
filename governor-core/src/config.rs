@@ -180,7 +180,6 @@ pub struct Qualification {
 /// is the dotted path of the offending value (`policy.tiers`,
 /// `catalog.operating_points[opus].provider`); the config adapter renders the
 /// list into the startup refusal's one sanitized stderr line.
-#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConfigError {
     /// A required value is absent: an empty or whitespace-only string, or an
@@ -247,22 +246,30 @@ impl core::fmt::Display for ConfigError {
 
 impl core::error::Error for ConfigError {}
 
+/// F26 — THE args digest: sha-256 over each part length-prefixed (`u64`
+/// big-endian length then bytes, in order) — platform-independent, and
+/// unambiguous (`["a", "bc"]` and `["ab", "c"]` never share a digest).
+/// `qualify` records each pass under this digest and routing's step-6 check
+/// reads the same value; F13 step 5's exploration seed shares the framing.
+#[must_use]
+pub fn args_digest<'p>(parts: impl Iterator<Item = &'p str>) -> Digest {
+    use sha2::Digest as _;
+    let mut hasher = sha2::Sha256::new();
+    for part in parts {
+        hasher.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(part.as_bytes());
+    }
+    Digest(hasher.finalize().into())
+}
+
 impl OperatingPoint {
-    /// F26 — sha-256 over the exact launch arguments in a length-prefixed
-    /// encoding (`len ‖ bytes` per argument, little-endian `usize` lengths),
-    /// so `["a", "bc"]` and `["ab", "c"]` never share a digest. `qualify`
-    /// records each pass under this digest; editing `args` re-keys the rows
-    /// and orphans every earlier pass — an args change invalidates the
+    /// F26 — the digest a qualification row binds: `args_digest` over the
+    /// point's exact launch arguments. Editing `args` re-keys the rows and
+    /// orphans every earlier pass — an args change invalidates the
     /// qualification.
     #[must_use]
     pub fn args_digest(&self) -> Digest {
-        use sha2::Digest as _;
-        let mut hasher = sha2::Sha256::new();
-        for arg in &self.args {
-            hasher.update(arg.len().to_le_bytes());
-            hasher.update(arg.as_bytes());
-        }
-        Digest(hasher.finalize().into())
+        args_digest(self.args.iter().map(String::as_str))
     }
 
     /// F26 — the 'current pass' predicate routing (F13) and delivery
