@@ -1,0 +1,1492 @@
+{
+ "source": "contract-a1prime-evidence/ (p0p1 artifact bundle, probe 2026-09-29): {pi,claude,devin}-spawn-log.jsonl distilled mechanically \u2014 event records kept (t/pid/ppid/method/tool/signum/die_after), env_names filtered to HERDR_*/PWD plus harness markers with the dropped count recorded, env_values limited to the five whitelisted names, host paths scrubbed to /home/user/ placeholders. observations are distilled from contract-a1prime.md and the *-run*.txt transcripts; forwarder/config_integrity quote contract-a1prime.md \u00a7Rust forwarder / \u00a7Config integrity.",
+ "probe": {
+  "server": "newline-delimited JSON-RPC 2.0 stdio MCP server, one tool probe_env reporting pid/ppid/cwd/env names",
+  "caller_context": {
+   "HERDR_PANE_ID": "w6:pKQ",
+   "HERDR_WORKSPACE_ID": "w6",
+   "HERDR_TAB_ID": "w6:tCR",
+   "HERDR_ENV": "1"
+  }
+ },
+ "harnesses": {
+  "pi": {
+   "events": [
+    {
+     "t": 1790719999.155,
+     "kind": "start",
+     "pid": 2307720,
+     "ppid": 2307649,
+     "cwd": "/home/user/probe",
+     "start_iso": "2026-09-29T22:13:19.154378+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790719999.155,
+     "kind": "request",
+     "pid": 2307720,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790719999.156,
+     "kind": "request",
+     "pid": 2307720,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790719999.156,
+     "kind": "request",
+     "pid": 2307720,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790719999.158,
+     "kind": "stdin_eof",
+     "pid": 2307720
+    },
+    {
+     "t": 1790720021.571,
+     "kind": "start",
+     "pid": 2310709,
+     "ppid": 2310283,
+     "cwd": "/home/user/probe/runs/pi",
+     "start_iso": "2026-09-29T22:13:41.570490+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720021.571,
+     "kind": "request",
+     "pid": 2310709,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720021.814,
+     "kind": "request",
+     "pid": 2310709,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720021.814,
+     "kind": "request",
+     "pid": 2310709,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720022.922,
+     "kind": "stdin_eof",
+     "pid": 2310709
+    },
+    {
+     "t": 1790720465.973,
+     "kind": "start",
+     "pid": 2430041,
+     "ppid": 2428895,
+     "cwd": "/home/user/probe/runs/pi",
+     "start_iso": "2026-09-29T22:21:05.972964+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720465.974,
+     "kind": "request",
+     "pid": 2430041,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720466.242,
+     "kind": "request",
+     "pid": 2430041,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720466.242,
+     "kind": "request",
+     "pid": 2430041,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720473.898,
+     "kind": "request",
+     "pid": 2430041,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720473.898,
+     "kind": "tools_call",
+     "pid": 2430041,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/pi",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720473.901,
+     "kind": "request",
+     "pid": 2430041,
+     "method": "tools/call",
+     "id": 4
+    },
+    {
+     "t": 1790720473.901,
+     "kind": "tools_call",
+     "pid": 2430041,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/pi",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720480.829,
+     "kind": "stdin_eof",
+     "pid": 2430041
+    },
+    {
+     "t": 1790720582.332,
+     "kind": "start",
+     "pid": 2461362,
+     "ppid": 2460232,
+     "cwd": "/home/user/probe/runs/pi",
+     "start_iso": "2026-09-29T22:23:02.331852+00:00",
+     "die_after": 1,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720582.332,
+     "kind": "request",
+     "pid": 2461362,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720582.756,
+     "kind": "request",
+     "pid": 2461362,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720582.756,
+     "kind": "request",
+     "pid": 2461362,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720591.017,
+     "kind": "request",
+     "pid": 2461362,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720591.018,
+     "kind": "tools_call",
+     "pid": 2461362,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/pi",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720591.018,
+     "kind": "exit_after_calls",
+     "pid": 2461362,
+     "calls": 1
+    },
+    {
+     "t": 1790720591.056,
+     "kind": "start",
+     "pid": 2463718,
+     "ppid": 2460232,
+     "cwd": "/home/user/probe/runs/pi",
+     "start_iso": "2026-09-29T22:23:11.055813+00:00",
+     "die_after": 1,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720591.056,
+     "kind": "request",
+     "pid": 2463718,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720591.057,
+     "kind": "request",
+     "pid": 2463718,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720591.057,
+     "kind": "request",
+     "pid": 2463718,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720591.058,
+     "kind": "request",
+     "pid": 2463718,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720591.059,
+     "kind": "tools_call",
+     "pid": 2463718,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/pi",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720591.059,
+     "kind": "exit_after_calls",
+     "pid": 2463718,
+     "calls": 1
+    },
+    {
+     "t": 1790720752.922,
+     "kind": "start",
+     "pid": 2504676,
+     "ppid": 2503984,
+     "cwd": "/home/user/probe",
+     "start_iso": "2026-09-29T22:25:52.921443+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720752.922,
+     "kind": "request",
+     "pid": 2504676,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720753.153,
+     "kind": "request",
+     "pid": 2504676,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720753.153,
+     "kind": "request",
+     "pid": 2504676,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720764.993,
+     "kind": "request",
+     "pid": 2504676,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720764.993,
+     "kind": "tools_call",
+     "pid": 2504676,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720778.67,
+     "kind": "stdin_eof",
+     "pid": 2504676
+    },
+    {
+     "t": 1790720814.269,
+     "kind": "start",
+     "pid": 2520671,
+     "ppid": 2519800,
+     "cwd": "/home/user/probe/runs/pi",
+     "start_iso": "2026-09-29T22:26:54.268533+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "HONCHO_AI_PEER",
+      "HONCHO_HOST",
+      "HONCHO_WORKSPACE_ID",
+      "NODE_PATH",
+      "PI_CODING_AGENT",
+      "PWD",
+      "RUST_BACKTRACE",
+      "_VOLTA_TOOL_RECURSION"
+     ],
+     "env_names_dropped": 42,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/pi"
+     }
+    },
+    {
+     "t": 1790720814.269,
+     "kind": "request",
+     "pid": 2520671,
+     "method": "initialize",
+     "id": 1
+    },
+    {
+     "t": 1790720814.501,
+     "kind": "request",
+     "pid": 2520671,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720814.501,
+     "kind": "request",
+     "pid": 2520671,
+     "method": "tools/list",
+     "id": 2
+    },
+    {
+     "t": 1790720845.882,
+     "kind": "stdin_eof",
+     "pid": 2520671
+    }
+   ],
+   "observations": {
+    "version": "0.99.1",
+    "env_markers": [
+     "HONCHO_AI_PEER",
+     "HONCHO_HOST",
+     "HONCHO_WORKSPACE_ID",
+     "NODE_PATH",
+     "PI_CODING_AGENT",
+     "RUST_BACKTRACE",
+     "_VOLTA_TOOL_RECURSION"
+    ],
+    "config_surface": "project .pi/mcp.json read at the session cwd only (cwd-scoped discovery); project config not gated on workspace trust",
+    "tool_surface": "codemode: project MCP tools reach the model as mcp__<server>__<tool> inside the codemode tool, not as first-class tools",
+    "model_tool_name": "mcp__govprobe__probe_env",
+    "tools_flag_scoping": {
+     "--tools probe_env": "model saw zero tools",
+     "--tools mcp__govprobe__probe_env": "tool not available",
+     "--tools codemode": "codemode mounted but its MCP registry was empty (ALL_TOOLS=0)",
+     "verdict": "--tools cannot scope to a single MCP tool under codemode exposure",
+     "direct_exposure": "with toolExposure (direct exposure) --tools does allowlist mcp__<server>__<tool> \u2014 proven live 2026-09-29 for mcp__executor__execute"
+    },
+    "spawn_under_tools_restriction": true,
+    "spawn_after_launch_s_approx": 3.6,
+    "cwd_config_key": "honored",
+    "shutdown": "stdin_eof",
+    "respawn_tools_list_rerun": true
+   }
+  },
+  "claude": {
+   "events": [
+    {
+     "t": 1790720857.018,
+     "kind": "start",
+     "pid": 2532173,
+     "ppid": 2531986,
+     "cwd": "/home/user/probe",
+     "start_iso": "2026-09-29T22:27:37.017935+00:00",
+     "die_after": 0,
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720857.055,
+     "kind": "request",
+     "pid": 2532173,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720857.151,
+     "kind": "request",
+     "pid": 2532173,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720857.151,
+     "kind": "request",
+     "pid": 2532173,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790720861.135,
+     "kind": "request",
+     "pid": 2532173,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790720861.135,
+     "kind": "tools_call",
+     "pid": 2532173,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe",
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720861.207,
+     "kind": "request",
+     "pid": 2532173,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720861.207,
+     "kind": "tools_call",
+     "pid": 2532173,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe",
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720867.929,
+     "kind": "signal",
+     "pid": 2532173,
+     "signum": 2
+    },
+    {
+     "t": 1790720878.797,
+     "kind": "start",
+     "pid": 2538258,
+     "ppid": 2538071,
+     "cwd": "/home/user/probe/runs/claude",
+     "start_iso": "2026-09-29T22:27:58.796909+00:00",
+     "die_after": 1,
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720878.827,
+     "kind": "request",
+     "pid": 2538258,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720878.898,
+     "kind": "request",
+     "pid": 2538258,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720878.898,
+     "kind": "request",
+     "pid": 2538258,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790720882.278,
+     "kind": "request",
+     "pid": 2538258,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790720882.278,
+     "kind": "tools_call",
+     "pid": 2538258,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/claude",
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720882.278,
+     "kind": "exit_after_calls",
+     "pid": 2538258,
+     "calls": 1
+    },
+    {
+     "t": 1790720882.38,
+     "kind": "start",
+     "pid": 2539348,
+     "ppid": 2538071,
+     "cwd": "/home/user/probe/runs/claude",
+     "start_iso": "2026-09-29T22:28:02.380046+00:00",
+     "die_after": 1,
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720882.38,
+     "kind": "request",
+     "pid": 2539348,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720882.382,
+     "kind": "request",
+     "pid": 2539348,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720882.382,
+     "kind": "request",
+     "pid": 2539348,
+     "method": "tools/call",
+     "id": 1
+    },
+    {
+     "t": 1790720882.382,
+     "kind": "tools_call",
+     "pid": 2539348,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/claude",
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720882.382,
+     "kind": "exit_after_calls",
+     "pid": 2539348,
+     "calls": 1
+    },
+    {
+     "t": 1790720902.252,
+     "kind": "start",
+     "pid": 2544844,
+     "ppid": 2544614,
+     "cwd": "/home/user/probe/runs/claude",
+     "start_iso": "2026-09-29T22:28:22.252309+00:00",
+     "die_after": 0,
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720902.286,
+     "kind": "request",
+     "pid": 2544844,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720902.378,
+     "kind": "request",
+     "pid": 2544844,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720902.378,
+     "kind": "request",
+     "pid": 2544844,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790720905.752,
+     "kind": "request",
+     "pid": 2544844,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790720905.752,
+     "kind": "tools_call",
+     "pid": 2544844,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/claude",
+     "env_names": [
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PROJECT_DIR",
+      "COREPACK_ENABLE_AUTO_PIN",
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "NoDefaultCurrentDirectoryInExePath",
+      "PWD"
+     ],
+     "env_names_dropped": 44,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/claude"
+     }
+    },
+    {
+     "t": 1790720909.281,
+     "kind": "signal",
+     "pid": 2544844,
+     "signum": 2
+    }
+   ],
+   "observations": {
+    "version": "2.1.285",
+    "env_markers": [
+     "CLAUDECODE",
+     "CLAUDE_CODE_ENTRYPOINT",
+     "CLAUDE_CODE_MESSAGING_SOCKET",
+     "CLAUDE_CODE_SESSION_ID",
+     "CLAUDE_PROJECT_DIR",
+     "COREPACK_ENABLE_AUTO_PIN",
+     "NoDefaultCurrentDirectoryInExePath"
+    ],
+    "config_surface": "per-invocation --mcp-config <file> --strict-mcp-config",
+    "tool_surface": "first_class",
+    "model_tool_name": "mcp__govprobe__probe_env",
+    "allowlist": "--allowedTools 'mcp__govprobe__probe_env' scoped exactly to the probe tool; session ran with no other tool permissions granted",
+    "spawn_after_launch_s_approx": 0.8,
+    "cwd_config_key": "ignored",
+    "shutdown": "sigint",
+    "respawn_tools_list_rerun": false
+   }
+  },
+  "devin": {
+   "events": [
+    {
+     "t": 1790720929.183,
+     "kind": "start",
+     "pid": 2552473,
+     "ppid": 2552285,
+     "cwd": "/home/user/probe/runs/devin",
+     "start_iso": "2026-09-29T22:28:49.183009+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/devin"
+     }
+    },
+    {
+     "t": 1790720929.184,
+     "kind": "request",
+     "pid": 2552473,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720929.185,
+     "kind": "request",
+     "pid": 2552473,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720934.982,
+     "kind": "request",
+     "pid": 2552473,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790720937.446,
+     "kind": "request",
+     "pid": 2552473,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790720937.446,
+     "kind": "tools_call",
+     "pid": 2552473,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/devin",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/devin"
+     }
+    },
+    {
+     "t": 1790720937.506,
+     "kind": "request",
+     "pid": 2552473,
+     "method": "tools/call",
+     "id": 3
+    },
+    {
+     "t": 1790720937.507,
+     "kind": "tools_call",
+     "pid": 2552473,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/devin",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/devin"
+     }
+    },
+    {
+     "t": 1790720944.468,
+     "kind": "stdin_eof",
+     "pid": 2552473
+    },
+    {
+     "t": 1790720952.508,
+     "kind": "start",
+     "pid": 2559433,
+     "ppid": 2559250,
+     "cwd": "/home/user/probe",
+     "start_iso": "2026-09-29T22:29:12.507461+00:00",
+     "die_after": 1,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720952.508,
+     "kind": "request",
+     "pid": 2559433,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720952.509,
+     "kind": "request",
+     "pid": 2559433,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720960.548,
+     "kind": "request",
+     "pid": 2559433,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790720964.73,
+     "kind": "request",
+     "pid": 2559433,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790720964.73,
+     "kind": "tools_call",
+     "pid": 2559433,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720964.73,
+     "kind": "exit_after_calls",
+     "pid": 2559433,
+     "calls": 1
+    },
+    {
+     "t": 1790720964.837,
+     "kind": "start",
+     "pid": 2562824,
+     "ppid": 2559250,
+     "cwd": "/home/user/probe",
+     "start_iso": "2026-09-29T22:29:24.836873+00:00",
+     "die_after": 1,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720964.837,
+     "kind": "request",
+     "pid": 2562824,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720964.84,
+     "kind": "request",
+     "pid": 2562824,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720964.842,
+     "kind": "request",
+     "pid": 2562824,
+     "method": "tools/call",
+     "id": 1
+    },
+    {
+     "t": 1790720964.842,
+     "kind": "tools_call",
+     "pid": 2562824,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe"
+     }
+    },
+    {
+     "t": 1790720964.842,
+     "kind": "exit_after_calls",
+     "pid": 2562824,
+     "calls": 1
+    },
+    {
+     "t": 1790720994.246,
+     "kind": "start",
+     "pid": 2571008,
+     "ppid": 2570868,
+     "cwd": "/home/user/probe/runs/devin",
+     "start_iso": "2026-09-29T22:29:54.245508+00:00",
+     "die_after": 0,
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/devin"
+     }
+    },
+    {
+     "t": 1790720994.246,
+     "kind": "request",
+     "pid": 2571008,
+     "method": "initialize",
+     "id": 0
+    },
+    {
+     "t": 1790720994.247,
+     "kind": "request",
+     "pid": 2571008,
+     "method": "notifications/initialized",
+     "id": null
+    },
+    {
+     "t": 1790720998.921,
+     "kind": "request",
+     "pid": 2571008,
+     "method": "tools/list",
+     "id": 1
+    },
+    {
+     "t": 1790721000.961,
+     "kind": "request",
+     "pid": 2571008,
+     "method": "tools/call",
+     "id": 2
+    },
+    {
+     "t": 1790721000.962,
+     "kind": "tools_call",
+     "pid": 2571008,
+     "tool": "probe_env",
+     "cwd": "/home/user/probe/runs/devin",
+     "env_names": [
+      "HERDR_BIN_PATH",
+      "HERDR_ENV",
+      "HERDR_PANE_ID",
+      "HERDR_SOCKET_PATH",
+      "HERDR_TAB_ID",
+      "HERDR_WORKSPACE_ID",
+      "PWD"
+     ],
+     "env_names_dropped": 43,
+     "env_values": {
+      "HERDR_PANE_ID": "w6:pKQ",
+      "HERDR_WORKSPACE_ID": "w6",
+      "HERDR_TAB_ID": "w6:tCR",
+      "HERDR_ENV": "1",
+      "PWD": "/home/user/probe/runs/devin"
+     }
+    },
+    {
+     "t": 1790721004.198,
+     "kind": "stdin_eof",
+     "pid": 2571008
+    }
+   ],
+   "observations": {
+    "version": "3000.11.3",
+    "env_markers": [],
+    "config_surface": "project .devin/mcp_config.json + .devin/config.json permissions.allow; discovered upward from the repo root but does not anchor the spawn cwd",
+    "tool_surface": "first_class",
+    "model_tool_name": "mcp__govprobe__probe_env",
+    "allowlist": "project permissions.allow patterns mcp__<server>__<tool> / mcp__<server>__* / mcp__* auto-approved the probe tool in print mode",
+    "print_mode_trust": "print mode in an untrusted workspace requires --respect-workspace-trust false (or prior trust)",
+    "spawn_after_launch_s_approx": 0.6,
+    "tools_list_lazy": true,
+    "cwd_config_key": "ignored",
+    "shutdown": "stdin_eof",
+    "respawn_tools_list_rerun": false
+   }
+  }
+ },
+ "forwarder": {
+  "shape": "stdin lines -> unix socket -> reply lines to stdout",
+  "round_trips": 100,
+  "vm_rss_kb": 2000,
+  "vm_hwm_kb": 2000,
+  "binary_bytes": 474144,
+  "deps": 0,
+  "exit_code_on_stdin_eof": 0
+ },
+ "config_integrity": {
+  "unchanged_user_configs": [
+   "~/.pi/agent/mcp.json",
+   "~/.claude/settings.json",
+   "~/.config/devin/mcp_config.json",
+   "~/.config/devin/config.json"
+  ],
+  "session_state_churn_without_probe_config": true,
+  "probe_configs_removed_after_measurement": true
+ }
+}

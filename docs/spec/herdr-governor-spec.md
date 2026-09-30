@@ -5,6 +5,7 @@
 - [ADR-0001](../adr/0001-clean-break-harness-agnostic-rust-governor.md)
 - [ADR-0002](../adr/0002-transcript-parsers-are-the-only-per-harness-code.md)
 - [ADR-0003](../adr/0003-recovery-waits-for-proof-the-predecessor-stopped.md)
+- [ADR-0004](../adr/0004-native-per-session-stdio-relay.md)
 - glossary: [CONTEXT.md](../../CONTEXT.md)
 - Decisions and rationale: `docs/adr/` and §19
 
@@ -83,21 +84,21 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 
 ## 4. Users and Impact
 
-- **Callers** (Claude, Devin and Pi manager sessions) use three MCP tools through Executor. Caller skills move to the new contract at the swap.
+- **Callers** (Claude, Devin and Pi manager sessions) use three MCP tools through a per-session stdio relay their own harness spawns (ADR-0004). Caller skills move to the new contract at the swap.
 - **Children** receive a Task and follow-ups wrapped in the provenance envelope, and write a Handoff. They need no governor tools.
 - **The owner:**
   - authors the local catalog and policy;
   - approves hard-path PRs;
-  - registers integrations in Executor;
+  - registers the governor's tools per harness (ADR-0004) and the legacy integration in Executor;
   - decides each Herdr gap case by case;
   - disposes of any obligation left over after draining.
-- **Resources:** the 31 per-caller MCP hosts are removed, and one daemon remains.
+- **Resources:** the 31 per-caller MCP hosts are removed; one daemon remains, plus one stateless relay per caller session at most 8 MB RSS (ADR-0004).
 
 ## 5. Assumptions and Constraints
 
 **Assumptions.** Each is confirmed or escalated in Phase 2, before any core code exists. A failed assumption becomes a case-by-case owner decision.
 
-- **A1. Executor transport.** Executor registers a Streamable HTTP MCP source, authenticates it, and forwards caller arguments. If it can't, the daemon serves stdio through a single relay process that Executor spawns once (`spawnPerCall:false`). That relay forwards requests over the daemon's local socket and holds no state. Phase 2 proves it does not recreate per-caller processes.
+- **A1. Caller transport.** Each caller harness's native MCP spawns `herdr-governor relay` over stdio, once per session at session start, registered globally through the herdr-tools profile layer (ADR-0004). The relay is stateless and forwards to the daemon's 0600 unix socket; there is no Executor hop, no HTTP listener and no bearer. The A1′ evidence confirmed all three harnesses inherit `HERDR_*` and the invocation cwd, spawn one process per session, respawn it after a crash, and end it on stdin EOF or SIGINT.
 - **A2. Socket concurrency.** Herdr's socket supports one subscription connection alongside concurrent short-lived request connections, and it behaves cleanly on disconnect, reconnect, malformed frames and timeouts.
 - **A3. Start and prompt semantics.** `agent.start` returns only once the agent is ready. A failed start returns a typed pre-interactive error, with the pane back at its shell. `agent.prompt` acknowledgements identify their target. Phase 2 covers every enabled harness, AGY included.
 - **A4. Herdr incarnation.** A Herdr server incarnation can be proven from protocol 22, for example a server identity or start marker that Phase 2 finds. Phase 2 must not invent a protocol field. If no proof exists, every server discontinuity invalidates bare terminal IDs, and Runs re-prove their identity by native session (F11).
@@ -119,11 +120,11 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 
 ### 6.1 Identity and ownership
 
-- **F1 Caller identity.** Every call carries `caller {paneId, projectRoot}`.
-  - **Check:** the daemon reads one fresh `session.snapshot` and requires exactly one pane with that ID. The pane's occupant must have a native session.
-  - **Caller key:** `(agent kind, native session)`. The first call registers the caller. Later calls must resolve to the same native session through a fresh locator check.
-  - **Refusals:** a missing, duplicate, sessionless or mismatched occupant is refused `CALLER_IDENTITY_*` before any effect (H#21).
-  - **`projectRoot`:** must be absolute, single-line, not `/`, existing and realpath-canonical. A root that is set but invalid is refused, never re-anchored (H#3).
+- **F1 Caller identity.** `caller` is not a tool argument: the relay attaches a caller envelope `{paneId, projectRoot, relayInstanceId}` to every forwarded request, as part of the relay-to-daemon framing, so the strict tool schemas are unaffected (ADR-0004). `paneId` comes from the inherited `HERDR_PANE_ID`, `projectRoot` is realpath(`git rev-parse --show-toplevel`) of the relay's cwd, or realpath(cwd) outside a git worktree, and `relayInstanceId` is an immutable random 128-bit id the relay mints once at process start — never persisted by the relay, never configurable. The id is not upstream session state: the relay still reconnects per request and holds nothing mutable.
+  - **Caller key:** `(agent kind, native session)`, resolved from one fresh `session.snapshot` that must contain exactly one pane with that ID, whose occupant must have a native session. The first call registers the caller; the idempotency scope stays `(caller key, projectRoot)`.
+  - **Binding:** the first request carrying a new `relayInstanceId` resolves the caller key this way and persists the binding `relayInstanceId` → caller key. Every later request with that id must resolve, through a fresh locator check, to the same native session — a replaced occupant in the same pane (`native_session` changed, `pane_id` and `terminal_id` unchanged; `a4_native_new_replaces_session`) is refused instead of silently re-registered. A respawned relay mints a new id and binds afresh; a daemon restart keeps the persisted bindings.
+  - **Refusals:** a missing, duplicate or sessionless occupant, or a bound `relayInstanceId` re-resolving to a different native session, is refused `CALLER_IDENTITY_*` — the last case specifically `CALLER_IDENTITY_MISMATCH` — before any effect (H#21).
+  - **`projectRoot`:** the daemon still requires it absolute, single-line, not `/`, existing and realpath-canonical. A relay-derived root that is invalid is refused, never re-anchored (H#3).
   - **Trust:** identity is cooperative between processes of the same user, and the docs say so (H#22).
 - **F2 Child identity.** A child's identity has these parts:
   - `herdr_incarnation`, `terminal_id`, `agent_kind`, and `agent_name` (minted as `gov-<runId[0..8]>`, H#52);
@@ -143,9 +144,9 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 
 ### 6.2 Tools (exactly three)
 
-Strict schemas apply to every tool and every action: unknown fields are refused, with no aliases. Results are at most 60,000 bytes (H#103–104). Listings paginate with an opaque cursor; nothing is ever evicted.
+Strict schemas apply to every tool and every action: unknown fields are refused, with no aliases. Results are at most 60,000 bytes (H#103–104). Listings paginate with an opaque cursor; nothing is ever evicted. Caller identity is never a tool field; the relay derives and attaches it (F1).
 
-- **F5 `herdr_launch {task, idempotencyKey, caller}`.**
+- **F5 `herdr_launch {task, idempotencyKey}`.**
   - **Task fields:**
     - `objective` and `scope` are required;
     - `doneWhen` has 1 to 8 items;
@@ -345,7 +346,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - AGY is routable only after it qualifies.
   - This replaces unverified tags (H#110), as catalog data, never as harness code.
 - **F27 Config.**
-  - **Files:** `~/.config/herdr-governor/catalog.toml` holds the catalog and routing policy. `~/.config/herdr-governor/credentials` holds the Jev key and the MCP token, mode 0600.
+  - **Files:** `~/.config/herdr-governor/catalog.toml` holds the catalog and routing policy. `~/.config/herdr-governor/credentials` holds the Jev key, mode 0600.
   - **Parsing:** the config adapter decodes the TOML, and `governor-core` validates the typed values.
   - **Reload** happens on SIGHUP.
     - An invalid reload keeps the last good config and shows it in `herdr_status`.
@@ -378,7 +379,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - **Measured:** from MCP request receipt to the `herdr_launch` response, on real harnesses during Phase 7, compared with baseline measure A (median 5.7 s, p95 16.3 s).
   - **Target:** no regression.
   - Timings against the fake Herdr measure only the governor's own overhead.
-- **N4 Memory.** Daemon RSS stays at or under 176 MB, with no per-caller processes. A1's stdio fallback runs exactly one relay process.
+- **N4 Memory.** Daemon RSS stays at or under 176 MB. One stateless relay per caller session is allowed, at or under 8 MB RSS each (measured 2 MB); a relay holds no state or caches (ADR-0004).
 - **N5 Bounds.** Every boundary has a size limit, and truncation happens only where this table says so.
 
   | Boundary | Limit | Rule |
@@ -448,9 +449,9 @@ Two crates. The split enforces the dependency direction, not where business rule
 - **`herdr-governor`** (the binary):
   - `store`: SQLite. Its public API is `apply(Transition)` plus read queries. No lifecycle setter exists outside `store::transitions`, which a tripwire test checks.
   - `adapters::{herdr, jev, transcript, git, config}`.
-  - `mcp`.
+  - `mcp`: the daemon's MCP endpoint, served on its 0600 unix socket; the per-session relays forward to it (ADR-0004).
   - `daemon`: one coordinator task owns every transition. I/O runs asynchronously and returns versioned results to the coordinator.
-- **Subcommands:** `daemon`, `check-config`, `qualify`, and `relay` (only if A1 fails).
+- **Subcommands:** `daemon`, `check-config`, `qualify`, and `relay` — the per-session stdio transport (ADR-0004).
 
 ### Data model
 
@@ -458,7 +459,7 @@ Appendix B holds the executable DDL, including constraints, triggers and the `ou
 
 ### Starting dependency set (`Cargo.lock` is a hard path; approved once)
 
-- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `rmcp` (server, with the transport chosen by A1), `schemars`, `thiserror`, `tracing`, `tracing-subscriber`, `uuid` (v7), `sha2`.
+- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `rmcp` (server; the daemon's unix-socket endpoint and the relay's stdio transport), `schemars`, `thiserror`, `tracing`, `tracing-subscriber`, `uuid` (v7), `sha2`.
 - **Dev:** `proptest`, `tempfile`.
 - No CLI-parsing crate.
 
@@ -524,7 +525,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 
   | Assumption | Evidence |
   |---|---|
-  | A1 | Executor registration, authentication, caller forwarding, reconnect behaviour, process count |
+  | A1 | relay per-session spawn, `HERDR_*` + cwd inheritance, respawn after crash, exit on EOF or SIGINT, relay RSS; the Executor measurements are kept as history (ADR-0004) |
   | A2 | a subscription plus concurrent requests; disconnect and reconnect; malformed frames; timeouts |
   | A3 | ready, typed failure and in-flight or ambiguous start behaviour; identity-matched prompt acknowledgements; for every enabled harness, AGY included |
   | A4 | pane replacement, move, native-session replacement, Herdr restart, and how an incarnation is proven |
@@ -583,13 +584,13 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 ### Phase 5 — Daemon and MCP
 
 - **Objective:** a daemon that serves F1–F29.
-- **Scope:** `daemon` and `mcp`.
+- **Scope:** `daemon`, `mcp` and the `relay` subcommand.
 - **Changes:**
   - Startup and restart (F28), the coordinator, the event loop, and a 30 s reconcile.
   - The effect runner (F8–F10).
   - The launch pipeline, delivery, supervision, acceptance and recovery.
   - Status with pagination, and shutdown (F29).
-  - The single transport chosen by A1. If it's HTTP, the listener binds to 127.0.0.1 only, requires a bearer token, and validates `Origin`, rejecting invalid origins.
+  - The transport (ADR-0004): `mcp` binds the daemon's 0600 unix socket; `relay` serves one caller session over stdio, derives the F1 caller identity, and forwards each request on a fresh socket connection.
 - **Dependencies:** Phase 4.
 - **Risks:** a slow coordinator. Mitigated by a load test: 50 concurrent `herdr_status` calls plus 10 launches against the fake Herdr.
 - **Validations:**
@@ -634,7 +635,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
     - If the health check fails before the barrier lifts, it restores the backup and the previous binary.
     - Once the barrier has lifted, it only ever rolls back to a binary that can read the current schema, keeping the ledger as it is.
   - **Deploy timer:** installs the newest green `main`.
-  - **The owner:** authors `catalog.toml` from `herdr-profiles/catalog.yaml`, and registers `herdr-next`.
+  - **The owner:** authors `catalog.toml` from `herdr-profiles/catalog.yaml`, and registers `herdr-next` per harness through the profile layer (ADR-0004).
   - **Caller skill:** `skills/herdr-governor/SKILL.md`.
 - **Dependencies:** Phase 6.
 - **Risks:** an agent edits the local catalog. Mitigated by validation on load plus last-good config and qualification invalidation; the owner accepted this trade-off.
@@ -642,7 +643,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
   - Installer tests: a failing build rolls back before the barrier; a later rollback is refused when the schema range doesn't fit; the backup restores cleanly.
   - `just conformance` passes through `herdr-next`.
   - N3 is measured on real launches.
-- **DoD:** parity, meaning the conformance suite is green on the installed build through Executor.
+- **DoD:** parity, meaning the conformance suite is green on the installed build through the per-harness registrations.
 
 ### Phase 8 — Swap, drain, archive
 
@@ -689,9 +690,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 ## 13. Security and Privacy
 
 - **Identity:** cooperative between processes of the same user, and documented as such. Ownership is enforced on every operation (F4).
-- **Transport:**
-  - **HTTP:** 127.0.0.1 only, a bearer token, and `Origin` validation.
-  - **stdio relay:** no network listener.
+- **Transport:** the stdio relay only (ADR-0004) — no network listener and no bearer token. The daemon's unix socket is 0600. The relay reads only `HERDR_*` and its cwd, never logs environment values, holds no upstream session state, reconnects to the socket per request, and exits on stdin EOF or SIGINT/SIGTERM. Every forwarded request carries the relay-attached caller envelope `{paneId, projectRoot, relayInstanceId}`, and the daemon binds each new `relayInstanceId` to one resolved caller, refusing later drift `CALLER_IDENTITY_MISMATCH` (F1).
 - **Files:** the state directory is 0700; files and the database are 0600. Handoffs are read without following symlinks, with bounded size. Follow-up files are immutable.
 - **Provenance:** the envelope's header values are generated and each is a single line (H#25–27).
 - **Redaction:** environment-like keys are removed from evidence before it reaches Jev. Bodies never appear in argv, logs or errors (H#67, H#104).
@@ -723,7 +722,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 
 - Herdr 0.9.1 or later (protocol 22) and its integrations.
 - TypeSafe `systemOne`.
-- Executor (registrations and swaps are owner steps).
+- The herdr-tools profile layer, which registers the relay per harness (ADR-0004); Executor remains only for the `herdr-legacy` drain. Registrations and swaps are owner steps.
 - Rust 1.98.1 and the kit tools, already installed.
 - GitHub: public repo, branch protection, Actions, Dependabot.
 - The anti-slop-repo Rust pack, extended here.
@@ -791,7 +790,7 @@ The DoD is stated in each phase in §10. It must hold on a merged `main` commit,
 - **Deletions:** the `outcomes` view (Appendix B), structural Jev fixtures (Phase 2), Phase 1 no longer blocked on Phase 0's deploy, and the unsupervised rollback and causal claims removed.
 
 **Decided by the owner (Phase 2, 2026-09-28/29):**
-- **A1 (Executor transport):** measured on the real caller gateway (Executor catalog daemon, 2026-09-29): `mcp.addServer` registration is declarative, a static bearer via an apiKey `headers` authenticationTemplate + credential-provider item is sent on every request with OAuth never engaging, an unauthenticated 401 still triggers RFC 8414/OIDC discovery, restart and stale-`Mcp-Session-Id` recovery re-initialize transparently, warm calls reuse the session, and a down server surfaces an untyped `Internal tool error [<id>]`; the earlier "loopback no-auth only" result measured pi's MCP adapter (retired in pi 0.99), not Executor. Transport re-decision in progress (owner direction 2026-09-29: native per-session stdio relay; ADR and A1' evidence pending).
+- **A1 (Executor transport):** measured on the real caller gateway (Executor catalog daemon, 2026-09-29): `mcp.addServer` registration is declarative, a static bearer via an apiKey `headers` authenticationTemplate + credential-provider item is sent on every request with OAuth never engaging, an unauthenticated 401 still triggers RFC 8414/OIDC discovery, restart and stale-`Mcp-Session-Id` recovery re-initialize transparently, warm calls reuse the session, and a down server surfaces an untyped `Internal tool error [<id>]`; the earlier "loopback no-auth only" result measured pi's MCP adapter (retired in pi 0.99), not Executor. Transport decided: ADR-0004.
 - **A2 (subscription EOF):** an unexpected subscription EOF is re-armed with a state catch-up (`pane.read`/`session.snapshot`); "server gone" is declared only when the re-arm cannot connect; every teardown emits a typed event.
 - **A3 (readiness):** readiness is advisory — the identity-matched acknowledgement (F16) plus F26 qualification are the signals; the Herdr detection gap is a non-blocking follow-up. The acknowledgement proves delivery to the pane, not consumption: a first-run gate that Herdr reports `idle` can swallow the Task, and the Run then settles `no_handoff` via F25 (bounded). Mitigations: catalog arguments that disable the gate (Devin `--respect-workspace-trust false`), Claude's gate reported `blocked` as an owner notice, and F26 qualification — which detects gates only in its own qualification directory.
 - **A3 (start failures):** the typed pre-interactive error assumption is confirmed-negative for runtime startup failures — a missing binary, rejected agent args, and mid-start death all return one untyped `timeout` after the full `--timeout`. A runtime start timeout is F15's "any other outcome": stop falling back, record `failed {effectCertainty}`, and the Run settles by the transition rules. Fallback happens only on typed pre-flight errors (`agent_pane_busy`); typed runtime startup errors are a non-blocking Herdr gap.
@@ -801,6 +800,9 @@ The DoD is stated in each phase in §10. It must hold on a merged `main` commit,
 - **Schema surface:** the Herdr schema doc is not the exhaustive request surface — `pane.graphics.stream` exists at runtime while absent from the doc.
 - **Core purity:** `governor-core` is `#![no_std]` with `alloc`.
 - **AGY supervision (A3/A5):** AGY is terminal-only — supervision uses terminal evidence (`agent.read`); there is no out-of-band transcript/uuid discovery (a presence lock cannot be proven to belong to a pane while AGY sessions run concurrently; identity is never guessed). The missing agy `agent_session` is a non-blocking Herdr gap; an AGY Run without a native session settles `unresolved(identity_unprovable)` after an unproven Herdr incarnation change (F28).
+
+**Decided by the owner (2026-09-30):**
+- **Caller transport:** the native per-session stdio relay (ADR-0004). Each caller harness's own MCP spawns `herdr-governor relay` once per session; the stateless relay derives the F1 caller identity (`paneId` from `HERDR_PANE_ID`, `projectRoot` from its cwd's git root) and forwards to the daemon's 0600 unix socket; registration is global per harness through the herdr-tools profile layer; N4 allows one relay per caller session at or under 8 MB RSS.
 
 ## 20. Approval
 
@@ -823,7 +825,7 @@ Status: **Approved for Implementation.**
 | 2, 21, 22 | replaced by F1 |
 | 3 | retained, as F1's `projectRoot` rules plus F5's `cwd` inside the root |
 | 4, 5, 6, 8 | retained: N7, F28, F29 |
-| 9 | replaced by MCP (F5–F7); no internal handshake unless A1 selects the relay |
+| 9 | replaced by MCP (F5–F7); no internal handshake — the relay attaches the derived caller to each forwarded call (ADR-0004) |
 | 10–13, 15 | replaced: typed socket calls, bounded timeouts, typed malformed-output failure, a fresh post-state read, and effect certainty (F8, F10) |
 | 14 | retained (F10) |
 | 16 | replaced by F17 |
@@ -891,6 +893,13 @@ CREATE TABLE callers (
   native_session TEXT NOT NULL,
   first_seen_at  TEXT NOT NULL,
   UNIQUE (agent_kind, native_session)
+);
+
+CREATE TABLE relay_bindings (
+  relay_instance_id TEXT PRIMARY KEY,                     -- 128-bit random id minted by the relay, lowercase hex
+  caller_id         INTEGER NOT NULL REFERENCES callers(caller_id),
+  pane_id_at_bind   TEXT NOT NULL,
+  bound_at          TEXT NOT NULL
 );
 
 CREATE TABLE launches (
@@ -1099,6 +1108,7 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 
 | Transition | Rows written atomically |
 |---|---|
+| Bind a caller (F1) | the first request with a new `relayInstanceId`: the `callers` row if the caller key is new, plus the `relay_bindings` row — one transaction; rows are kept indefinitely like launch keys, one row per relay session |
 | Admit Launch | launch (`evaluating`) plus the `jev_evaluate` effect (`planned`) |
 | Route | the launch decision, config version and phase `routed`, plus the reserved run with `max_age_deadline` |
 | Plan an effect | the effect (`planned`) |
