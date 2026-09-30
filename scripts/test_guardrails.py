@@ -142,17 +142,22 @@ def harness_dir(name):
 
 
 def base_repo():
-    """Mini two-crate workspace: virtual root manifest, two members with
-    [lints] workspace = true, member src/ and tests/ trees, the schema
-    fixture, and the gate scripts installed."""
+    """Mini two-crate workspace mirroring the real one: virtual root
+    manifest, the real Cargo.lock (cargo's --locked recipes need a lockfile
+    consistent with the real manifests and their dependencies), two members
+    with [lints] workspace = true, every real file under each member's src/
+    tree, member tests/ files, the schema fixture, and the gate scripts
+    installed."""
     r = Repo()
     r.write("Cargo.toml", real_file("Cargo.toml"))
-    r.write("Cargo.lock", "# fake lockfile\n")
+    r.write("Cargo.lock", real_file("Cargo.lock"))
     r.write("clippy.toml", 'allow-unwrap-in-tests = true\n')
     r.write(CORE_MANI, real_file(CORE_MANI))
     r.write(BIN_MANI, real_file(BIN_MANI))
-    r.write(CORE_LIB, real_file(CORE_LIB))
-    r.write(BIN_MAIN, real_file(BIN_MAIN))
+    for member in (CORE, BIN):
+        for src in sorted((ROOT / member / "src").rglob("*")):
+            if src.is_file():
+                r.write(str(src.relative_to(ROOT)), src.read_text())
     r.write(
         CORE_TEST,
         '#[test]\nfn test_it() {\n    assert_eq!(1 + 1, 2, "math works");\n}\n',
@@ -184,6 +189,43 @@ def full_repo():
 
 def deny_reason(proc):
     return json.loads(proc.stdout)["hookSpecificOutput"]
+
+
+class BaseRepoFixtureTests(unittest.TestCase):
+    """pi-review F1: pin the fixture builder itself. base_repo() must mirror
+    the real tree it stands in for — every file under each member's src/, at
+    any depth, plus the real Cargo.lock — or the gates get exercised against
+    a fixture that can drift from the repo it claims to represent."""
+
+    def test_mirrors_member_src_trees_and_real_lockfile(self):
+        global ROOT
+        seeds = {
+            "Cargo.toml": "[workspace]\nmembers = []\n",
+            "Cargo.lock": "# distinctive lockfile sentinel 0xbeef\n",
+            CORE_MANI: '[package]\nname = "core"\n',
+            BIN_MANI: '[package]\nname = "bin"\n',
+            CORE_LIB: "//! lib\n",
+            CORE + "/src/a/b.rs": "// nested core module\n",
+            BIN_MAIN: "// main\n",
+            BIN + "/src/deep/leaf.rs": "// nested bin module\n",
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, body in seeds.items():
+                p = root / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(body)
+            saved, ROOT = ROOT, root
+            try:
+                repo = base_repo()
+            finally:
+                ROOT = saved
+            self.addCleanup(repo.cleanup)
+            for rel in ("Cargo.lock", CORE + "/src/a/b.rs",
+                        BIN + "/src/deep/leaf.rs"):
+                with self.subTest(path=rel):
+                    self.assertEqual(
+                        (repo.dir / rel).read_text(), seeds[rel])
 
 
 # --------------------------------------------------------------------------
