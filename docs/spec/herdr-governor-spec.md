@@ -120,10 +120,10 @@ The owner chose a clean-break rewrite (ADR-0001). The main structural gain is re
 
 ### 6.1 Identity and ownership
 
-- **F1 Caller identity.** `caller` is not a tool argument: the relay derives it once per session and attaches it to every forwarded call (ADR-0004) — `paneId` from the inherited `HERDR_PANE_ID`, and `projectRoot` as realpath(`git rev-parse --show-toplevel`) of the relay's cwd, or realpath(cwd) outside a git worktree.
-  - **Check:** the daemon reads one fresh `session.snapshot` and requires exactly one pane with that ID. The pane's occupant must have a native session.
-  - **Caller key:** `(agent kind, native session)`. The first call registers the caller. Later calls must resolve to the same native session through a fresh locator check.
-  - **Refusals:** a missing, duplicate, sessionless or mismatched occupant is refused `CALLER_IDENTITY_*` before any effect (H#21).
+- **F1 Caller identity.** `caller` is not a tool argument: the relay attaches a caller envelope `{paneId, projectRoot, relayInstanceId}` to every forwarded request, as part of the relay-to-daemon framing, so the strict tool schemas are unaffected (ADR-0004). `paneId` comes from the inherited `HERDR_PANE_ID`, `projectRoot` is realpath(`git rev-parse --show-toplevel`) of the relay's cwd, or realpath(cwd) outside a git worktree, and `relayInstanceId` is an immutable random 128-bit id the relay mints once at process start — never persisted by the relay, never configurable. The id is not upstream session state: the relay still reconnects per request and holds nothing mutable.
+  - **Caller key:** `(agent kind, native session)`, resolved from one fresh `session.snapshot` that must contain exactly one pane with that ID, whose occupant must have a native session. The first call registers the caller; the idempotency scope stays `(caller key, projectRoot)`.
+  - **Binding:** the first request carrying a new `relayInstanceId` resolves the caller key this way and persists the binding `relayInstanceId` → caller key. Every later request with that id must resolve, through a fresh locator check, to the same native session — a replaced occupant in the same pane (`native_session` changed, `pane_id` and `terminal_id` unchanged; `a4_native_new_replaces_session`) is refused instead of silently re-registered. A respawned relay mints a new id and binds afresh; a daemon restart keeps the persisted bindings.
+  - **Refusals:** a missing, duplicate or sessionless occupant, or a bound `relayInstanceId` re-resolving to a different native session, is refused `CALLER_IDENTITY_*` — the last case specifically `CALLER_IDENTITY_MISMATCH` — before any effect (H#21).
   - **`projectRoot`:** the daemon still requires it absolute, single-line, not `/`, existing and realpath-canonical. A relay-derived root that is invalid is refused, never re-anchored (H#3).
   - **Trust:** identity is cooperative between processes of the same user, and the docs say so (H#22).
 - **F2 Child identity.** A child's identity has these parts:
@@ -346,7 +346,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - AGY is routable only after it qualifies.
   - This replaces unverified tags (H#110), as catalog data, never as harness code.
 - **F27 Config.**
-  - **Files:** `~/.config/herdr-governor/catalog.toml` holds the catalog and routing policy. `~/.config/herdr-governor/credentials` holds the Jev key and the MCP token, mode 0600.
+  - **Files:** `~/.config/herdr-governor/catalog.toml` holds the catalog and routing policy. `~/.config/herdr-governor/credentials` holds the Jev key, mode 0600.
   - **Parsing:** the config adapter decodes the TOML, and `governor-core` validates the typed values.
   - **Reload** happens on SIGHUP.
     - An invalid reload keeps the last good config and shows it in `herdr_status`.
@@ -690,7 +690,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 ## 13. Security and Privacy
 
 - **Identity:** cooperative between processes of the same user, and documented as such. Ownership is enforced on every operation (F4).
-- **Transport:** the stdio relay only (ADR-0004) — no network listener and no bearer token. The daemon's unix socket is 0600. The relay reads only `HERDR_*` and its cwd, never logs environment values, holds no upstream session state, reconnects to the socket per request, and exits on stdin EOF or SIGINT/SIGTERM.
+- **Transport:** the stdio relay only (ADR-0004) — no network listener and no bearer token. The daemon's unix socket is 0600. The relay reads only `HERDR_*` and its cwd, never logs environment values, holds no upstream session state, reconnects to the socket per request, and exits on stdin EOF or SIGINT/SIGTERM. Every forwarded request carries the relay-attached caller envelope `{paneId, projectRoot, relayInstanceId}`, and the daemon binds each new `relayInstanceId` to one resolved caller, refusing later drift `CALLER_IDENTITY_MISMATCH` (F1).
 - **Files:** the state directory is 0700; files and the database are 0600. Handoffs are read without following symlinks, with bounded size. Follow-up files are immutable.
 - **Provenance:** the envelope's header values are generated and each is a single line (H#25–27).
 - **Redaction:** environment-like keys are removed from evidence before it reaches Jev. Bodies never appear in argv, logs or errors (H#67, H#104).
@@ -893,6 +893,13 @@ CREATE TABLE callers (
   native_session TEXT NOT NULL,
   first_seen_at  TEXT NOT NULL,
   UNIQUE (agent_kind, native_session)
+);
+
+CREATE TABLE relay_bindings (
+  relay_instance_id TEXT PRIMARY KEY,                     -- 128-bit random id minted by the relay, lowercase hex
+  caller_id         INTEGER NOT NULL REFERENCES callers(caller_id),
+  pane_id_at_bind   TEXT NOT NULL,
+  bound_at          TEXT NOT NULL
 );
 
 CREATE TABLE launches (
@@ -1101,6 +1108,7 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 
 | Transition | Rows written atomically |
 |---|---|
+| Bind a caller (F1) | the first request with a new `relayInstanceId`: the `callers` row if the caller key is new, plus the `relay_bindings` row — one transaction; rows are kept indefinitely like launch keys, one row per relay session |
 | Admit Launch | launch (`evaluating`) plus the `jev_evaluate` effect (`planned`) |
 | Route | the launch decision, config version and phase `routed`, plus the reserved run with `max_age_deadline` |
 | Plan an effect | the effect (`planned`) |
