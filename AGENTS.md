@@ -177,8 +177,8 @@ the gate scripts directly — the recipe is the contract.
   `pub(in crate::…)`; the binary reaches the core only through its public
   API.
 - **No CLI-parsing crate** (spec §9): the subcommands `daemon`,
-  `check-config`, `qualify` — and `relay` only if spec question A1 fails —
-  are hand-rolled.
+  `check-config`, `qualify` and `relay` (the per-session stdio transport,
+  ADR-0004) are hand-rolled.
 
 ## Testing
 
