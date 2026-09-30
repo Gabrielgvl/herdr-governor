@@ -263,10 +263,64 @@ impl Refusal {
 
 #[cfg(test)]
 mod tests {
-    use super::Refusal;
+    use super::{
+        AbstainReason, CONSTRAINTS_MAX_ITEMS, DONE_WHEN_MAX_ITEMS, DONE_WHEN_MIN_ITEMS,
+        LaunchPhase, RENDERED_TASK_MAX_BYTES, Refusal,
+    };
 
     #[test]
-    fn refusal_codes_are_the_spec_spellings() {
+    fn f5_n5_task_bound_values() {
+        assert_eq!(DONE_WHEN_MIN_ITEMS, 1, "doneWhen needs one item (F5)");
+        assert_eq!(DONE_WHEN_MAX_ITEMS, 8, "doneWhen is bounded at eight (F5)");
+        assert_eq!(
+            CONSTRAINTS_MAX_ITEMS, 8,
+            "constraints is bounded at eight (F5)"
+        );
+        assert_eq!(
+            RENDERED_TASK_MAX_BYTES, 65_536,
+            "rendered Task bound is 64 KiB (N5)"
+        );
+    }
+
+    #[test]
+    fn appendix_b_launch_phase_spellings() {
+        let cases = [
+            (LaunchPhase::Evaluating, "evaluating"),
+            (LaunchPhase::Routed, "routed"),
+            (LaunchPhase::Launching, "launching"),
+            (LaunchPhase::Done, "done"),
+        ];
+        for (phase, name) in cases {
+            assert_eq!(
+                phase.as_str(),
+                name,
+                "launch phase spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn f5_abstain_reason_spellings() {
+        let cases = [
+            (AbstainReason::EvaluationFailed, "evaluation_failed"),
+            (
+                AbstainReason::InterruptedBeforeDecision,
+                "interrupted_before_decision",
+            ),
+            (AbstainReason::NoHigherTier, "no_higher_tier"),
+            (AbstainReason::NoCandidates, "no_candidates"),
+        ];
+        for (reason, name) in cases {
+            assert_eq!(
+                reason.as_str(),
+                name,
+                "abstain reason spelling must match F5"
+            );
+        }
+    }
+
+    #[test]
+    fn f1_f4_f11_f17_f21_n7_refusal_codes() {
         let cases = [
             (Refusal::CallerIdentityMissing, "CALLER_IDENTITY_MISSING"),
             (

@@ -97,3 +97,40 @@ pub struct Cooldown {
     /// it, when known.
     pub source_run: Option<RunId>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{RecoveryOrigin, RecoveryStatus};
+
+    #[test]
+    fn f21_recovery_origin_spellings() {
+        let cases = [
+            (RecoveryOrigin::ProviderLimit, "provider_limit"),
+            (RecoveryOrigin::Caller, "caller"),
+        ];
+        for (origin, name) in cases {
+            assert_eq!(
+                origin.as_str(),
+                name,
+                "recovery origin spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn f21_recovery_status_spellings() {
+        let cases = [
+            (RecoveryStatus::Pending, "pending"),
+            (RecoveryStatus::Blocked, "blocked"),
+            (RecoveryStatus::Dispatched, "dispatched"),
+            (RecoveryStatus::Failed, "failed"),
+        ];
+        for (status, name) in cases {
+            assert_eq!(
+                status.as_str(),
+                name,
+                "recovery status spelling must match the DDL"
+            );
+        }
+    }
+}

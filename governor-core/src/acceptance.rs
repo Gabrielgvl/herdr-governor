@@ -71,3 +71,24 @@ pub struct AssessmentKey {
     /// Which `done_when` item the assessment covers.
     pub item: u8,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{HANDOFF_MARKER_PREFIX, HANDOFF_MARKER_SUFFIX, HANDOFF_MAX_BYTES};
+
+    #[test]
+    fn f24_n5_handoff_bound_and_marker() {
+        assert_eq!(
+            HANDOFF_MAX_BYTES, 262_144,
+            "handoff bound is 256 KiB (N5/F24)"
+        );
+        assert_eq!(
+            HANDOFF_MARKER_PREFIX, "<!-- herdr-governor handoff run=",
+            "marker prefix is the F24 opening"
+        );
+        assert_eq!(
+            HANDOFF_MARKER_SUFFIX, " -->",
+            "marker suffix is the F24 closing"
+        );
+    }
+}

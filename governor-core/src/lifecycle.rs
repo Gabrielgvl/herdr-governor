@@ -625,3 +625,167 @@ pub enum Event {
     /// `dispatching` effects become `unconfirmed`, deadlines unchanged.
     Restart,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DeadlineKind, EffectCertainty, EffectKind, EffectState, PromptCertainty, Settlement, State,
+        UnresolvedReason,
+    };
+
+    #[test]
+    fn appendix_c_state_spellings() {
+        let cases = [
+            (State::Reserved, "reserved"),
+            (State::Starting, "starting"),
+            (State::Prompting, "prompting"),
+            (State::Active, "active"),
+            (State::Judging, "judging"),
+            (State::Repair, "repair"),
+            (State::Settled, "settled"),
+        ];
+        for (state, name) in cases {
+            assert_eq!(state.as_str(), name, "state spelling must match Appendix C");
+        }
+    }
+
+    #[test]
+    fn f16_prompt_certainty_spellings() {
+        let cases = [
+            (PromptCertainty::Acknowledged, "acknowledged"),
+            (PromptCertainty::Unconfirmed, "unconfirmed"),
+        ];
+        for (certainty, name) in cases {
+            assert_eq!(
+                certainty.as_str(),
+                name,
+                "prompt certainty spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn appendix_c_deadline_kind_spellings() {
+        let cases = [
+            (DeadlineKind::Idle, "idle"),
+            (DeadlineKind::Repair, "repair"),
+            (DeadlineKind::Judgment, "judgment"),
+            (DeadlineKind::MaxAge, "max_age"),
+        ];
+        for (kind, name) in cases {
+            assert_eq!(
+                kind.as_str(),
+                name,
+                "deadline kind spelling must match Appendix C"
+            );
+        }
+    }
+
+    #[test]
+    fn f20_unresolved_reason_spellings() {
+        let cases = [
+            (UnresolvedReason::LaunchNotStarted, "launch_not_started"),
+            (UnresolvedReason::LaunchFailed, "launch_failed"),
+            (
+                UnresolvedReason::JudgmentUnavailable,
+                "judgment_unavailable",
+            ),
+            (UnresolvedReason::IdentityUnprovable, "identity_unprovable"),
+            (UnresolvedReason::MaxAge, "max_age"),
+        ];
+        for (reason, name) in cases {
+            assert_eq!(
+                reason.as_str(),
+                name,
+                "unresolved reason spelling must match F20"
+            );
+        }
+    }
+
+    #[test]
+    fn f20_settlement_spellings() {
+        let cases = [
+            (Settlement::Accepted, "accepted"),
+            (Settlement::Rejected, "rejected"),
+            (Settlement::NoHandoff, "no_handoff"),
+            (Settlement::PaneLost, "pane_lost"),
+            (Settlement::Cancelled, "cancelled"),
+            (Settlement::ProviderLimited, "provider_limited"),
+        ];
+        for (settlement, name) in cases {
+            assert_eq!(
+                settlement.as_str(),
+                name,
+                "settlement spelling must match F20"
+            );
+        }
+        // `unresolved` never carries its reason in the settlement spelling —
+        // the reason rides `runs.settlement_reason` (Appendix B).
+        let reasons = [
+            UnresolvedReason::LaunchNotStarted,
+            UnresolvedReason::LaunchFailed,
+            UnresolvedReason::JudgmentUnavailable,
+            UnresolvedReason::IdentityUnprovable,
+            UnresolvedReason::MaxAge,
+        ];
+        for reason in reasons {
+            assert_eq!(
+                Settlement::Unresolved { reason }.as_str(),
+                "unresolved",
+                "unresolved spelling is constant across reasons"
+            );
+        }
+    }
+
+    #[test]
+    fn f8_effect_kind_spellings() {
+        let cases = [
+            (EffectKind::JevEvaluate, "jev_evaluate"),
+            (EffectKind::TabCreate, "tab_create"),
+            (EffectKind::PaneSplit, "pane_split"),
+            (EffectKind::AgentStart, "agent_start"),
+            (EffectKind::Prompt, "prompt"),
+            (EffectKind::Close, "close"),
+        ];
+        for (kind, name) in cases {
+            assert_eq!(
+                kind.as_str(),
+                name,
+                "effect kind spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn f8_effect_state_spellings() {
+        let cases = [
+            (EffectState::Planned, "planned"),
+            (EffectState::Dispatching, "dispatching"),
+            (EffectState::Acknowledged, "acknowledged"),
+            (EffectState::Failed, "failed"),
+            (EffectState::Unconfirmed, "unconfirmed"),
+        ];
+        for (state, name) in cases {
+            assert_eq!(
+                state.as_str(),
+                name,
+                "effect state spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn f8_effect_certainty_spellings() {
+        let cases = [
+            (EffectCertainty::Absent, "absent"),
+            (EffectCertainty::Unknown, "unknown"),
+        ];
+        for (certainty, name) in cases {
+            assert_eq!(
+                certainty.as_str(),
+                name,
+                "effect certainty spelling must match the DDL"
+            );
+        }
+    }
+}

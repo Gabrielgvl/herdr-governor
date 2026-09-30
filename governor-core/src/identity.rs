@@ -245,3 +245,53 @@ impl Observation {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ChildStatus, NativeSession, Observation, ObservationClass, PaneId};
+
+    #[test]
+    fn f3_observation_class_spellings() {
+        let cases = [
+            (ObservationClass::Unique, "unique"),
+            (ObservationClass::Absent, "absent"),
+            (ObservationClass::Invalid, "invalid"),
+        ];
+        for (class, name) in cases {
+            assert_eq!(
+                class.as_str(),
+                name,
+                "observation class spelling must match F3"
+            );
+        }
+    }
+
+    #[test]
+    fn appendix_c_child_status_spellings() {
+        let cases = [
+            (ChildStatus::Working, "working"),
+            (ChildStatus::Idle, "idle"),
+            (ChildStatus::Done, "done"),
+            (ChildStatus::Blocked, "blocked"),
+        ];
+        for (status, name) in cases {
+            assert_eq!(
+                status.as_str(),
+                name,
+                "child status spelling must match Appendix C"
+            );
+        }
+    }
+
+    #[test]
+    fn f3_observation_maps_to_its_class() {
+        let unique = Observation::Unique {
+            status: Some(ChildStatus::Working),
+            pane: PaneId("w6:p1".into()),
+            native_session: Some(NativeSession("sess".into())),
+        };
+        assert_eq!(unique.class(), ObservationClass::Unique);
+        assert_eq!(Observation::Absent.class(), ObservationClass::Absent);
+        assert_eq!(Observation::Invalid.class(), ObservationClass::Invalid);
+    }
+}

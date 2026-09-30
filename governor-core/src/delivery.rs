@@ -204,3 +204,90 @@ pub struct MailboxEvent {
     /// `body_json` — the event body.
     pub body: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ExpiryReason, FOLLOWUP_FILE_MAX_BYTES, FOLLOWUP_FILE_RETENTION, FOLLOWUP_INLINE_MAX_BYTES,
+        HINT_MIN_INTERVAL, MailboxEventKind, OutboxState,
+    };
+
+    #[test]
+    fn n5_f18_delivery_bound_values() {
+        assert_eq!(
+            FOLLOWUP_INLINE_MAX_BYTES, 16_384,
+            "inline follow-up bound is 16 KiB (N5)"
+        );
+        assert_eq!(
+            FOLLOWUP_FILE_MAX_BYTES, 1_048_576,
+            "published follow-up bound is 1 MiB (N5)"
+        );
+        assert_eq!(
+            FOLLOWUP_FILE_RETENTION.as_secs(),
+            604_800,
+            "body file retention is 7 days (F18)"
+        );
+        assert_eq!(
+            HINT_MIN_INTERVAL.as_secs(),
+            5,
+            "hint interval is 5 seconds (F18)"
+        );
+    }
+
+    #[test]
+    fn f17_outbox_state_spellings() {
+        let cases = [
+            (OutboxState::Queued, "queued"),
+            (OutboxState::Dispatching, "dispatching"),
+            (OutboxState::Submitted, "submitted"),
+            (OutboxState::Unconfirmed, "unconfirmed"),
+            (OutboxState::Expired, "expired"),
+        ];
+        for (state, name) in cases {
+            assert_eq!(
+                state.as_str(),
+                name,
+                "outbox state spelling must match the DDL"
+            );
+        }
+    }
+
+    #[test]
+    fn f17_expiry_reason_spellings() {
+        assert_eq!(
+            ExpiryReason::RunSettled.as_str(),
+            "settled",
+            "expiry reason spelling must match the DDL"
+        );
+    }
+
+    #[test]
+    fn f18_mailbox_event_kind_spellings() {
+        let cases = [
+            (MailboxEventKind::HandoffAccepted, "handoff_accepted"),
+            (MailboxEventKind::HandoffRejected, "handoff_rejected"),
+            (MailboxEventKind::Settled, "settled"),
+            (MailboxEventKind::Stalled, "stalled"),
+            (MailboxEventKind::BlockedOnInput, "blocked_on_input"),
+            (MailboxEventKind::OutsideScope, "outside_scope"),
+            (MailboxEventKind::LaunchFailed, "launch_failed"),
+            (MailboxEventKind::PromptUnconfirmed, "prompt_unconfirmed"),
+            (
+                MailboxEventKind::FollowUpUnconfirmed,
+                "follow_up_unconfirmed",
+            ),
+            (MailboxEventKind::FollowUpExpired, "follow_up_expired"),
+            (MailboxEventKind::CooldownHit, "cooldown_hit"),
+            (MailboxEventKind::RecoveryPending, "recovery_pending"),
+            (MailboxEventKind::RecoveryBlocked, "recovery_blocked"),
+            (MailboxEventKind::RecoveryDispatched, "recovery_dispatched"),
+        ];
+        for (kind, name) in cases {
+            assert_eq!(
+                kind.as_str(),
+                name,
+                "mailbox event kind spelling must match F18"
+            );
+        }
+    }
+}
