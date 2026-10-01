@@ -83,6 +83,7 @@ fn planned_effect(
         state: EffectState::Planned,
         certainty: None,
         receipt: None,
+        dispatched_at: None,
     }
 }
 

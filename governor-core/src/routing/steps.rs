@@ -158,10 +158,9 @@ pub(super) fn eligible_candidates(
             let tiered = tier_index(tiers, &point.tier).is_some_and(|index| index >= rank);
             let allowed_provider =
                 excluded_provider != Some(&point.provider) && !cooling.contains(&point.provider);
-            let offers = required.iter().all(|capability| {
-                point.capabilities.contains(capability)
-                    && qualified(point, capability, qualifications)
-            });
+            let offers = required
+                .iter()
+                .all(|capability| point.has_current_pass(capability, qualifications));
             tiered && allowed_provider && offers
         })
         .collect();
@@ -179,21 +178,4 @@ pub(super) fn eligible_candidates(
             args: point.args.clone(),
         })
         .collect())
-}
-
-/// F26/F13 step 6 — `capability` is offered only while it is claimed AND a
-/// `passed` qualification row binds the point's current args (`args_digest`
-/// — an args change re-keys the row, so a stale pass never counts).
-fn qualified(
-    point: &OperatingPoint,
-    capability: &Capability,
-    qualifications: &[Qualification],
-) -> bool {
-    let current = point.args_digest();
-    qualifications.iter().any(|qualification| {
-        qualification.operating_point == point.id
-            && qualification.capability == *capability
-            && qualification.passed
-            && qualification.args_digest == current
-    })
 }

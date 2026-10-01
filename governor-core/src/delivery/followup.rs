@@ -310,6 +310,7 @@ pub fn follow_up_effect(
         state: EffectState::Planned,
         certainty: None,
         receipt: None,
+        dispatched_at: None,
     }
 }
 

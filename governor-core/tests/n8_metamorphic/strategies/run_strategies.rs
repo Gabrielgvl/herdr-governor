@@ -109,7 +109,9 @@ pub(crate) fn base_run(state: State) -> Run {
         idle_since: None,
         idle_deadline: None,
         repair_deadline: None,
+        rejected_at: None,
         judgment_deadline: None,
+        judging_digest: None,
         max_age_deadline: Timestamp(3_600_000),
         nudge_episode: 0,
         nudged_episode: None,
@@ -133,6 +135,7 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
             opt_timestamp(),
             opt_timestamp(),
             opt_timestamp(),
+            opt_timestamp(),
         ),
         (0u64..=8, 0u64..=3, 0u64..=3, 0u64..=3, 0u64..=3),
         pick(&SETTLEMENTS),
@@ -145,7 +148,7 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
                 tier,
                 status,
                 certainty,
-                (idle_since, idle_deadline, repair_deadline, judgment_deadline),
+                (idle_since, idle_deadline, repair_deadline, rejected_at, judgment_deadline),
                 (version, work_gen, evidence_gen, episode, nudged),
                 settlement,
             )| {
@@ -160,6 +163,7 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
                     idle_since,
                     idle_deadline,
                     repair_deadline,
+                    rejected_at,
                     judgment_deadline,
                     version,
                     work_generation: work_gen,
@@ -268,22 +272,26 @@ pub(crate) fn journal_effect(run: &Run, config: &Config) -> BoxedStrategy<Effect
             1 => any_pane().prop_map(|pane| Some(EffectTarget::CallerContext(pane))),
         ],
         receipt(run, config),
+        opt_timestamp(),
     )
-        .prop_map(move |(suffix, kind, state, certainty, target, receipt)| {
-            let key = EffectKey(format!("run:{run_id}:{suffix}"));
-            Effect {
-                id: EffectId(format!("eff:{}", key.0)),
-                key,
-                kind,
-                subject_launch: Some(launch_id.clone()),
-                subject_run: Some(subject_run.clone()),
-                target,
-                payload_digest: None,
-                state,
-                certainty: (state == EffectState::Failed).then_some(certainty),
-                receipt,
-            }
-        })
+        .prop_map(
+            move |(suffix, kind, state, certainty, target, receipt, dispatched_at)| {
+                let key = EffectKey(format!("run:{run_id}:{suffix}"));
+                Effect {
+                    id: EffectId(format!("eff:{}", key.0)),
+                    key,
+                    kind,
+                    subject_launch: Some(launch_id.clone()),
+                    subject_run: Some(subject_run.clone()),
+                    target,
+                    payload_digest: None,
+                    state,
+                    certainty: (state == EffectState::Failed).then_some(certainty),
+                    receipt,
+                    dispatched_at: dispatched_at.filter(|_| state != EffectState::Planned),
+                }
+            },
+        )
         .boxed()
 }
 pub(crate) fn event(

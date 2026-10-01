@@ -94,17 +94,20 @@ pub fn world() -> BoxedStrategy<World> {
                             Just(cfg.clone()),
                             Just(run.clone()),
                             Just(journal.clone()),
-                            prop_vec((0u64..=3, any_digest()), 0..=2).prop_map(move |rows| {
-                                rows.into_iter()
-                                    .map(|(work_generation, digest)| FrozenHandoff {
-                                        run: run_id.clone(),
-                                        work_generation,
-                                        digest,
-                                        frozen_path: String::from("/state/handoffs/a"),
-                                        frozen_at: Timestamp(100),
-                                    })
-                                    .collect()
-                            }),
+                            prop_vec((0u64..=3, any_digest(), any::<bool>()), 0..=2).prop_map(
+                                move |rows| {
+                                    rows.into_iter()
+                                        .map(|(work_generation, digest, assessed)| FrozenHandoff {
+                                            run: run_id.clone(),
+                                            work_generation,
+                                            digest,
+                                            frozen_path: String::from("/state/handoffs/a"),
+                                            frozen_at: Timestamp(100),
+                                            assessed,
+                                        })
+                                        .collect()
+                                },
+                            ),
                             event(&run, &journal, &cfg),
                             (0i64..=3_600_000).prop_map(Timestamp),
                             pick(&["/state/h/a", "/state/h/b"]).prop_map(String::from),

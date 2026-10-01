@@ -9,16 +9,16 @@ use alloc::vec::Vec;
 
 use crate::config::Policy;
 use crate::delivery::MailboxEventKind;
-use crate::identity::{ChildIdentity, Timestamp};
+use crate::identity::{ChildIdentity, EffectKey, Timestamp};
 use crate::lifecycle::supervision::review_result;
 use crate::lifecycle::{
     Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
-    EffectTarget, EffectWrite, PromptCertainty, Run, State, StateChange, Transition, edited,
-    effect_key, mailbox_event, nothing, planned_effect, write_run,
+    EffectTarget, EffectWrite, PromptCertainty, Run, Settlement, State, StateChange, Transition,
+    edited, effect_key, mailbox_event, nothing, planned_effect, settle, write_run,
 };
 use crate::routing::{Decision, JudgmentOutcome, PlacementPlan};
 
-use super::triple_of;
+use super::{repair_dispatch_in_window, triple_of};
 
 /// F8 — how a resolution journals.
 fn journal_state(outcome: EffectOutcome) -> EffectState {
@@ -97,7 +97,12 @@ pub(super) fn on_effect_result(
     let consequences = match run.state {
         State::Reserved | State::Starting => launch_result(run, result, decision, journal),
         State::Prompting => prompt_result(run, result),
-        State::Repair => repair_result(run, result, env),
+        State::Repair => repair_result(run, result, env, journal),
+        // F24 — a Run back in `judging` keeps its open rejection window
+        // (`rejected_at` is set for the current work generation): the
+        // follow-up's in-window dispatch qualifies and the late-result
+        // settle apply exactly as in `repair`.
+        State::Judging if run.rejected_at.is_some() => repair_result(run, result, env, journal),
         State::Active | State::Judging => review_result(run, result, now, policy),
         State::Settled => nothing(),
     };
@@ -179,7 +184,7 @@ fn agent_start_result(
     match result.outcome {
         EffectOutcome::Acknowledged => match &result.receipt {
             Some(EffectReceipt::AgentStarted { identity }) => {
-                started(run, result, identity, decision, journal)
+                started(run, result, identity, decision)
             }
             // an acknowledgement without the captured identity is not a
             // start — the Run waits on obs(absent) or max_age
@@ -227,19 +232,21 @@ fn agent_start_result(
 
 /// `agent_start` acknowledged — capture the F2 identity, record the started
 /// candidate's point/provider/tier, move to `prompting` and plan the Task
-/// prompt (F15/F16). The candidate is identified by the effect's position
-/// among the journal's `agent_start` entries (keys are `start:<index>`).
+/// prompt (F15/F16). The candidate is identified by the acknowledged key's
+/// `start:<index>` suffix — the row's position in the journal is not the
+/// index (rows commit in dispatch order, not candidate order); an
+/// unparsable key selects no candidate.
 fn started(
     run: &Run,
     result: &EffectResult,
     identity: &ChildIdentity,
     decision: Option<&Decision>,
-    journal: &[Effect],
 ) -> Transition {
-    let index = journal
-        .iter()
-        .filter(|e| e.kind == EffectKind::AgentStart)
-        .position(|e| e.key == result.key);
+    let index = result
+        .key
+        .0
+        .strip_prefix(&format!("run:{}:start:", run.id.0))
+        .and_then(|suffix| suffix.parse::<usize>().ok());
     let candidate = index.and_then(|i| decision.and_then(|d| d.candidates.get(i)));
     let record = edited(run, |next| {
         next.state = State::Prompting;
@@ -304,30 +311,59 @@ fn prompt_result(run: &Run, result: &EffectResult) -> Transition {
     }
 }
 
-/// `repair` — a repair follow-up (`outbox:<seq>`) dispatched before
-/// `repair_deadline` opens a new work generation and returns the Run to
-/// `active` (F24); anything else is supervision.
-fn repair_result(run: &Run, result: &EffectResult, env: (Timestamp, &Policy)) -> Transition {
-    if result.kind == EffectKind::Prompt
-        && result.outcome == EffectOutcome::Acknowledged
-        && result
-            .key
-            .0
-            .starts_with(&format!("run:{}:outbox:", run.id.0))
-        && run.repair_deadline.is_none_or(|d| env.0 < d)
-    {
-        let record = edited(run, |next| {
-            next.state = State::Active;
-            next.work_generation = next.work_generation.saturating_add(1);
-            next.repair_deadline = None;
-            next.idle_since = None;
-            next.idle_deadline = None;
-        });
-        return Transition {
-            state_changes: Vec::from([write_run(run, record)]),
-            events: Vec::new(),
-            effects: Vec::new(),
-        };
+/// Whether `key` names one of `run`'s repair follow-ups
+/// (`run:<id>:outbox:<seq>`, Appendix B).
+fn outbox_key(run: &Run, key: &EffectKey) -> bool {
+    key.0.starts_with(&format!("run:{}:outbox:", run.id.0))
+}
+
+/// `repair` — and `judging` while its rejection window is still open
+/// (`rejected_at` set) — a repair follow-up the journal proves was
+/// dispatched inside the window (its row's `dispatched_at` lands in
+/// `[rejected_at, repair_deadline)`) opens a new work generation and returns
+/// the Run to `active` (F24): `acknowledged`, `unconfirmed` and
+/// `failed/unknown` all qualify — possibly consumed — while a
+/// `failed/absent` result proved the prompt never ran and does not. A
+/// non-qualifying outbox result arriving past the deadline, with no
+/// in-window dispatch still pending, settles `rejected` in the same
+/// transition — the case where the deadline fired while that dispatch was
+/// in flight. Anything else is supervision.
+fn repair_result(
+    run: &Run,
+    result: &EffectResult,
+    env: (Timestamp, &Policy),
+    journal: &[Effect],
+) -> Transition {
+    let (now, policy) = env;
+    if result.kind == EffectKind::Prompt && outbox_key(run, &result.key) {
+        let row = journal.iter().find(|e| e.key == result.key);
+        if row.is_some_and(|e| repair_dispatch_in_window(run, e))
+            && result_certainty(result.outcome) != Some(EffectCertainty::Absent)
+        {
+            let record = edited(run, |next| {
+                next.state = State::Active;
+                next.work_generation = next.work_generation.saturating_add(1);
+                next.repair_deadline = None;
+                next.rejected_at = None;
+                next.judging_digest = None;
+                next.idle_since = None;
+                next.idle_deadline = None;
+            });
+            return Transition {
+                state_changes: Vec::from([write_run(run, record)]),
+                events: Vec::new(),
+                effects: Vec::new(),
+            };
+        }
+        if run.repair_deadline.is_some_and(|deadline| now >= deadline)
+            && !journal.iter().any(|effect| {
+                effect.key != result.key
+                    && effect.state == EffectState::Dispatching
+                    && repair_dispatch_in_window(run, effect)
+            })
+        {
+            return settle(run, Settlement::Rejected, now, policy);
+        }
     }
-    review_result(run, result, env.0, env.1)
+    review_result(run, result, now, policy)
 }

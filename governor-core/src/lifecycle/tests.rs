@@ -9,6 +9,7 @@ mod f22_repair;
 mod f22_reserved;
 mod f22_starting;
 mod f23;
+mod f24;
 mod f25;
 
 use super::{

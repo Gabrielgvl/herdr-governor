@@ -26,6 +26,13 @@ pub struct FrozenHandoff {
     pub frozen_path: String,
     /// `frozen_at` — when the copy was taken.
     pub frozen_at: Timestamp,
+    /// `assessed` — `true` when an `answered` acceptance `judgment_sets` row
+    /// exists for `(run_id, work_generation, handoff_digest)`; the read
+    /// computes this Appendix B derivation — it is not a stored column —
+    /// so a freeze write always carries `false`. F24: an unchanged digest
+    /// is never re-judged after a completed assessment; an assessed row
+    /// suppresses the re-ask, an unassessed one resumes judging.
+    pub assessed: bool,
 }
 
 /// F24 — the binding every doneWhen-item assessment is recorded under: Task
@@ -90,6 +97,7 @@ pub fn freeze_handoff(
         digest,
         frozen_path,
         frozen_at,
+        assessed: false,
     }
 }
 

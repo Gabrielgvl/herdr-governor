@@ -278,3 +278,99 @@ pub(super) fn f22_starting_ack_uses_the_matched_candidates_index() {
         "no decision → the started candidate cannot be recovered"
     );
 }
+
+// ---- F8 — the candidate index comes from the acknowledged key's
+// `start:<index>` suffix: journal position is dispatch order, not
+// candidate order, and an unparsable suffix selects no candidate. ----
+
+#[test]
+fn f22_starting_ack_parses_the_key_not_the_journal_position() {
+    let run = run_in(State::Starting);
+    // journal order is dispatch order — `start:1` committed first.
+    let journal = Vec::from([
+        journal_effect_at(
+            &run,
+            "start:1",
+            EffectKind::AgentStart,
+            EffectState::Dispatching,
+            Some(EffectTarget::AgentPane(PlacementPlan::NewTab)),
+        ),
+        journal_effect_at(
+            &run,
+            "start:0",
+            EffectKind::AgentStart,
+            EffectState::Failed,
+            Some(EffectTarget::AgentPane(PlacementPlan::NewTab)),
+        ),
+    ]);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            run_result(
+                &run,
+                "start:1",
+                EffectKind::AgentStart,
+                EffectOutcome::Acknowledged,
+                Some(EffectReceipt::AgentStarted {
+                    identity: identity(),
+                }),
+            ),
+        ),
+        NOW,
+        &test_policy(),
+        (Some(&decision(3)), &journal, &[]),
+        "/fp",
+    );
+    let record = updated_run(&t);
+    assert_eq!(
+        record.operating_point,
+        Some(OperatingPointId("op-1".into())),
+        "the `start:1` key selects candidate 1 — not journal position 0"
+    );
+    assert_eq!(record.provider, Some(Provider("prov-1".into())));
+    assert_eq!(record.tier_start, Some(Tier("t1".into())));
+}
+
+#[test]
+fn f22_starting_ack_with_unparsable_key_selects_no_candidate() {
+    let mut run = run_in(State::Starting);
+    run.operating_point = None;
+    run.provider = None;
+    run.tier_start = None;
+    // the journaled row's key carries no numeric suffix — position is not
+    // a candidate index, so no candidate is selected.
+    let journal = Vec::from([journal_effect_at(
+        &run,
+        "start:late",
+        EffectKind::AgentStart,
+        EffectState::Dispatching,
+        Some(EffectTarget::AgentPane(PlacementPlan::NewTab)),
+    )]);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            run_result(
+                &run,
+                "start:late",
+                EffectKind::AgentStart,
+                EffectOutcome::Acknowledged,
+                Some(EffectReceipt::AgentStarted {
+                    identity: identity(),
+                }),
+            ),
+        ),
+        NOW,
+        &test_policy(),
+        (Some(&decision(2)), &journal, &[]),
+        "/fp",
+    );
+    let record = updated_run(&t);
+    assert_eq!(record.state, State::Prompting);
+    assert_eq!(record.identity, Some(identity()));
+    assert_eq!(
+        record.operating_point, None,
+        "an unparsable `start:` suffix selects no candidate"
+    );
+}

@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 
 use crate::config::Policy;
 use crate::delivery::{ExpiryReason, MailboxEventKind};
-use crate::recovery::{Cooldown, RecoveryObligation, RecoveryOrigin, RecoveryStatus};
+use crate::recovery::{Cooldown, RecoveryObligation, RecoveryOrigin, RecoveryStatus, json_str};
 
 use super::{
     Run, Settlement, State, StateChange, Timestamp, Transition, deadline_after, edited,
@@ -96,7 +96,7 @@ pub fn settle(run: &Run, settlement: Settlement, now: Timestamp, policy: &Policy
                     run,
                     MailboxEventKind::CooldownHit,
                     "cooldown_hit",
-                    format!("{{\"provider\":\"{}\"}}", provider.0),
+                    format!("{{\"provider\":{}}}", json_str(&provider.0)),
                 ));
             }
             events.push(mailbox_event(

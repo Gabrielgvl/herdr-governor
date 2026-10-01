@@ -25,13 +25,16 @@ pub(super) fn on_judgment(
             JudgmentVerdict::Accept => settle(run, Settlement::Accepted, now, policy),
             JudgmentVerdict::Reject => {
                 // repair_deadline arms on the first rejection of a work
-                // generation and is never extended (F24).
+                // generation and is never extended (F24); rejected_at
+                // persists that first rejection's time — never derived
+                // from the deadline, a policy reload would shift it.
                 let deadline = run
                     .repair_deadline
                     .unwrap_or_else(|| deadline_after(now, policy.repair_window));
                 let record = edited(run, |next| {
                     next.state = State::Repair;
                     next.repair_deadline = Some(deadline);
+                    next.rejected_at = next.rejected_at.or(Some(now));
                     next.idle_since = None;
                     next.idle_deadline = None;
                 });

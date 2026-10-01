@@ -82,7 +82,9 @@ pub(super) fn run_in(state: State) -> Run {
         idle_since: None,
         idle_deadline: None,
         repair_deadline: None,
+        rejected_at: None,
         judgment_deadline: None,
+        judging_digest: None,
         max_age_deadline: Timestamp(1_000),
         nudge_episode: 0,
         nudged_episode: None,
@@ -145,6 +147,7 @@ pub(super) fn journal_effect_at(
         state,
         certainty: None,
         receipt: None,
+        dispatched_at: None,
     }
 }
 
@@ -155,6 +158,19 @@ pub(super) fn journal_effect(
     state: EffectState,
 ) -> Effect {
     journal_effect_at(run, suffix, kind, state, None)
+}
+
+/// A `dispatching` outbox prompt row committed at `at` — its
+/// `dispatched_at` is the F24 repair-window evidence.
+pub(super) fn dispatched_outbox(run: &Run, seq: u64, at: Timestamp) -> Effect {
+    let mut row = journal_effect(
+        run,
+        &format!("outbox:{seq}"),
+        EffectKind::Prompt,
+        EffectState::Dispatching,
+    );
+    row.dispatched_at = Some(at);
+    row
 }
 
 pub(super) fn result_event(
@@ -193,6 +209,7 @@ pub(super) fn frozen(run: &Run, work_generation: u64, digest: u8) -> FrozenHando
         digest: Digest([digest; 32]),
         frozen_path: "/state/handoffs/r-1".into(),
         frozen_at: Timestamp(0),
+        assessed: false,
     }
 }
 

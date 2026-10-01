@@ -3,7 +3,9 @@
 //! targets, the `Effect` row itself and the `EffectWrite` a transition
 //! requests.
 
-use crate::identity::{ChildIdentity, Digest, EffectId, EffectKey, LaunchId, PaneId, RunId, TabId};
+use crate::identity::{
+    ChildIdentity, Digest, EffectId, EffectKey, LaunchId, PaneId, RunId, TabId, Timestamp,
+};
 use crate::routing::{JudgmentRecord, PlacementPlan};
 
 /// Appendix B `effects.kind` — every journaled mutation: the Herdr operations
@@ -211,6 +213,11 @@ pub struct Effect {
     pub certainty: Option<EffectCertainty>,
     /// `result_json` — the typed receipt once the result commits.
     pub receipt: Option<EffectReceipt>,
+    /// `dispatched_at` — the dispatch commit's time (Appendix B
+    /// `effects.dispatched_at`), present once the row leaves `planned`;
+    /// F24 reads it as the repair-window evidence, never the result's
+    /// arrival time.
+    pub dispatched_at: Option<Timestamp>,
 }
 
 /// F8 — one journal-row write a transition requests: the effect's state,

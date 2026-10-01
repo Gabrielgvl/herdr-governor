@@ -947,7 +947,9 @@ CREATE TABLE runs (
   idle_since          TEXT,
   idle_deadline       TEXT,
   repair_deadline     TEXT,
+  rejected_at         TEXT,
   judgment_deadline   TEXT,
+  judging_digest      TEXT,                           -- the handoff digest the current acceptance ask assesses
   max_age_deadline    TEXT NOT NULL,
   nudge_episode       INTEGER NOT NULL DEFAULT 0,
   nudged_episode      INTEGER,
@@ -1165,10 +1167,20 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `judging` | `judgment(unavailable)` | stays judging until judgment_deadline |
 | `judging` | `deadline(judgment)` | settle unresolved(judgment_unavailable) |
 | `judging` | `deadline(repair) armed and passed` | settle rejected |
+| `judging` | `deadline(repair) with a qualifying dispatch in flight` | stays judging — the pending dispatch's result decides |
+| `judging` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify |
+| `judging` | `repair follow-up resolved past the deadline without qualifying` | settle rejected once no qualifying dispatch is still in flight |
 | `judging` | `obs(absent)` | stays judging; the frozen handoff is judged |
 | `judging` | `handoff(new digest)` | re-freeze; stays judging |
+| `judging` | `handoff(frozen digest, assessed)` | ignored — a completed assessment is never re-judged (F24) |
+| `judging` | `handoff(frozen digest, ask in flight)` | ignored — its acceptance ask is still in flight (F20) |
+| `judging` | `handoff(frozen digest, unassessed)` | resume judging — the ask in flight names a different digest; a fresh evidence_generation re-asks; no second freeze row |
 | `judging` | `stale judgment` | ignored (F20) |
-| `repair` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active |
-| `repair` | `handoff(digest not yet judged)` | freeze; judging (repair_deadline kept) |
+| `repair` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify |
+| `repair` | `repair follow-up resolved past the deadline without qualifying` | settle rejected once no qualifying dispatch is still in flight |
+| `repair` | `handoff(new digest)` | freeze; judging (repair_deadline kept) |
+| `repair` | `handoff(frozen digest, assessed)` | stays repair — a completed assessment is never re-judged (F24) |
+| `repair` | `handoff(frozen digest, unassessed)` | resume judging — a fresh evidence_generation re-asks; no second freeze row; repair_deadline kept |
 | `repair` | `deadline(repair)` | settle rejected |
+| `repair` | `deadline(repair) with a qualifying dispatch in flight` | stays repair — the pending dispatch's result decides |
 | `repair` | `obs(absent)` | stays repair until the deadline |

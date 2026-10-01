@@ -3,7 +3,6 @@
 //! cooldown and the mailbox events in one `Transition`.
 
 use alloc::format;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::config::{Policy, Provider};
@@ -11,7 +10,7 @@ use crate::delivery::{MailboxEvent, MailboxEventKind, MailboxSubject};
 use crate::identity::{DedupKey, EventId, RunId, Timestamp};
 use crate::lifecycle::{StateChange, Transition};
 
-use super::{Cooldown, RecoveryObligation, RecoveryOrigin};
+use super::{Cooldown, RecoveryObligation, RecoveryOrigin, json_str};
 
 /// F21 — the `provider_limited` settlement's recovery share: the unique
 /// `pending` obligation, the provider's merged cooldown, and the
@@ -74,27 +73,4 @@ pub fn provider_limited(
         events,
         effects: Vec::new(),
     }
-}
-
-/// Minimal JSON string escaping for mailbox `body_json` interpolation —
-/// quotes, backslashes and control characters are escaped so a free-form
-/// `Provider` or `RunId` value cannot break the event body.
-fn json_str(value: &str) -> String {
-    let mut out = String::with_capacity(value.len().saturating_add(2));
-    out.push('"');
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if c < '\u{20}' => {
-                let code = u32::from(c);
-                out.push_str("\\u00");
-                out.push(char::from_digit(code >> 4, 16).unwrap_or('0'));
-                out.push(char::from_digit(code & 0xf, 16).unwrap_or('0'));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
 }

@@ -128,21 +128,71 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "judging",
+        "deadline(repair) with a qualifying dispatch in flight",
+        "stays judging — the pending dispatch's result decides",
+    ),
+    (
+        "judging",
+        "repair follow-up dispatched before repair_deadline",
+        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify",
+    ),
+    (
+        "judging",
+        "repair follow-up resolved past the deadline without qualifying",
+        "settle rejected once no qualifying dispatch is still in flight",
+    ),
+    (
+        "judging",
         "obs(absent)",
         "stays judging; the frozen handoff is judged",
     ),
     ("judging", "handoff(new digest)", "re-freeze; stays judging"),
+    (
+        "judging",
+        "handoff(frozen digest, assessed)",
+        "ignored — a completed assessment is never re-judged (F24)",
+    ),
+    (
+        "judging",
+        "handoff(frozen digest, ask in flight)",
+        "ignored — its acceptance ask is still in flight (F20)",
+    ),
+    (
+        "judging",
+        "handoff(frozen digest, unassessed)",
+        "resume judging — the ask in flight names a different digest; a fresh evidence_generation re-asks; no second freeze row",
+    ),
     ("judging", "stale judgment", "ignored (F20)"),
     (
         "repair",
         "repair follow-up dispatched before repair_deadline",
-        "work_generation+1; active",
+        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify",
     ),
     (
         "repair",
-        "handoff(digest not yet judged)",
+        "repair follow-up resolved past the deadline without qualifying",
+        "settle rejected once no qualifying dispatch is still in flight",
+    ),
+    (
+        "repair",
+        "handoff(new digest)",
         "freeze; judging (repair_deadline kept)",
     ),
+    (
+        "repair",
+        "handoff(frozen digest, assessed)",
+        "stays repair — a completed assessment is never re-judged (F24)",
+    ),
+    (
+        "repair",
+        "handoff(frozen digest, unassessed)",
+        "resume judging — a fresh evidence_generation re-asks; no second freeze row; repair_deadline kept",
+    ),
     ("repair", "deadline(repair)", "settle rejected"),
+    (
+        "repair",
+        "deadline(repair) with a qualifying dispatch in flight",
+        "stays repair — the pending dispatch's result decides",
+    ),
     ("repair", "obs(absent)", "stays repair until the deadline"),
 ];

@@ -61,6 +61,9 @@ fn on_absent(
         State::Active => {
             // F25 — a frozen handoff that has not been judged goes to
             // judgment first; otherwise the marked file is read once.
+            // Unreachable through persisted states: a freeze row at the
+            // current generation is written with the move to `judging`,
+            // and every return to `active` advances `work_generation`.
             if handoffs
                 .0
                 .iter()

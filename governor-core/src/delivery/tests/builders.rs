@@ -66,7 +66,9 @@ pub(super) fn run() -> Run {
         idle_since: None,
         idle_deadline: None,
         repair_deadline: None,
+        rejected_at: None,
         judgment_deadline: None,
+        judging_digest: None,
         max_age_deadline: Timestamp(86_400_000),
         nudge_episode: 0,
         nudged_episode: None,
@@ -121,6 +123,7 @@ pub(super) fn child_prompt_effect(state: EffectState) -> Effect {
         state,
         certainty: None,
         receipt: None,
+        dispatched_at: None,
     }
 }
 

@@ -3,13 +3,16 @@
 //! lanes and the `effect_result` consequences (launch pipeline, prompt,
 //! repair) live one per event family under `transition/`.
 
+use alloc::format;
+
 use crate::acceptance::FrozenHandoff;
 use crate::config::Policy;
 use crate::identity::Timestamp;
 use crate::routing::Decision;
 
 use super::{
-    Effect, Event, Run, Settlement, Transition, VersionTriple, Versioned, nothing, settle,
+    Effect, EffectKind, Event, Run, Settlement, Transition, VersionTriple, Versioned, nothing,
+    settle,
 };
 
 mod cancel;
@@ -32,6 +35,28 @@ fn triple_of(run: &Run) -> VersionTriple {
         work_generation: run.work_generation,
         evidence_generation: run.evidence_generation,
     }
+}
+
+/// F24 — the journal row proves a repair follow-up (`run:<id>:outbox:<seq>`
+/// `prompt`) was dispatched inside the rejected generation's window,
+/// `rejected_at <= dispatched_at < repair_deadline`: a dispatch before the
+/// rejection or at/after the deadline never qualifies, whatever the
+/// result or its arrival time. Both window ends are persisted on the row —
+/// `rejected_at` is the first rejection's stored time, never derived from
+/// `repair_deadline`, so a policy reload cannot shift it.
+fn repair_dispatch_in_window(run: &Run, effect: &Effect) -> bool {
+    effect.kind == EffectKind::Prompt
+        && effect
+            .key
+            .0
+            .starts_with(&format!("run:{}:outbox:", run.id.0))
+        && run
+            .rejected_at
+            .zip(run.repair_deadline)
+            .zip(effect.dispatched_at)
+            .is_some_and(|((rejected, deadline), dispatched)| {
+                rejected <= dispatched && dispatched < deadline
+            })
 }
 
 /// F22 — the total Appendix C transition function: every `State` against
@@ -76,7 +101,7 @@ pub fn transition(
             on_handoff(run, *digest, (now, policy), (handoffs, freeze_path))
         }
         Event::Judgment(verdict) => on_judgment(run, *verdict, (now, policy)),
-        Event::Deadline(kind) => on_deadline(run, *kind, (now, policy)),
+        Event::Deadline(kind) => on_deadline(run, *kind, (now, policy), journal),
         Event::Cancel { close_pane } => on_cancel(run, *close_pane, (now, policy), journal),
         Event::ProviderLimited => settle(run, Settlement::ProviderLimited, now, policy),
         Event::EffectResult(result) => {

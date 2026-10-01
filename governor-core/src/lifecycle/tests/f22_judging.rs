@@ -45,6 +45,11 @@ pub(super) fn f22_judging_reject_enters_repair_and_arms_deadline_once() {
         "the repair window arms on the first rejection"
     );
     assert_eq!(
+        record.rejected_at,
+        Some(NOW),
+        "the first rejection's time is persisted — never derived from the deadline"
+    );
+    assert_eq!(
         event_kinds(&t),
         Vec::from([MailboxEventKind::HandoffRejected])
     );
@@ -70,6 +75,11 @@ pub(super) fn f22_judging_reject_enters_repair_and_arms_deadline_once() {
         updated_run(&t_again).repair_deadline,
         Some(Timestamp(600)),
         "an armed repair_deadline is preserved, never reset"
+    );
+    assert_eq!(
+        updated_run(&t_again).rejected_at,
+        Some(NOW),
+        "a generation's first rejected_at persists until the generation advances"
     );
 }
 
@@ -170,8 +180,10 @@ pub(super) fn f22_judging_absent_stays_judging() {
 pub(super) fn f22_judging_new_digest_refreezes_same_digest_is_ignored() {
     let mut run = run_in(State::Judging);
     run.evidence_generation = 1;
-    let handoffs = Vec::from([frozen(&run, 0, 9)]);
-    // a digest already frozen for this generation is never re-judged (F24).
+    let mut judged = frozen(&run, 0, 9);
+    judged.assessed = true;
+    let handoffs = Vec::from([judged]);
+    // a digest whose assessment already completed is never re-judged (F24).
     let t = transition(
         &run,
         &stamped(

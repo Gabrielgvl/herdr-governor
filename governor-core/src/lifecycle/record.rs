@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 
 use crate::config::{OperatingPointId, Provider, Tier};
 use crate::identity::{
-    CallerKey, ChildIdentity, ChildStatus, LaunchId, PaneId, RunId, TabId, Timestamp,
+    CallerKey, ChildIdentity, ChildStatus, Digest, LaunchId, PaneId, RunId, TabId, Timestamp,
 };
 
 use super::{PromptCertainty, Settlement, State};
@@ -72,8 +72,20 @@ pub struct Run {
     /// `repair_deadline` — set on the first rejection in a work generation
     /// and never extended (F24).
     pub repair_deadline: Option<Timestamp>,
+    /// `rejected_at` — that first rejection's time, persisted so the repair
+    /// window's lower bound survives a policy reload (it is never derived
+    /// from `repair_deadline`). Armed together with `repair_deadline` and
+    /// cleared with it when the generation advances (F24, Appendix B
+    /// `runs.rejected_at`).
+    pub rejected_at: Option<Timestamp>,
     /// `judgment_deadline` — the Jev-unavailable bound (F24).
     pub judgment_deadline: Option<Timestamp>,
+    /// `judging_digest` — the handoff digest the current acceptance ask
+    /// assesses (F24, Appendix B `runs.judging_digest`): the ask's key
+    /// (`accept:<work>:<evidence>`) does not name a digest, so the row
+    /// records which frozen handoff it is about. Set on every judging
+    /// entry, cleared when the work generation advances.
+    pub judging_digest: Option<Digest>,
     /// `max_age_deadline` — fixed at reserve, never reset (F22).
     pub max_age_deadline: Timestamp,
     /// `nudge_episode` — the current stall/idle episode (F23).

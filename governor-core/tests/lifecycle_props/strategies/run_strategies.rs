@@ -92,7 +92,9 @@ fn base_run(state: State) -> Run {
         idle_since: None,
         idle_deadline: None,
         repair_deadline: None,
+        rejected_at: None,
         judgment_deadline: None,
+        judging_digest: None,
         max_age_deadline: Timestamp(0),
         nudge_episode: 0,
         nudged_episode: None,
@@ -112,8 +114,9 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
             option::of(arb_timestamp()),
             option::of(arb_timestamp()),
             option::of(arb_timestamp()),
+            option::of(arb_timestamp()),
             arb_timestamp(),
-        ), // idle_since, idle/repair/judgment deadlines, max_age
+        ), // idle_since, idle/repair/judgment deadlines, rejected_at, max_age
         (
             option::of(arb_child_status()),
             option::of(pick(&[
@@ -129,7 +132,14 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
         .prop_map(|(state, version, gens, episodes, times, rest)| {
             let (work_generation, evidence_generation) = gens;
             let (nudge_episode, nudged_episode) = episodes;
-            let (idle_since, idle_deadline, repair_deadline, judgment_deadline, max_age) = times;
+            let (
+                idle_since,
+                idle_deadline,
+                repair_deadline,
+                rejected_at,
+                judgment_deadline,
+                max_age,
+            ) = times;
             let (
                 child_status,
                 gen_certainty,
@@ -162,6 +172,7 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
                 idle_since,
                 idle_deadline,
                 repair_deadline,
+                rejected_at,
                 judgment_deadline,
                 max_age_deadline: max_age,
                 child_status,

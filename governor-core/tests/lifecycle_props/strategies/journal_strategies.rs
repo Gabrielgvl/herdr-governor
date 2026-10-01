@@ -4,32 +4,38 @@
 
 use governor_core::acceptance::FrozenHandoff;
 use governor_core::config::{ConfigVersion, OperatingPointId, Provider, Tier};
-use governor_core::identity::{AgentKind, ChildIdentity, EffectId, LaunchId, PaneId, RunId, TabId};
+use governor_core::identity::{
+    AgentKind, ChildIdentity, EffectId, LaunchId, PaneId, RunId, TabId, Timestamp,
+};
 use governor_core::lifecycle::{
     Effect, EffectCertainty, EffectKind, EffectOutcome, EffectState, EffectTarget,
 };
 use governor_core::routing::{Candidate, Decision, Exploration, Judgment, PlacementPlan};
 use proptest::collection::vec as prop_vec;
-use proptest::prelude::{Just, Strategy};
+use proptest::prelude::{Just, Strategy, any};
 use proptest::sample::subsequence;
 
 use crate::strategies as arb;
 
 /// The F8 journal row states; `failed` carries its required certainty
-/// (Appendix B CHECK).
-fn arb_journal_state() -> impl Strategy<Value = (EffectState, Option<EffectCertainty>)> {
+/// (Appendix B CHECK) and every dispatched row carries `dispatched_at`
+/// (the F24 repair-window evidence) — `planned` never does.
+fn arb_journal_state() -> impl Strategy<Value = JournalBits> {
     proptest::prop_oneof![
-        2 => Just((EffectState::Planned, None)),
-        3 => Just((EffectState::Dispatching, None)),
-        2 => Just((EffectState::Acknowledged, None)),
-        1 => arb::arb_certainty()
-            .prop_map(|certainty| (EffectState::Failed, Some(certainty))),
-        1 => Just((EffectState::Unconfirmed, None)),
+        2 => Just((EffectState::Planned, None, None)),
+        3 => arb::arb_timestamp()
+            .prop_map(|at| (EffectState::Dispatching, None, Some(at))),
+        2 => arb::arb_timestamp()
+            .prop_map(|at| (EffectState::Acknowledged, None, Some(at))),
+        1 => (arb::arb_certainty(), arb::arb_timestamp())
+            .prop_map(|(certainty, at)| (EffectState::Failed, Some(certainty), Some(at))),
+        1 => arb::arb_timestamp()
+            .prop_map(|at| (EffectState::Unconfirmed, None, Some(at))),
     ]
 }
 
 /// The generated bits of a journal row that do not depend on its kind.
-type JournalBits = (EffectState, Option<EffectCertainty>);
+type JournalBits = (EffectState, Option<EffectCertainty>, Option<Timestamp>);
 
 /// The kind-independent pieces an `EffectTarget` is built from: a plan
 /// choice, a tab index, a pane index and a captured identity.
@@ -58,7 +64,7 @@ fn target_of(kind: EffectKind, bits: &TargetBits) -> Option<EffectTarget> {
 }
 
 fn effect_of(suffix: &str, kind: EffectKind, journal: JournalBits, target: &TargetBits) -> Effect {
-    let (state, certainty) = journal;
+    let (state, certainty, dispatched_at) = journal;
     let key = arb::run_key(suffix);
     Effect {
         id: EffectId(format!("eff:{}", key.0)),
@@ -71,6 +77,7 @@ fn effect_of(suffix: &str, kind: EffectKind, journal: JournalBits, target: &Targ
         state,
         certainty,
         receipt: None,
+        dispatched_at,
     }
 }
 
@@ -131,7 +138,9 @@ const SEED_TOPOLOGY_KEYS: &[(&str, EffectKind)] = &[
 /// committed before any `transition` ran.
 pub(crate) fn arb_seed_topology() -> impl Strategy<Value = Vec<Effect>> {
     arb_journal_from(SEED_TOPOLOGY_KEYS, || {
-        Just((EffectState::Dispatching, None)).boxed()
+        arb::arb_timestamp()
+            .prop_map(|at| (EffectState::Dispatching, None, Some(at)))
+            .boxed()
     })
 }
 
@@ -139,15 +148,20 @@ pub(crate) fn arb_seed_topology() -> impl Strategy<Value = Vec<Effect>> {
 /// so generated digests collide with `handoff` events.
 pub(crate) fn arb_handoffs() -> impl Strategy<Value = Vec<FrozenHandoff>> {
     prop_vec(
-        (0_u64..4, arb::arb_digest(), arb::arb_timestamp()).prop_map(|(generation, digest, at)| {
-            FrozenHandoff {
+        (
+            0_u64..4,
+            arb::arb_digest(),
+            arb::arb_timestamp(),
+            any::<bool>(),
+        )
+            .prop_map(|(generation, digest, at, assessed)| FrozenHandoff {
                 run: RunId(arb::text(arb::RUN_ID)),
                 work_generation: generation,
                 digest,
                 frozen_path: arb::text("/state/handoffs/f"),
                 frozen_at: at,
-            }
-        }),
+                assessed,
+            }),
         0..4,
     )
 }

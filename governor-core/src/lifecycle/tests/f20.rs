@@ -105,6 +105,32 @@ pub(super) fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
 }
 
 #[test]
+fn f20_cooldown_hit_body_escapes_the_provider() {
+    // a free-form provider name — quote, backslash, newline — must land in
+    // `body_json` escaped: the event body is JSON, not a template (F21).
+    let mut run = run_in(State::Active);
+    run.provider = Some(Provider("we\"ird\\pro\nvider".into()));
+    let t = transition(
+        &run,
+        &stamped(&run, Event::ProviderLimited),
+        NOW,
+        &test_policy(),
+        EMPTY_READ,
+        "/fp",
+    );
+    let body = t
+        .events
+        .iter()
+        .find(|e| e.kind == MailboxEventKind::CooldownHit)
+        .map(|e| e.body.as_str());
+    assert_eq!(
+        body,
+        Some("{\"provider\":\"we\\\"ird\\\\pro\\u000avider\"}"),
+        "quote, backslash and the control char all escape — the body parses"
+    );
+}
+
+#[test]
 fn f20_provider_limited_without_provider_skips_cooldown() {
     let mut run = run_in(State::Starting);
     run.provider = None;

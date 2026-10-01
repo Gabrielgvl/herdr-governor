@@ -6,10 +6,18 @@
 use crate::config::Policy;
 use crate::identity::Timestamp;
 use crate::lifecycle::{
-    DeadlineKind, Run, Settlement, State, Transition, UnresolvedReason, nothing, settle,
+    DeadlineKind, Effect, EffectState, Run, Settlement, State, Transition, UnresolvedReason,
+    nothing, settle,
 };
 
-pub(super) fn on_deadline(run: &Run, kind: DeadlineKind, env: (Timestamp, &Policy)) -> Transition {
+use super::repair_dispatch_in_window;
+
+pub(super) fn on_deadline(
+    run: &Run,
+    kind: DeadlineKind,
+    env: (Timestamp, &Policy),
+    journal: &[Effect],
+) -> Transition {
     let (now, policy) = env;
     if run.state == State::Settled {
         return nothing();
@@ -38,10 +46,16 @@ pub(super) fn on_deadline(run: &Run, kind: DeadlineKind, env: (Timestamp, &Polic
             }
         }
         // The repair deadline keeps running through `judging` — a re-frozen
-        // handoff does not extend it (F24).
+        // handoff does not extend it (F24). In either state a qualifying
+        // follow-up still `dispatching` holds the settle: its in-window
+        // dispatch already counts, the pending result decides (F24).
         DeadlineKind::Repair => {
+            let in_flight = journal.iter().any(|effect| {
+                effect.state == EffectState::Dispatching && repair_dispatch_in_window(run, effect)
+            });
             if (run.state == State::Repair || run.state == State::Judging)
                 && overdue(run.repair_deadline)
+                && !in_flight
             {
                 settle(run, Settlement::Rejected, now, policy)
             } else {

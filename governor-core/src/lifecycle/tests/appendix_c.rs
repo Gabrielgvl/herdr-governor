@@ -14,7 +14,8 @@ use super::{
         NOW, is_quiet, run_in, settlement_of, stale_stamped, stamped, test_policy, transact,
         updated_run,
     },
-    f20, f22, f22_active, f22_judging, f22_prompting, f22_repair, f22_reserved, f22_starting, f25,
+    f20, f22, f22_active, f22_judging, f22_prompting, f22_repair, f22_reserved, f22_starting, f24,
+    f25,
 };
 
 /// `(state, event)` in the spec's spellings → the named unit test that drives
@@ -234,6 +235,21 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "judging",
+        "deadline(repair) with a qualifying dispatch in flight",
+        f24::f24_judging_repair_deadline_waits_on_a_pending_dispatch,
+    ),
+    (
+        "judging",
+        "repair follow-up dispatched before repair_deadline",
+        f24::f24_judging_repair_followup_in_window_advances_generation,
+    ),
+    (
+        "judging",
+        "repair follow-up resolved past the deadline without qualifying",
+        f24::f24_judging_late_unqualifying_result_settles_rejected,
+    ),
+    (
+        "judging",
         "obs(absent)",
         f22_judging::f22_judging_absent_stays_judging,
     ),
@@ -241,6 +257,21 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "judging",
         "handoff(new digest)",
         f22_judging::f22_judging_new_digest_refreezes_same_digest_is_ignored,
+    ),
+    (
+        "judging",
+        "handoff(frozen digest, assessed)",
+        f22_judging::f22_judging_new_digest_refreezes_same_digest_is_ignored,
+    ),
+    (
+        "judging",
+        "handoff(frozen digest, ask in flight)",
+        f24::f24_repeated_handoff_while_its_ask_is_in_flight_is_ignored,
+    ),
+    (
+        "judging",
+        "handoff(frozen digest, unassessed)",
+        f24::f24_other_unassessed_digest_resumes_judging,
     ),
     // The version guard runs before state dispatch (F20): a stale judgment
     // produces nothing in `judging` because it produces nothing everywhere —
@@ -263,13 +294,33 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "repair",
-        "handoff(digest not yet judged)",
+        "repair follow-up resolved past the deadline without qualifying",
+        f22_repair::f24_repair_absent_result_past_deadline_settles_rejected,
+    ),
+    (
+        "repair",
+        "handoff(new digest)",
         f22_repair::f22_repair_new_handoff_freezes_keeping_deadline,
+    ),
+    (
+        "repair",
+        "handoff(frozen digest, assessed)",
+        f24::f24_assessed_digest_stays_suppressed,
+    ),
+    (
+        "repair",
+        "handoff(frozen digest, unassessed)",
+        f24::f24_rewritten_unassessed_handoff_resumes_judging,
     ),
     (
         "repair",
         "deadline(repair)",
         f22_repair::f22_repair_deadline_settles_rejected,
+    ),
+    (
+        "repair",
+        "deadline(repair) with a qualifying dispatch in flight",
+        f22_repair::f24_repair_deadline_waits_on_a_pending_dispatch,
     ),
     (
         "repair",

@@ -126,6 +126,48 @@ pub(super) fn f22_active_handoff_freezes_and_judges() {
         Vec::from(["run:r-1:accept:0:1"]),
         "the acceptance assessment is planned for the new binding"
     );
+    assert_eq!(
+        record.judging_digest,
+        Some(Digest([9; 32])),
+        "the ask's digest is recorded on the run row"
+    );
+}
+
+#[test]
+pub(super) fn f24_handoff_digest_frozen_in_an_old_generation_refreezes() {
+    // the already-frozen arm of `active` is unreachable through persisted
+    // states — a freeze row at the current work generation is written by
+    // the same transaction that moves the Run to `judging`, and every
+    // return to `active` advances `work_generation`. The reachable case:
+    // a digest frozen only at an older generation re-freezes and re-asks
+    // at the current one (F24 — the binding includes the generation).
+    let mut run = run_in(State::Active);
+    run.work_generation = 1;
+    let handoffs = Vec::from([frozen(&run, 0, 9)]);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            Event::Handoff {
+                digest: Digest([9; 32]),
+            },
+        ),
+        NOW,
+        &test_policy(),
+        (None, &[], &handoffs),
+        "/fp",
+    );
+    let record = updated_run(&t);
+    assert_eq!(record.state, State::Judging);
+    let writes = frozen_writes(&t);
+    assert_eq!(
+        writes.len(),
+        1,
+        "the same digest re-freezes at the new generation"
+    );
+    assert_eq!(writes[0].work_generation, 1);
+    assert_eq!(record.judging_digest, Some(Digest([9; 32])));
+    assert_eq!(effect_keys(&t), Vec::from(["run:r-1:accept:1:1"]));
 }
 
 #[test]

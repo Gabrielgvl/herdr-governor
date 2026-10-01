@@ -274,5 +274,6 @@ pub fn hint_effect(
         state: EffectState::Planned,
         certainty: None,
         receipt: None,
+        dispatched_at: None,
     }
 }
