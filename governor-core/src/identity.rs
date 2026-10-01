@@ -4,6 +4,7 @@
 //! newtype here so call sites cannot swap one kind of id for another.
 
 use alloc::string::String;
+use core::time::Duration;
 
 mod caller;
 mod child;
@@ -28,6 +29,18 @@ pub struct Digest(pub [u8; 32]);
 /// clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(pub i64);
+
+impl Timestamp {
+    /// The absolute deadline `window` after `self` (F22 — deadlines are
+    /// stored absolute and never reset). Saturating: a pathological window
+    /// pins to `i64::MAX` — "effectively never" — rather than wrapping into
+    /// the past.
+    #[must_use]
+    pub(crate) fn after(self, window: Duration) -> Self {
+        let millis = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
+        Self(self.0.saturating_add(millis))
+    }
+}
 
 /// Appendix B `runs.run_id` — one Run of a Launch's Task (uuid v7 text).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

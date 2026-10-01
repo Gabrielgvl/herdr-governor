@@ -1,6 +1,8 @@
 //! F3 — the observation classes: how a target-local read of a fresh
 //! snapshot resolves a captured child identity.
 
+use alloc::collections::BTreeSet;
+
 use super::{AgentRow, ChildIdentity, HerdrIncarnation, NativeSession, PaneId};
 
 /// F3 — the observation classes: how a target-local read of a fresh snapshot
@@ -158,8 +160,8 @@ pub fn classify(
 
 /// F3 — a snapshot that lists the same pane locator twice is malformed:
 /// locators are unique keys, so a duplicate is `invalid`, never a match.
+/// One pass — the set reports the first re-inserted locator.
 fn has_duplicate_locator(agents: &[AgentRow]) -> bool {
-    agents
-        .iter()
-        .any(|row| agents.iter().filter(|other| other.0 == row.0).count() > 1)
+    let mut locators = BTreeSet::new();
+    agents.iter().any(|row| !locators.insert(&row.0))
 }

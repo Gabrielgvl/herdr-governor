@@ -15,7 +15,7 @@ use super::{
         updated_run,
     },
     f20, f21, f22, f22_active, f22_judging, f22_launch_plan, f22_prompting, f22_repair,
-    f22_reserved, f22_starting, f23_review, f24, f25,
+    f22_reserved, f22_starting, f23_blocked, f23_review, f24, f24_repair_window, f25,
 };
 
 /// `(state, event)` in the spec's spellings → the named unit test that drives
@@ -87,6 +87,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "unsettled",
         "evidence(new digest)",
         f24::f24_evidence_in_judging_replans_the_acceptance_ask,
+    ),
+    (
+        "unsettled",
+        "no_recent_progress answered on a blocked child",
+        f23_blocked::f23_no_recent_progress_on_a_blocked_child_never_nudges,
     ),
     (
         "reserved",
@@ -245,6 +250,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "judging",
+        "judgment while a qualifying repair dispatch is in flight",
+        f24_repair_window::f24_judgment_defers_while_a_qualifying_dispatch_is_in_flight,
+    ),
+    (
+        "judging",
         "deadline(judgment)",
         f22_judging::f22_judging_deadlines,
     ),
@@ -270,8 +280,18 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "judging",
+        "repair follow-up dispatched before repair_deadline",
+        f24_repair_window::f24_qualifying_dispatch_resolution_stales_the_deferred_verdict,
+    ),
+    (
+        "judging",
         "repair follow-up resolved past the deadline without qualifying",
         f24::f24_judging_late_unqualifying_result_settles_rejected,
+    ),
+    (
+        "judging",
+        "repair follow-up resolved provably-absent inside the window",
+        f24_repair_window::f24_failed_absent_dispatch_replans_the_acceptance_ask,
     ),
     (
         "judging",

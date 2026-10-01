@@ -10,7 +10,6 @@ use crate::identity::{
 use crate::lifecycle::{Run, Settlement};
 use crate::task::{Refusal, Task};
 
-use super::obligation::after;
 use super::{RecoveryObligation, RecoveryOrigin, RecoveryStatus};
 
 /// F21 — the successor Launch's idempotency key is
@@ -138,7 +137,7 @@ pub fn caller_admission(
             status: RecoveryStatus::Dispatched,
             reason: None,
             successor_launch: Some(successor.clone()),
-            expires_at: after(now, policy.recovery_expiry),
+            expires_at: now.after(policy.recovery_expiry),
         },
     })
 }

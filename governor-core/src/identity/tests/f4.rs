@@ -148,3 +148,67 @@ fn f4_child_without_session_cannot_be_self_named() {
         "F4 — a sessionless child has no caller key to collide with"
     );
 }
+
+#[test]
+fn f4_sessionless_child_cannot_be_handed_to_itself() {
+    // The persisted identity has not captured a session yet, but the fresh
+    // snapshot already reports one for the child — the self-ownership check
+    // resolves the child from the snapshot, so handing the Run to the
+    // child's own pane is CALLER_IS_RUN all the same (H#24).
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", None)), None);
+    let agents = Vec::from([
+        occupied(
+            "w6:p9",
+            "term-1",
+            "kind-1",
+            "gov-deadbeef",
+            Some("sess-child"),
+            None,
+        ),
+        occupied("w6:p7", "t7", "kind-b", "successor", Some("sess-b"), None),
+    ]);
+    assert_eq!(
+        plan_handover(&run, &owner, &PaneId("w6:p9".into()), &agents),
+        Err(Refusal::CallerIsRun),
+        "F4/H#24 — the snapshot's session report names the successor the Run's child"
+    );
+    // an unrelated successor is still allowed.
+    assert_eq!(
+        plan_handover(&run, &owner, &PaneId("w6:p7".into()), &agents),
+        Ok(owner_change(&run, key("kind-b", "sess-b"))),
+        "F4 — an unrelated successor is never the child"
+    );
+}
+
+#[test]
+fn f4_sessionless_child_cannot_adopt_itself() {
+    // Same gap through `adopt`: the owner's session is gone from the
+    // snapshot (no ADOPT_OWNER_LIVE), the child's row reports the session
+    // the capture never persisted — adopting as that key is still
+    // CALLER_IS_RUN.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", None)), None);
+    let agents = Vec::from([
+        occupied(
+            "w6:p9",
+            "term-1",
+            "kind-1",
+            "gov-deadbeef",
+            Some("sess-child"),
+            None,
+        ),
+        occupied("w6:p7", "t7", "kind-b", "successor", Some("sess-b"), None),
+    ]);
+    assert_eq!(
+        plan_adoption(&run, &key("kind-1", "sess-child"), &agents, false, false),
+        Err(Refusal::CallerIsRun),
+        "F4/H#24 — the Run's child cannot adopt it, session captured or not"
+    );
+    // an unrelated adopter is still allowed.
+    assert_eq!(
+        plan_adoption(&run, &key("kind-b", "sess-b"), &agents, false, false),
+        Ok(owner_change(&run, key("kind-b", "sess-b"))),
+        "F4 — an unrelated adopter is never the child"
+    );
+}

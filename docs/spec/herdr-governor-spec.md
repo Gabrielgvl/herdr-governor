@@ -1153,6 +1153,7 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `unsettled` | `provider_limited` | settle provider_limited (F21) |
 | `*` | `evidence(unchanged digest)` | ignored — the same digest re-keys nothing (F23) |
 | `unsettled` | `evidence(new digest)` | recorded; evidence_generation+1 — in judging the pending acceptance ask is re-planned for judging_digest, no second freeze row; unanswered reviews re-ask (F23) |
+| `unsettled` | `no_recent_progress answered on a blocked child` | no nudge — a blocked child is never prompted (F17); the episode's nudge stays unspent |
 | `reserved` | `obs(absent)` | settle unresolved(launch_not_started) |
 | `reserved` | `topology effect planned` | starting (the launch plan write moves it) |
 | `reserved` | `launch abstains or fails before any effect` | unresolved(launch_not_started) via settle; the Launch reports its outcome |
@@ -1172,11 +1173,13 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `judging` | `judgment(accept)` | settle accepted |
 | `judging` | `judgment(reject)` | repair; repair_deadline armed once per work generation |
 | `judging` | `judgment(unavailable)` | stays judging until judgment_deadline |
+| `judging` | `judgment while a qualifying repair dispatch is in flight` | deferred — produces nothing; the pending dispatch's result decides (F24) |
 | `judging` | `deadline(judgment)` | settle unresolved(judgment_unavailable) |
 | `judging` | `deadline(repair) armed and passed` | settle rejected |
 | `judging` | `deadline(repair) with a qualifying dispatch in flight` | stays judging — the pending dispatch's result decides |
 | `judging` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify; a fresh nudge episode opens (F25) |
 | `judging` | `repair follow-up resolved past the deadline without qualifying` | settle rejected once no qualifying dispatch is still in flight |
+| `judging` | `repair follow-up resolved provably-absent inside the window` | re-plan the acceptance ask for judging_digest — a deferred verdict cannot strand (F24) |
 | `judging` | `obs(absent)` | stays judging; the frozen handoff is judged |
 | `judging` | `obs(blocked)` | ask blocked_on_input and provider_limited — once per blocked episode (F21) |
 | `judging` | `handoff(new digest)` | re-freeze; stays judging |

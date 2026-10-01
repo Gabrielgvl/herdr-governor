@@ -13,8 +13,8 @@ use crate::routing::{Judgment, JudgmentOutcome, JudgmentRecord, Question, noul_y
 
 use super::{
     Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectTarget, Run,
-    Settlement, State, Timestamp, Transition, deadline_after, effect_key, mailbox_event, nothing,
-    planned_effect, settle, update_if_changed, write_run,
+    Settlement, State, Timestamp, Transition, effect_key, mailbox_event, nothing, planned_effect,
+    settle, update_if_changed, write_run,
 };
 
 /// The fields a `unique` observation refreshes: the last seen status, the
@@ -193,7 +193,7 @@ fn idle_observed(
     observe_fields(&mut record, status, pane, native_session);
     if record.idle_since.is_none() {
         record.idle_since = Some(now);
-        record.idle_deadline = Some(deadline_after(now, policy.idle_window));
+        record.idle_deadline = Some(now.after(policy.idle_window));
     }
     let mut effects = Vec::new();
     if record.nudged_episode != Some(record.nudge_episode)
@@ -324,6 +324,10 @@ fn apply_review(run: &Run, record: &JudgmentRecord, now: Timestamp, policy: &Pol
                             &format!("stalled:{}", run.nudge_episode),
                             String::from("{\"stalled\":true}"),
                         ));
+                    } else if next.child_status == Some(ChildStatus::Blocked) {
+                        // F17 — a blocked child is never prompted (the F9
+                        // eligibility rule): the episode's one nudge stays
+                        // unspent, so an unblocked stall still nudges.
                     } else if let Some(identity) = next.identity.clone() {
                         effects.push(planned_effect(
                             run,

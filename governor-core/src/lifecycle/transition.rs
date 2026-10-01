@@ -11,8 +11,8 @@ use crate::identity::Timestamp;
 use crate::routing::Decision;
 
 use super::{
-    Effect, EffectKind, Event, Run, Settlement, Transition, VersionTriple, Versioned, nothing,
-    settle,
+    Effect, EffectKind, EffectState, Event, Run, Settlement, Transition, VersionTriple, Versioned,
+    nothing, settle,
 };
 
 mod cancel;
@@ -59,6 +59,15 @@ fn repair_dispatch_in_window(run: &Run, effect: &Effect) -> bool {
             .is_some_and(|((rejected, deadline), dispatched)| {
                 rejected <= dispatched && dispatched < deadline
             })
+}
+
+/// F24 — a qualifying repair dispatch still in flight: in-window and
+/// `dispatching`. While one exists its pending result decides the window —
+/// it holds the `rejected` settle (the deadline lane), defers every
+/// `judgment` verdict (the judgment lane), and gates the deferred ask's
+/// re-plan (`repair_result`).
+fn repair_dispatch_pending(run: &Run, effect: &Effect) -> bool {
+    effect.state == EffectState::Dispatching && repair_dispatch_in_window(run, effect)
 }
 
 /// F22 — the total Appendix C transition function: every `State` against
@@ -117,7 +126,7 @@ pub fn transition(
         Event::Handoff { digest } => {
             on_handoff(run, *digest, (now, policy), (handoffs, freeze_path))
         }
-        Event::Judgment(verdict) => on_judgment(run, *verdict, (now, policy)),
+        Event::Judgment(verdict) => on_judgment(run, *verdict, (now, policy), journal),
         Event::Deadline(kind) => on_deadline(run, *kind, (now, policy), journal),
         Event::Cancel { close_pane } => on_cancel(run, *close_pane, (now, policy), journal),
         Event::ProviderLimited => settle(run, Settlement::ProviderLimited, now, policy),

@@ -6,12 +6,12 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::acceptance::FrozenHandoff;
+use crate::acceptance::{FrozenHandoff, judgment_deadline};
 use crate::config::Policy;
 use crate::identity::{Digest, Timestamp};
 use crate::lifecycle::{
-    Effect, EffectKind, Run, State, StateChange, Transition, deadline_after, edited, effect_key,
-    nothing, planned_effect, update_if_changed, write_run,
+    Effect, EffectKind, Run, State, StateChange, Transition, edited, effect_key, nothing,
+    planned_effect, update_if_changed, write_run,
 };
 
 pub(super) fn on_handoff(
@@ -80,9 +80,11 @@ pub(super) fn enter_judging(run: &Run, env: (Timestamp, &Policy)) -> Transition 
     let (now, policy) = env;
     update_if_changed(run, |next| {
         next.state = State::Judging;
-        if next.judgment_deadline.is_none() {
-            next.judgment_deadline = Some(deadline_after(now, policy.judgment_window));
-        }
+        next.judgment_deadline = Some(judgment_deadline(
+            next.judgment_deadline,
+            now,
+            policy.judgment_window,
+        ));
     })
 }
 
@@ -140,9 +142,11 @@ pub(super) fn judging_write(run: &Run, digest: Digest, env: (Timestamp, &Policy)
         next.state = State::Judging;
         next.evidence_generation = generation;
         next.judging_digest = Some(digest);
-        if next.judgment_deadline.is_none() {
-            next.judgment_deadline = Some(deadline_after(now, policy.judgment_window));
-        }
+        next.judgment_deadline = Some(judgment_deadline(
+            next.judgment_deadline,
+            now,
+            policy.judgment_window,
+        ));
         next.idle_since = None;
         next.idle_deadline = None;
     });

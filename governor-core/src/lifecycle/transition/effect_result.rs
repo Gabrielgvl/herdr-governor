@@ -18,7 +18,8 @@ use crate::lifecycle::{
 };
 use crate::routing::{Decision, JudgmentOutcome, PlacementPlan};
 
-use super::repair_dispatch_in_window;
+use super::handoff::judging_write;
+use super::{repair_dispatch_in_window, repair_dispatch_pending};
 
 /// F8 — how a resolution journals.
 fn journal_state(outcome: EffectOutcome) -> EffectState {
@@ -336,7 +337,9 @@ fn outbox_key(run: &Run, key: &EffectKey) -> bool {
 /// non-qualifying outbox result arriving past the deadline, with no
 /// in-window dispatch still pending, settles `rejected` in the same
 /// transition — the case where the deadline fired while that dispatch was
-/// in flight. Anything else is supervision.
+/// in flight. Inside the window the provably-absent resolution instead
+/// re-plans the acceptance ask a deferred verdict was waiting on. Anything
+/// else is supervision.
 fn repair_result(
     run: &Run,
     result: &EffectResult,
@@ -345,10 +348,11 @@ fn repair_result(
 ) -> Transition {
     let (now, policy) = env;
     if result.kind == EffectKind::Prompt && outbox_key(run, &result.key) {
-        let row = journal.iter().find(|e| e.key == result.key);
-        if row.is_some_and(|e| repair_dispatch_in_window(run, e))
-            && result_certainty(result.outcome) != Some(EffectCertainty::Absent)
-        {
+        let in_window = journal
+            .iter()
+            .find(|e| e.key == result.key)
+            .is_some_and(|e| repair_dispatch_in_window(run, e));
+        if in_window && result_certainty(result.outcome) != Some(EffectCertainty::Absent) {
             let record = edited(run, |next| {
                 next.state = State::Active;
                 next.work_generation = next.work_generation.saturating_add(1);
@@ -369,14 +373,29 @@ fn repair_result(
                 effects: Vec::new(),
             };
         }
-        if run.repair_deadline.is_some_and(|deadline| now >= deadline)
-            && !journal.iter().any(|effect| {
-                effect.key != result.key
-                    && effect.state == EffectState::Dispatching
-                    && repair_dispatch_in_window(run, effect)
-            })
-        {
+        let other_pending = journal
+            .iter()
+            .any(|effect| effect.key != result.key && repair_dispatch_pending(run, effect));
+        if run.repair_deadline.is_some_and(|deadline| now >= deadline) && !other_pending {
             return settle(run, Settlement::Rejected, now, policy);
+        }
+        // F24 — a provably-absent resolution of the in-window dispatch lifts
+        // the deferral a verdict waited on: while the Run still judges, the
+        // acceptance ask is re-planned for the digest under judgment (the
+        // resume-judging write — the freeze row stands, a fresh
+        // evidence_generation re-asks) so the deferred verdict cannot
+        // strand. Another pending dispatch keeps deferring instead.
+        if run.state == State::Judging
+            && in_window
+            && !other_pending
+            && let Some(digest) = run.judging_digest
+        {
+            let (record, ask) = judging_write(run, digest, env);
+            return Transition {
+                state_changes: Vec::from([write_run(run, record)]),
+                events: Vec::new(),
+                effects: Vec::from([ask]),
+            };
         }
     }
     review_result(run, result, now, policy)

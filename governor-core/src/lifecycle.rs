@@ -7,7 +7,6 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::time::Duration;
 
 use crate::delivery::{MailboxEvent, MailboxEventKind, MailboxSubject};
 use crate::identity::{DedupKey, EffectId, EffectKey, EventId, Timestamp};
@@ -36,14 +35,6 @@ pub use settle::settle;
 pub use state::{DeadlineKind, PromptCertainty, Settlement, State, UnresolvedReason};
 pub use supervision::periodic_review;
 pub use transition::transition;
-
-/// An absolute deadline `window` after `at` (F22 — deadlines are stored
-/// absolute and never reset). Saturating: a pathological window means
-/// "effectively never" rather than wrapping into the past.
-fn deadline_after(at: Timestamp, window: Duration) -> Timestamp {
-    let millis = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
-    Timestamp(at.0.saturating_add(millis))
-}
 
 /// The empty transition — losing transitions and no-op events commit nothing
 /// (F20).

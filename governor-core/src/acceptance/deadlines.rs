@@ -16,7 +16,7 @@ pub fn judgment_deadline(
     frozen_at: Timestamp,
     window: Duration,
 ) -> Timestamp {
-    existing.unwrap_or_else(|| deadline_after(frozen_at, window))
+    existing.unwrap_or_else(|| frozen_at.after(window))
 }
 
 /// F24 — `repair_deadline`: `window` after the work generation's first
@@ -30,7 +30,7 @@ pub fn repair_deadline(
     rejected_at: Timestamp,
     window: Duration,
 ) -> Timestamp {
-    existing.unwrap_or_else(|| deadline_after(rejected_at, window))
+    existing.unwrap_or_else(|| rejected_at.after(window))
 }
 
 /// F24 — the judgment deadline passed with the assessment still unanswered:
@@ -54,12 +54,4 @@ pub fn repair_overdue(now: Timestamp, deadline: Option<Timestamp>) -> Option<Set
         Some(at) => (now >= at).then_some(Settlement::Rejected),
         None => None,
     }
-}
-
-/// An absolute deadline `window` after `at` (F22: deadlines are absolute
-/// times) — saturating, so a pathological window means "effectively never"
-/// rather than wrapping into the past.
-fn deadline_after(at: Timestamp, window: Duration) -> Timestamp {
-    let millis = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
-    Timestamp(at.0.saturating_add(millis))
 }

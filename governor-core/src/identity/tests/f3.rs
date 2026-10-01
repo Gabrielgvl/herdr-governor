@@ -320,57 +320,6 @@ fn f3_ambiguous_incarnation_is_invalid() {
 }
 
 #[test]
-fn f3_duplicate_locator_is_invalid() {
-    let identity = child("w6:p9", Some("sess-1"));
-    let inc = HerdrIncarnation("inc-1".into());
-    let agents = Vec::from([
-        occupied(
-            "w6:p9",
-            "term-1",
-            "kind-1",
-            "gov-deadbeef",
-            Some("sess-1"),
-            None,
-        ),
-        occupied("w6:p9", "term-7", "kind-7", "other", Some("sess-7"), None),
-    ]);
-    assert_eq!(
-        classify(&identity, Some(&inc), &agents),
-        Observation::Invalid,
-        "F3 — a snapshot listing one locator twice is malformed"
-    );
-}
-
-#[test]
-fn f3_duplicate_identity_match_is_invalid() {
-    let identity = child("w6:p9", Some("sess-1"));
-    let inc = HerdrIncarnation("inc-1".into());
-    let agents = Vec::from([
-        occupied(
-            "w6:p2",
-            "term-1",
-            "kind-1",
-            "gov-deadbeef",
-            Some("sess-1"),
-            None,
-        ),
-        occupied(
-            "w6:p5",
-            "term-1",
-            "kind-1",
-            "gov-deadbeef",
-            Some("sess-1"),
-            None,
-        ),
-    ]);
-    assert_eq!(
-        classify(&identity, Some(&inc), &agents),
-        Observation::Invalid,
-        "F3 — two panes matching one identity is ambiguous, never unique"
-    );
-}
-
-#[test]
 fn f3_foreign_incarnation_reproves_by_native_session() {
     // F28/A4 — after a discontinuity the unique session re-proves
     // identity; the bare ids are untrusted.

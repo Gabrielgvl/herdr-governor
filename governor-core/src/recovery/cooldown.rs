@@ -8,8 +8,6 @@ use crate::config::Provider;
 use crate::identity::{RunId, Timestamp};
 use crate::lifecycle::Settlement;
 
-use super::obligation::after;
-
 /// F21/Appendix B `cooldowns` — one provider's exclusion period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cooldown {
@@ -36,7 +34,7 @@ impl Cooldown {
     ) -> Self {
         Self {
             provider,
-            until: after(now, duration),
+            until: now.after(duration),
             reason: Settlement::ProviderLimited.as_str().into(),
             source_run: Some(source_run),
         }

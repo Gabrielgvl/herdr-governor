@@ -7,4 +7,5 @@ mod f1;
 mod f19;
 mod f2;
 mod f3;
+mod f3_duplicates;
 mod f4;

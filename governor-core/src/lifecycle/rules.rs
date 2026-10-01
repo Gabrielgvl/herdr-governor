@@ -48,6 +48,11 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "recorded; evidence_generation+1 — in judging the pending acceptance ask is re-planned for judging_digest, no second freeze row; unanswered reviews re-ask (F23)",
     ),
     (
+        "unsettled",
+        "no_recent_progress answered on a blocked child",
+        "no nudge — a blocked child is never prompted (F17); the episode's nudge stays unspent",
+    ),
+    (
         "reserved",
         "obs(absent)",
         "settle unresolved(launch_not_started)",
@@ -128,6 +133,11 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "judging",
+        "judgment while a qualifying repair dispatch is in flight",
+        "deferred — produces nothing; the pending dispatch's result decides (F24)",
+    ),
+    (
+        "judging",
         "deadline(judgment)",
         "settle unresolved(judgment_unavailable)",
     ),
@@ -150,6 +160,11 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "judging",
         "repair follow-up resolved past the deadline without qualifying",
         "settle rejected once no qualifying dispatch is still in flight",
+    ),
+    (
+        "judging",
+        "repair follow-up resolved provably-absent inside the window",
+        "re-plan the acceptance ask for judging_digest — a deferred verdict cannot strand (F24)",
     ),
     (
         "judging",

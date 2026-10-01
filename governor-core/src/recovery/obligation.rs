@@ -9,15 +9,6 @@ use core::time::Duration;
 use crate::identity::{LaunchId, RunId, Timestamp};
 use crate::task::AbstainReason;
 
-/// F21 — `now + duration`, saturating: an expiry computed past the
-/// representable range pins to `i64::MAX` rather than wrapping — the
-/// function stays total. Shared by the obligation, cooldown and caller
-/// admission expiry stamps.
-pub(super) fn after(now: Timestamp, duration: Duration) -> Timestamp {
-    let millis = i64::try_from(duration.as_millis()).unwrap_or(i64::MAX);
-    Timestamp(now.0.saturating_add(millis))
-}
-
 /// F21/Appendix B `recoveries.origin` — where the obligation came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RecoveryOrigin {
@@ -103,7 +94,7 @@ impl RecoveryObligation {
             status: RecoveryStatus::Pending,
             reason: None,
             successor_launch: None,
-            expires_at: after(now, expiry),
+            expires_at: now.after(expiry),
         }
     }
 
