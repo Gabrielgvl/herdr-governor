@@ -78,6 +78,7 @@ pub(super) fn run_in(state: State) -> Run {
         base_commit: None,
         work_generation: 0,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -88,6 +89,7 @@ pub(super) fn run_in(state: State) -> Run {
         max_age_deadline: Timestamp(1_000),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement: None,
         settled_at: None,
     }

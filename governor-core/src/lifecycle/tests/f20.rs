@@ -107,7 +107,8 @@ pub(super) fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
 #[test]
 fn f20_cooldown_hit_body_escapes_the_provider() {
     // a free-form provider name — quote, backslash, newline — must land in
-    // `body_json` escaped: the event body is JSON, not a template (F21).
+    // `body_json` escaped: the event body is JSON, not a template (F21),
+    // and it carries the effective `until` (F18).
     let mut run = run_in(State::Active);
     run.provider = Some(Provider("we\"ird\\pro\nvider".into()));
     let t = transition(
@@ -125,7 +126,7 @@ fn f20_cooldown_hit_body_escapes_the_provider() {
         .map(|e| e.body.as_str());
     assert_eq!(
         body,
-        Some("{\"provider\":\"we\\\"ird\\\\pro\\u000avider\"}"),
+        Some("{\"provider\":\"we\\\"ird\\\\pro\\u000avider\",\"until\":3600500}"),
         "quote, backslash and the control char all escape — the body parses"
     );
 }
@@ -171,14 +172,17 @@ fn f20_accepted_and_rejected_emit_their_events() {
 #[test]
 pub(super) fn f20_stamped_events_drop_when_versions_moved() {
     let run = run_in(State::Active);
+    // F20 — observations, handoffs, deadlines and evidence reads carry the
+    // full triple: any field that moved drops the result.
     let events = Vec::from([
         obs_unique(Some(ChildStatus::Working)),
         Event::Handoff {
             digest: Digest([7; 32]),
         },
-        Event::Judgment(JudgmentVerdict::Accept),
         Event::Deadline(DeadlineKind::Idle),
-        Event::ProviderLimited,
+        Event::Evidence {
+            digest: Digest([3; 32]),
+        },
     ]);
     for event in events {
         let t = transition(
@@ -206,6 +210,76 @@ pub(super) fn f20_stamped_events_drop_when_versions_moved() {
         "/fp",
     );
     assert!(is_quiet(&t), "a stale work_generation must produce nothing");
+}
+
+#[test]
+pub(super) fn f20_jev_results_stale_only_on_generations() {
+    // F20 — Jev results (`judgment`, `provider_limited`, and `JevEvaluate`
+    // receipts) are stale only when `work_generation` or
+    // `evidence_generation` moved; `version` is the write's
+    // compare-and-swap guard, never a staleness test for them.
+    let mut run = run_in(State::Judging);
+    run.evidence_generation = 1;
+    run.judgment_deadline = Some(Timestamp(1_800_500));
+    // the ask's stamp with only `version` moved still applies: accept lands.
+    let mut stamp = triple(&run);
+    stamp.version = stamp.version.saturating_add(3);
+    let t = transition(
+        &run,
+        &Versioned {
+            requested_against: stamp,
+            value: Event::Judgment(JudgmentVerdict::Accept),
+        },
+        NOW,
+        &test_policy(),
+        EMPTY_READ,
+        "/fp",
+    );
+    assert_eq!(
+        settlement_of(updated_run(&t)),
+        Some(Settlement::Accepted),
+        "a version-only mismatch is not staleness for a Jev result"
+    );
+    // a generation moved → stale → nothing.
+    for event in [
+        Event::Judgment(JudgmentVerdict::Accept),
+        Event::ProviderLimited,
+    ] {
+        let mut stale = triple(&run);
+        stale.evidence_generation = stale.evidence_generation.saturating_add(1);
+        let t_stale = transition(
+            &run,
+            &Versioned {
+                requested_against: stale,
+                value: event.clone(),
+            },
+            NOW,
+            &test_policy(),
+            EMPTY_READ,
+            "/fp",
+        );
+        assert!(
+            is_quiet(&t_stale),
+            "a moved evidence_generation drops the Jev result"
+        );
+        let mut stale_work = triple(&run);
+        stale_work.work_generation = stale_work.work_generation.saturating_add(1);
+        let t_work = transition(
+            &run,
+            &Versioned {
+                requested_against: stale_work,
+                value: event.clone(),
+            },
+            NOW,
+            &test_policy(),
+            EMPTY_READ,
+            "/fp",
+        );
+        assert!(
+            is_quiet(&t_work),
+            "a moved work_generation drops the Jev result"
+        );
+    }
 }
 
 #[test]
@@ -318,6 +392,9 @@ pub(super) fn f20_settled_accepts_only_cancel_with_close_pane() {
         Event::Deadline(DeadlineKind::MaxAge),
         Event::Cancel { close_pane: false },
         Event::ProviderLimited,
+        Event::Evidence {
+            digest: Digest([4; 32]),
+        },
         Event::Restart,
     ] {
         let t = transition(

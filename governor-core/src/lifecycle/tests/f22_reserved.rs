@@ -10,8 +10,8 @@ use crate::lifecycle::{
 use crate::routing::PlacementPlan;
 
 use super::builders::{
-    NOW, decision, effect_keys, is_quiet, journal_effect_at, obs_unique, run_in, run_result,
-    settlement_of, stamped, test_policy, transact, updated_run,
+    NOW, decision, effect_keys, effect_writes, is_quiet, journal_effect_at, obs_unique, run_in,
+    run_result, settlement_of, stamped, test_policy, transact, updated_records, updated_run,
 };
 #[test]
 pub(super) fn f22_reserved_absent_is_launch_not_started() {
@@ -51,9 +51,48 @@ fn f22_reserved_ignores_the_rest() {
     }
 }
 
+/// F13 — a topology result arriving while the Run is still `reserved` only
+/// journals: the launch plan write has not committed yet (dispatch follows
+/// the commit), so the launch has no topology in flight and nothing else
+/// applies.
+#[test]
+fn f22_reserved_topology_result_journals_but_plans_nothing() {
+    let run = run_in(State::Reserved);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            run_result(
+                &run,
+                "tab",
+                EffectKind::TabCreate,
+                EffectOutcome::Acknowledged,
+                Some(EffectReceipt::TabCreated {
+                    tab: TabId("t9".into()),
+                    pane: PaneId("t9:p1".into()),
+                }),
+            ),
+        ),
+        NOW,
+        &test_policy(),
+        (Some(&decision(2)), &[], &[]),
+        "/fp",
+    );
+    assert_eq!(
+        effect_writes(&t),
+        Vec::from([("run:r-1:tab", EffectState::Acknowledged)]),
+        "the journal write is durable fact (F8)"
+    );
+    assert!(t.effects.is_empty(), "no start is planned before starting");
+    assert!(
+        updated_records(&t).is_empty(),
+        "the Run stays reserved until the plan write"
+    );
+}
+
 #[test]
 pub(super) fn f22_starting_topology_acknowledgement_plans_first_start() {
-    let run = run_in(State::Reserved);
+    let run = run_in(State::Starting);
     // a new tab's initial pane hosts the child — no split is planned (H#102).
     let t = transition(
         &run,

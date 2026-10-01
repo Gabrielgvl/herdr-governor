@@ -18,14 +18,16 @@ use super::{
 mod cancel;
 mod deadline;
 mod effect_result;
+mod evidence;
 mod handoff;
 mod judgment;
 mod obs;
 mod restart;
 
 use self::{
-    cancel::on_cancel, deadline::on_deadline, effect_result::on_effect_result, handoff::on_handoff,
-    judgment::on_judgment, obs::on_observation, restart::on_restart,
+    cancel::on_cancel, deadline::on_deadline, effect_result::on_effect_result,
+    evidence::on_evidence, handoff::on_handoff, judgment::on_judgment, obs::on_observation,
+    restart::on_restart,
 };
 
 /// F20 — the version stamp a Run reads as "still holding".
@@ -66,12 +68,16 @@ fn repair_dispatch_in_window(run: &Run, effect: &Effect) -> bool {
 /// handoffs. `freeze_path` is the coordinator-supplied destination a new
 /// freeze writes (F24).
 ///
-/// Async results — `obs`, `handoff`, `judgment`, `deadline` and the
-/// `provider_limited` judgment — apply only while the
-/// `(version, work_generation, evidence_generation)` they were requested
-/// against still hold (F20); a stale stamp produces nothing. `cancel`,
-/// `restart` and `effect_result` are synchronous or journal-bound and apply
-/// unconditionally (the journal write is durable fact).
+/// Async results apply only while the versions they were requested against
+/// still hold (F20); a stale stamp produces nothing. Jev results —
+/// `judgment` and `provider_limited` — are stale only when
+/// `work_generation` or `evidence_generation` moved; `version` is the
+/// conditional write's compare-and-swap guard, retried by the shell on
+/// conflict, never a staleness test for them. The other stamped results —
+/// `obs`, `handoff`, `deadline`, `evidence` — keep the full triple.
+/// `cancel`, `restart` and `effect_result` are synchronous or journal-bound
+/// and apply unconditionally (the journal write is durable fact; a Jev
+/// receipt's own stamp is checked inside `on_effect_result`).
 #[must_use]
 pub fn transition(
     run: &Run,
@@ -82,7 +88,18 @@ pub fn transition(
     freeze_path: &str,
 ) -> Transition {
     let (decision, journal, handoffs) = read;
-    if carries_versions(&event.value) && event.requested_against != triple_of(run) {
+    let stale = match &event.value {
+        Event::Judgment(..) | Event::ProviderLimited => {
+            event.requested_against.work_generation != run.work_generation
+                || event.requested_against.evidence_generation != run.evidence_generation
+        }
+        Event::Obs { .. }
+        | Event::Handoff { .. }
+        | Event::Deadline(..)
+        | Event::Evidence { .. } => event.requested_against != triple_of(run),
+        Event::Cancel { .. } | Event::EffectResult(..) | Event::Restart => false,
+    };
+    if stale {
         return nothing();
     }
     match &event.value {
@@ -104,23 +121,10 @@ pub fn transition(
         Event::Deadline(kind) => on_deadline(run, *kind, (now, policy), journal),
         Event::Cancel { close_pane } => on_cancel(run, *close_pane, (now, policy), journal),
         Event::ProviderLimited => settle(run, Settlement::ProviderLimited, now, policy),
+        Event::Evidence { digest } => on_evidence(run, *digest, (now, policy)),
         Event::EffectResult(result) => {
             on_effect_result(run, result, (now, policy), decision, journal)
         }
         Event::Restart => on_restart(run, journal),
-    }
-}
-
-/// F20 — the event kinds that carry the version stamp: Jev results,
-/// observations and deadlines. `cancel`, `restart` and `effect_result` are
-/// not async results — the conditional writes guard them at apply time.
-fn carries_versions(event: &Event) -> bool {
-    match event {
-        Event::Obs { .. }
-        | Event::Handoff { .. }
-        | Event::Judgment(..)
-        | Event::Deadline(..)
-        | Event::ProviderLimited => true,
-        Event::Cancel { .. } | Event::EffectResult(..) | Event::Restart => false,
     }
 }

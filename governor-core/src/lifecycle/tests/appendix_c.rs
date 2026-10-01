@@ -14,8 +14,8 @@ use super::{
         NOW, is_quiet, run_in, settlement_of, stale_stamped, stamped, test_policy, transact,
         updated_run,
     },
-    f20, f22, f22_active, f22_judging, f22_prompting, f22_repair, f22_reserved, f22_starting, f24,
-    f25,
+    f20, f21, f22, f22_active, f22_judging, f22_launch_plan, f22_prompting, f22_repair,
+    f22_reserved, f22_starting, f23_review, f24, f25,
 };
 
 /// `(state, event)` in the spec's spellings → the named unit test that drives
@@ -74,6 +74,21 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         f20::f20_provider_limited_settlement_records_recovery_and_cooldown,
     ),
     (
+        "*",
+        "evidence(unchanged digest)",
+        f23_review::f23_unchanged_evidence_digest_is_a_noop,
+    ),
+    (
+        "unsettled",
+        "evidence(new digest)",
+        f23_review::f23_evidence_change_rekeys_the_periodic_review,
+    ),
+    (
+        "unsettled",
+        "evidence(new digest)",
+        f24::f24_evidence_in_judging_replans_the_acceptance_ask,
+    ),
+    (
         "reserved",
         "obs(absent)",
         f22_reserved::f22_reserved_absent_is_launch_not_started,
@@ -81,7 +96,7 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     (
         "reserved",
         "topology effect planned",
-        f22_reserved::f22_starting_topology_acknowledgement_plans_first_start,
+        f22_launch_plan::f22_topology_effect_planned_moves_reserved_to_starting,
     ),
     (
         "reserved",
@@ -175,6 +190,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "active",
+        "obs(blocked)",
+        f21::f21_blocked_episode_reasks_failure_and_reopens_on_work,
+    ),
+    (
+        "active",
         "deadline(idle)",
         f25::f25_idle_deadline_settles_no_handoff,
     ),
@@ -245,6 +265,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
     ),
     (
         "judging",
+        "repair follow-up dispatched before repair_deadline",
+        f25::f25_repair_dispatch_opens_a_fresh_nudge_episode,
+    ),
+    (
+        "judging",
         "repair follow-up resolved past the deadline without qualifying",
         f24::f24_judging_late_unqualifying_result_settles_rejected,
     ),
@@ -252,6 +277,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "judging",
         "obs(absent)",
         f22_judging::f22_judging_absent_stays_judging,
+    ),
+    (
+        "judging",
+        "obs(blocked)",
+        f21::f21_blocked_observation_asks_provider_limited_in_repair_and_judging,
     ),
     (
         "judging",
@@ -273,14 +303,15 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "handoff(frozen digest, unassessed)",
         f24::f24_other_unassessed_digest_resumes_judging,
     ),
-    // The version guard runs before state dispatch (F20): a stale judgment
-    // produces nothing in `judging` because it produces nothing everywhere —
-    // `f20_stamped_events_drop_when_versions_moved` lists `Event::Judgment`,
-    // and `f20_stale_judgment_in_judging_changes_nothing` drives the state.
+    // The generation guard runs before state dispatch (F20): a stale
+    // judgment produces nothing in `judging` because it produces nothing
+    // everywhere — `f20_jev_results_stale_only_on_generations` lists
+    // `Event::Judgment`, and `f20_stale_judgment_in_judging_changes_nothing`
+    // drives the state.
     (
         "judging",
         "stale judgment",
-        f20::f20_stamped_events_drop_when_versions_moved,
+        f20::f20_jev_results_stale_only_on_generations,
     ),
     (
         "judging",
@@ -291,6 +322,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "repair",
         "repair follow-up dispatched before repair_deadline",
         f22_repair::f22_repair_dispatch_before_deadline_advances_generation,
+    ),
+    (
+        "repair",
+        "repair follow-up dispatched before repair_deadline",
+        f25::f25_repair_dispatch_opens_a_fresh_nudge_episode,
     ),
     (
         "repair",
@@ -326,6 +362,11 @@ const ROW_PROOFS: &[(&str, &str, fn())] = &[
         "repair",
         "obs(absent)",
         f22_repair::f22_repair_absent_stays_repair,
+    ),
+    (
+        "repair",
+        "obs(blocked)",
+        f21::f21_blocked_observation_asks_provider_limited_in_repair_and_judging,
     ),
 ];
 
@@ -412,18 +453,19 @@ fn f22_reserved_launch_abstain_settles_not_started() {
 }
 
 /// The named proof for `("judging", "stale judgment")`: a `judging` Run
-/// whose `judgment` stamp no longer holds produces nothing — the version
-/// guard drops it before the state dispatch, so there is no state change, no
-/// settlement, no plan and no write (F20).
+/// whose `judgment` stamp no longer holds — a generation moved — produces
+/// nothing (F20 drops it before the state dispatch). `version` alone is the
+/// CAS guard, never staleness: a `version`-only stale accept still settles
+/// (proved by `f20_jev_results_stale_only_on_generations` in `f20.rs`).
 #[test]
 fn f20_stale_judgment_in_judging_changes_nothing() {
-    let run = run_in(State::Judging);
-    let t = transact(
-        &run,
-        &stale_stamped(&run, Event::Judgment(JudgmentVerdict::Accept)),
-    );
+    let mut run = run_in(State::Judging);
+    run.evidence_generation = 1;
+    let mut stamp = stale_stamped(&run, Event::Judgment(JudgmentVerdict::Accept));
+    stamp.requested_against.evidence_generation = 0; // asked against eg=0
+    let t = transact(&run, &stamp);
     assert!(
         is_quiet(&t),
-        "a stale judgment produces nothing in judging (F20)"
+        "a generation-moved judgment produces nothing in judging (F20)"
     );
 }

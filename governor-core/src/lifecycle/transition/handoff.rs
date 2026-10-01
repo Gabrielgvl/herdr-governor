@@ -132,7 +132,8 @@ fn resume_judging(run: &Run, digest: Digest, env: (Timestamp, &Policy)) -> Trans
 /// idle episode cleared — plus the ask that names that generation. The
 /// ask's key carries no digest, so `judging_digest` records on the run row
 /// which frozen handoff it assesses (Appendix B `runs.judging_digest`).
-fn judging_write(run: &Run, digest: Digest, env: (Timestamp, &Policy)) -> (Run, Effect) {
+/// `evidence` events reuse it to re-plan the pending ask (F23/F20).
+pub(super) fn judging_write(run: &Run, digest: Digest, env: (Timestamp, &Policy)) -> (Run, Effect) {
     let (now, policy) = env;
     let generation = run.evidence_generation.saturating_add(1);
     let record = edited(run, |next| {

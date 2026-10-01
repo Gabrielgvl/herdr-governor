@@ -105,6 +105,7 @@ pub(crate) fn base_run(state: State) -> Run {
         base_commit: None,
         work_generation: 0,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -115,6 +116,7 @@ pub(crate) fn base_run(state: State) -> Run {
         max_age_deadline: Timestamp(3_600_000),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement: None,
         settled_at: None,
     }
@@ -137,7 +139,8 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
             opt_timestamp(),
             opt_timestamp(),
         ),
-        (0u64..=8, 0u64..=3, 0u64..=3, 0u64..=3, 0u64..=3),
+        (0u64..=8, 0u64..=3, 0u64..=3, 0u64..=3, 0u64..=3, 0u64..=3),
+        opt_of(any_digest()),
         pick(&SETTLEMENTS),
     )
         .prop_map(
@@ -149,7 +152,8 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
                 status,
                 certainty,
                 (idle_since, idle_deadline, repair_deadline, rejected_at, judgment_deadline),
-                (version, work_gen, evidence_gen, episode, nudged),
+                (version, work_gen, evidence_gen, episode, nudged, blocked),
+                evidence_digest,
                 settlement,
             )| {
                 let settled = state == State::Settled;
@@ -168,8 +172,10 @@ pub(crate) fn run(config: &Config) -> BoxedStrategy<Run> {
                     version,
                     work_generation: work_gen,
                     evidence_generation: evidence_gen,
+                    evidence_digest,
                     nudge_episode: episode,
                     nudged_episode: (nudged != 0).then_some(episode),
+                    blocked_episode: blocked,
                     settlement: settled.then_some(settlement),
                     settled_at: settled.then_some(Timestamp(500)),
                     ..base_run(state)
@@ -357,6 +363,7 @@ pub(crate) fn event(
             .prop_map(Event::Deadline),
             2 => any::<bool>().prop_map(|close_pane| Event::Cancel { close_pane }),
             2 => pick(&[Event::ProviderLimited, Event::Restart]),
+            1 => any_digest().prop_map(|digest| Event::Evidence { digest }),
             4 => effect_result,
         ],
         prop_oneof![

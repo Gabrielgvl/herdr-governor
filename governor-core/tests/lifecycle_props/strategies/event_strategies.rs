@@ -275,6 +275,7 @@ pub fn arb_event() -> impl Strategy<Value = Event> {
         2 => arb_deadline_kind().prop_map(Event::Deadline),
         1 => any::<bool>().prop_map(|close_pane| Event::Cancel { close_pane }),
         1 => Just(Event::ProviderLimited),
+        1 => arb_digest().prop_map(|digest| Event::Evidence { digest }),
         7 => arb_effect_result().prop_map(Event::EffectResult),
         1 => Just(Event::Restart),
     ]
@@ -292,6 +293,7 @@ pub fn arb_stamped_event() -> impl Strategy<Value = Event> {
         arb_digest().prop_map(|digest| Event::Handoff { digest }),
         arb_verdict().prop_map(Event::Judgment),
         arb_deadline_kind().prop_map(Event::Deadline),
+        arb_digest().prop_map(|digest| Event::Evidence { digest }),
         Just(Event::ProviderLimited),
     ]
 }

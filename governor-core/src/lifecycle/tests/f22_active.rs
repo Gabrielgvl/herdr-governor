@@ -4,11 +4,13 @@ use alloc::vec::Vec;
 
 use crate::acceptance::HandoffReading;
 use crate::identity::{ChildStatus, Digest, Observation, PaneId, Timestamp};
-use crate::lifecycle::{EffectKind, EffectState, Event, Settlement, State, transition};
+use crate::lifecycle::{
+    EffectKind, EffectReceipt, EffectState, Event, Settlement, State, transition,
+};
 
 use super::builders::{
     EMPTY_READ, NOW, effect_keys, frozen, frozen_writes, is_quiet, journal_effect, obs_unique,
-    run_in, settlement_of, stamped, test_policy, transact, updated_run,
+    review_record, run_in, settlement_of, stamped, test_policy, transact, updated_run,
 };
 #[test]
 pub(super) fn f22_active_working_ends_the_episode() {
@@ -57,20 +59,28 @@ pub(super) fn f22_active_blocked_asks_the_supervision_questions() {
     let t = transact(&run, &stamped(&run, obs_unique(Some(ChildStatus::Blocked))));
     assert_eq!(
         effect_keys(&t),
-        Vec::from(["run:r-1:review:0"]),
-        "a blocked child is asked blocked_on_input and provider_limited"
+        Vec::from(["run:r-1:blocked:1"]),
+        "a blocked child is asked blocked_on_input and provider_limited, once per blocked episode"
     );
     assert_eq!(t.effects[0].kind, EffectKind::JevEvaluate);
-    // the same evidence is never re-asked.
+    assert_eq!(
+        updated_run(&t).blocked_episode,
+        1,
+        "the blocked observation opened episode 1"
+    );
+    // the same episode is never re-asked — an in-flight ask suppresses.
     let journal = Vec::from([journal_effect(
         &run,
-        "review:0",
+        "blocked:1",
         EffectKind::JevEvaluate,
-        EffectState::Acknowledged,
+        EffectState::Dispatching,
     )]);
+    let mut run_blocked = run_in(State::Active);
+    run_blocked.child_status = Some(ChildStatus::Blocked);
+    run_blocked.blocked_episode = 1;
     let t_repeat = transition(
-        &run,
-        &stamped(&run, obs_unique(Some(ChildStatus::Blocked))),
+        &run_blocked,
+        &stamped(&run_blocked, obs_unique(Some(ChildStatus::Blocked))),
         NOW,
         &test_policy(),
         (None, &journal, &[]),
@@ -78,7 +88,7 @@ pub(super) fn f22_active_blocked_asks_the_supervision_questions() {
     );
     assert!(
         t_repeat.effects.is_empty(),
-        "unchanged evidence is never re-asked"
+        "the episode's in-flight ask is never duplicated"
     );
 }
 
@@ -278,21 +288,27 @@ pub(super) fn f22_blocked_observation_records_status_and_writes_once() {
         Some(ChildStatus::Blocked),
         "a status change writes the run row"
     );
-    // a repeated identical blocked observation is a true no-op — the review
-    // exists and the row is unchanged.
+    // a repeated identical blocked observation inside one episode is a true
+    // no-op — the episode's answered ask exists and the row is unchanged.
     let mut run_repeat = run_in(State::Active);
     run_repeat.child_status = Some(ChildStatus::Blocked);
+    run_repeat.blocked_episode = 1;
     run_repeat
         .identity
         .as_mut()
         .expect("active has identity")
         .pane_id = PaneId("w0:p9".into());
-    let journal = Vec::from([journal_effect(
+    let mut answered = journal_effect(
         &run_repeat,
-        "review:0",
+        "blocked:1",
         EffectKind::JevEvaluate,
         EffectState::Acknowledged,
-    )]);
+    );
+    answered.receipt = Some(EffectReceipt::Judgments(review_record(
+        &run_repeat,
+        Vec::new(),
+    )));
+    let journal = Vec::from([answered]);
     let t_repeat = transition(
         &run_repeat,
         &stamped(&run_repeat, obs_unique(Some(ChildStatus::Blocked))),

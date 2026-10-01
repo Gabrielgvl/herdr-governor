@@ -30,6 +30,7 @@ pub(super) fn run(id: &str, owner: &CallerKey, settlement: Option<Settlement>) -
         base_commit: None,
         work_generation: 0,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -40,6 +41,7 @@ pub(super) fn run(id: &str, owner: &CallerKey, settlement: Option<Settlement>) -
         max_age_deadline: Timestamp(86_400_000),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement,
         settled_at: settlement.map(|_| Timestamp(1_000)),
     }

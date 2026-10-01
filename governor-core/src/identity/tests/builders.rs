@@ -92,6 +92,7 @@ pub(super) fn run(
         base_commit: None,
         work_generation: 0,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -102,6 +103,7 @@ pub(super) fn run(
         max_age_deadline: Timestamp(1_800_000_000_000),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement,
         settled_at: settlement.map(|_| Timestamp(1_700_000_000_000)),
     }

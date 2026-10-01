@@ -279,7 +279,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
 - **F20 Settlement.** It is first-commit-wins and immutable.
   - **The update:** conditional on `settlement IS NULL AND version = :v`. In the same transaction it inserts the terminal event, expires queued follow-ups that were never dispatched, and records any recovery obligation and cooldown.
   - **Losing transitions:** they commit nothing and cause no effect.
-  - **Async results:** every Jev result, observation and deadline carries the `(version, work_generation, evidence_generation)` it was requested against. It applies only if those still hold.
+  - **Async results:** every async result carries the `(version, work_generation, evidence_generation)` it was requested against. Jev results — `judgment` and `provider_limited` events, and `JevEvaluate` effect results carrying `Judgments` receipts — are stale only when `work_generation` or `evidence_generation` moved; `version` stays the conditional write's compare-and-swap guard (retried by the shell on conflict) and is never a staleness test for them. A stale envelope applies nothing; a stale receipt journals its set marked `stale` and applies nothing else. `obs`, `handoff`, `deadline` and `evidence` keep the full triple: any moved field drops the result.
   - **`cancel {runId, closePane?}`:** settles an unsettled Run `cancelled`. With `closePane`, it dispatches a verified close effect (F10) and reports whether it was confirmed. On a settled Run it only closes the pane.
   - **Settlements:** `accepted`, `rejected`, `no_handoff`, `pane_lost`, `cancelled`, `provider_limited`, `unresolved(reason)`.
   - **Panes:** never closed automatically.
@@ -306,12 +306,13 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   Questions that drive actions:
   - `blocked_on_input` → event.
   - `no_recent_progress` → one nudge per episode. An episode ends when the child works again, and stall and idle share the same episode.
-  - `provider_limited` (asked when Herdr reports blocked) → F21.
+  - `provider_limited` (asked when Herdr reports blocked) → F21. A blocked episode opens at a `blocked` report after a non-blocked one and ends when an observation reports `working`, `idle` or `done`; the ask is once per episode (`run:<id>:blocked:<episode>`) in `active`, `repair` and `judging`, and a blocked child is never prompted.
   - `outside_scope`, which also receives `scope` → event.
 
   Other rules:
   - Periodic progress reviews pause while the owner's session is absent. Acceptance judgments and deadlines never pause (H#81).
-  - Unchanged evidence (same `evidence_generation`) is never re-asked after a completed review (H#79).
+  - Only an `answered` review counts as completed (H#79): unchanged evidence (same `evidence_generation`) is never re-asked after one, while a `failed`, transport-failed, `stale` or invalid attempt re-asks on the next qualifying trigger under a `:<n>` attempt key — at most one ask in flight per key family.
+  - An `evidence { digest }` event reports changed transcript/git evidence: a digest differing from the recorded `evidence_digest` is stored and bumps `evidence_generation`, re-keying the periodic review. In `judging` the bump stales the pending acceptance ask's answer (F20), so the ask is re-planned for `judging_digest` in the same transition — no second freeze row; `judgment_deadline` still bounds it.
   - The policy grants no permissions; `readOnly` and similar are code-owned (H#80).
 - **F24 Handoff and acceptance.**
   - **Reading:** the handoff is read without following symlinks. It must be a regular file of at most 256 KiB, and its final non-whitespace content must be `<!-- herdr-governor handoff run=<runId> -->`. Anything else counts as not written yet.
@@ -943,6 +944,7 @@ CREATE TABLE runs (
   base_commit         TEXT,
   work_generation     INTEGER NOT NULL DEFAULT 0,
   evidence_generation INTEGER NOT NULL DEFAULT 0,
+  evidence_digest     TEXT,                           -- the last recorded transcript/git evidence digest (F23)
   child_status        TEXT,
   idle_since          TEXT,
   idle_deadline       TEXT,
@@ -953,6 +955,7 @@ CREATE TABLE runs (
   max_age_deadline    TEXT NOT NULL,
   nudge_episode       INTEGER NOT NULL DEFAULT 0,
   nudged_episode      INTEGER,
+  blocked_episode     INTEGER NOT NULL DEFAULT 0,     -- the blocked-observation episode (F23)
   settlement          TEXT CHECK (settlement IN ('accepted','rejected','no_handoff','pane_lost','cancelled','provider_limited','unresolved')),
   settlement_reason   TEXT,
   settled_at          TEXT,
@@ -1114,12 +1117,13 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 | Route | the launch decision, config version and phase `routed`, plus the reserved run with `max_age_deadline` |
 | Plan an effect | the effect (`planned`) |
 | Dispatch an effect | the effect goes `planned` → `dispatching` |
-| Effect result | the effect result, plus the dependent run fields (identity, `prompt_certainty`, state) and version+1 |
+| Effect result | the effect result, plus the dependent run fields (identity, `prompt_certainty`, state) and version+1; a generation-stale Jev receipt journals its set `stale` and applies nothing |
 | Enqueue a follow-up | the outbox row, after the file is published and verified |
 | Settle | runs (conditional on version and unsettled) plus the terminal mailbox event, the queued follow-ups expired, and the recovery and cooldown when the settlement is `provider_limited` |
 | Handover or adopt | `runs.owner_caller_id` and `owner_generation+1`, conditional on the expected owner |
 | Recovery dispatch | recovery `pending` → `dispatched`, plus the successor Launch admission |
 | Freeze a handoff | the handoff row, `evidence_generation+1`, and `judgment_deadline` if not already set |
+| Record evidence | the run row (`evidence_digest`, `evidence_generation+1`); in `judging` the re-planned acceptance ask rides the same write — no second freeze row |
 
 ## Appendix C — Lifecycle transition rules
 
@@ -1132,6 +1136,7 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 - `deadline(idle | repair | judgment | max_age)`;
 - `cancel`;
 - `provider_limited`;
+- `evidence(new | unchanged digest)`;
 - `effect_result`;
 - `restart`.
 
@@ -1146,6 +1151,8 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `unsettled` | `cancel` | settle cancelled; closePane also closes |
 | `*` | `restart` | dispatching effects become unconfirmed (F8); every Run re-derived from its persisted state; deadlines unchanged |
 | `unsettled` | `provider_limited` | settle provider_limited (F21) |
+| `*` | `evidence(unchanged digest)` | ignored — the same digest re-keys nothing (F23) |
+| `unsettled` | `evidence(new digest)` | recorded; evidence_generation+1 — in judging the pending acceptance ask is re-planned for judging_digest, no second freeze row; unanswered reviews re-ask (F23) |
 | `reserved` | `obs(absent)` | settle unresolved(launch_not_started) |
 | `reserved` | `topology effect planned` | starting (the launch plan write moves it) |
 | `reserved` | `launch abstains or fails before any effect` | unresolved(launch_not_started) via settle; the Launch reports its outcome |
@@ -1158,7 +1165,7 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `prompting` | `obs(absent)` | settle pane_lost |
 | `active` | `obs(working)` | clear idle_since; the episode ends |
 | `active` | `obs(idle|done) with no handoff` | open the idle episode; one nudge; idle_deadline set |
-| `active` | `obs(blocked)` | ask blocked_on_input and provider_limited |
+| `active` | `obs(blocked)` | ask blocked_on_input and provider_limited — once per blocked episode (F21) |
 | `active` | `deadline(idle)` | settle no_handoff |
 | `active` | `handoff(valid)` | freeze; judging |
 | `active` | `obs(absent)` | one-shot handoff read: valid → freeze + judging; otherwise pane_lost |
@@ -1168,15 +1175,16 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `judging` | `deadline(judgment)` | settle unresolved(judgment_unavailable) |
 | `judging` | `deadline(repair) armed and passed` | settle rejected |
 | `judging` | `deadline(repair) with a qualifying dispatch in flight` | stays judging — the pending dispatch's result decides |
-| `judging` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify |
+| `judging` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify; a fresh nudge episode opens (F25) |
 | `judging` | `repair follow-up resolved past the deadline without qualifying` | settle rejected once no qualifying dispatch is still in flight |
 | `judging` | `obs(absent)` | stays judging; the frozen handoff is judged |
+| `judging` | `obs(blocked)` | ask blocked_on_input and provider_limited — once per blocked episode (F21) |
 | `judging` | `handoff(new digest)` | re-freeze; stays judging |
 | `judging` | `handoff(frozen digest, assessed)` | ignored — a completed assessment is never re-judged (F24) |
 | `judging` | `handoff(frozen digest, ask in flight)` | ignored — its acceptance ask is still in flight (F20) |
 | `judging` | `handoff(frozen digest, unassessed)` | resume judging — the ask in flight names a different digest; a fresh evidence_generation re-asks; no second freeze row |
 | `judging` | `stale judgment` | ignored (F20) |
-| `repair` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify |
+| `repair` | `repair follow-up dispatched before repair_deadline` | work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify; a fresh nudge episode opens (F25) |
 | `repair` | `repair follow-up resolved past the deadline without qualifying` | settle rejected once no qualifying dispatch is still in flight |
 | `repair` | `handoff(new digest)` | freeze; judging (repair_deadline kept) |
 | `repair` | `handoff(frozen digest, assessed)` | stays repair — a completed assessment is never re-judged (F24) |
@@ -1184,3 +1192,4 @@ The rules below are generated from `lifecycle::TRANSITION_RULES` in governor-cor
 | `repair` | `deadline(repair)` | settle rejected |
 | `repair` | `deadline(repair) with a qualifying dispatch in flight` | stays repair — the pending dispatch's result decides |
 | `repair` | `obs(absent)` | stays repair until the deadline |
+| `repair` | `obs(blocked)` | ask blocked_on_input and provider_limited — once per blocked episode (F21) |

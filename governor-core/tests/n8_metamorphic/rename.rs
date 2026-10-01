@@ -219,6 +219,7 @@ impl Rename {
                 close_pane: *close_pane,
             },
             Event::ProviderLimited => Event::ProviderLimited,
+            Event::Evidence { digest } => Event::Evidence { digest: *digest },
             Event::EffectResult(result) => Event::EffectResult(self.result(result)),
             Event::Restart => Event::Restart,
         }

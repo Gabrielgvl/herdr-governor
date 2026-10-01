@@ -3,10 +3,13 @@
 use alloc::vec::Vec;
 
 use crate::identity::{ChildStatus, Timestamp};
-use crate::lifecycle::{DeadlineKind, Event, Settlement, State};
+use crate::lifecycle::{
+    DeadlineKind, EffectKind, EffectOutcome, Event, Settlement, State, transition,
+};
 
 use super::builders::{
-    NOW, effect_keys, is_quiet, obs_unique, run_in, settlement_of, stamped, transact, updated_run,
+    EMPTY_READ, NOW, dispatched_outbox, effect_keys, is_quiet, obs_unique, run_in, run_result,
+    settlement_of, stamped, test_policy, transact, updated_run,
 };
 #[test]
 pub(super) fn f25_idle_episode_opens_nudge_and_deadline() {
@@ -61,6 +64,59 @@ pub(super) fn f25_stall_then_idle_shares_one_episode() {
         t.effects.is_empty(),
         "stall and idle share the episode's one nudge"
     );
+}
+
+#[test]
+pub(super) fn f25_repair_dispatch_opens_a_fresh_nudge_episode() {
+    // a repair follow-up dispatched inside the window advances
+    // `work_generation` AND opens a fresh nudge episode — an idle child
+    // in the new generation gets its nudge although the previous
+    // generation's was spent (the c3 sequence).
+    let mut run = run_in(State::Repair);
+    run.rejected_at = Some(Timestamp(200));
+    run.repair_deadline = Some(Timestamp(700));
+    run.nudge_episode = 0;
+    run.nudged_episode = Some(0); // spent before the repair cycle
+    let journal = Vec::from([dispatched_outbox(&run, 3, Timestamp(300))]);
+    let t_dispatch = transition(
+        &run,
+        &stamped(
+            &run,
+            run_result(
+                &run,
+                "outbox:3",
+                EffectKind::Prompt,
+                EffectOutcome::Acknowledged,
+                None,
+            ),
+        ),
+        NOW,
+        &test_policy(),
+        (None, &journal, &[]),
+        "/fp",
+    );
+    let record = updated_run(&t_dispatch);
+    assert_eq!(record.state, State::Active);
+    assert_eq!(record.work_generation, 1);
+    assert_eq!(
+        record.nudge_episode, 1,
+        "the new work generation opens a fresh nudge episode"
+    );
+    // idle in the new generation → the episode's one nudge fires.
+    let t_idle = transition(
+        record,
+        &stamped(record, obs_unique(Some(ChildStatus::Idle))),
+        Timestamp(600),
+        &test_policy(),
+        EMPTY_READ,
+        "/fp",
+    );
+    assert_eq!(
+        effect_keys(&t_idle),
+        Vec::from(["run:r-1:nudge:1"]),
+        "idle in the new work generation gets its nudge (F25)"
+    );
+    assert_eq!(updated_run(&t_idle).nudged_episode, Some(1));
 }
 
 #[test]

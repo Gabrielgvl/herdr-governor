@@ -9,11 +9,11 @@ use alloc::vec::Vec;
 
 use crate::config::Policy;
 use crate::delivery::{ExpiryReason, MailboxEventKind};
-use crate::recovery::{Cooldown, RecoveryObligation, RecoveryOrigin, RecoveryStatus, json_str};
+use crate::recovery::provider_limited;
 
 use super::{
-    Run, Settlement, State, StateChange, Timestamp, Transition, deadline_after, edited,
-    mailbox_event, nothing, write_run,
+    Run, Settlement, State, StateChange, Timestamp, Transition, edited, mailbox_event, nothing,
+    write_run,
 };
 
 /// The `settled` event's body — the settlement plus the reason for
@@ -74,37 +74,16 @@ pub fn settle(run: &Run, settlement: Settlement, now: Timestamp, policy: &Policy
             String::from("{\"handoff\":\"rejected\"}"),
         )),
         Settlement::ProviderLimited => {
-            // F21 — same transaction: the unique obligation, the cooldown
-            // (only ever lengthens), and the event telling the owner that
-            // closing the pane triggers recovery.
-            state_changes.push(StateChange::RecordRecovery(RecoveryObligation {
-                predecessor: run.id.clone(),
-                origin: RecoveryOrigin::ProviderLimit,
-                status: RecoveryStatus::Pending,
-                reason: None,
-                successor_launch: None,
-                expires_at: deadline_after(now, policy.recovery_expiry),
-            }));
-            if let Some(provider) = &run.provider {
-                state_changes.push(StateChange::SetCooldown(Cooldown {
-                    provider: provider.clone(),
-                    until: deadline_after(now, policy.cooldown),
-                    reason: String::from("provider_limited"),
-                    source_run: Some(run.id.clone()),
-                }));
-                events.push(mailbox_event(
-                    run,
-                    MailboxEventKind::CooldownHit,
-                    "cooldown_hit",
-                    format!("{{\"provider\":{}}}", json_str(&provider.0)),
-                ));
-            }
-            events.push(mailbox_event(
-                run,
-                MailboxEventKind::RecoveryPending,
-                "recovery_pending",
-                String::from("{\"recovery\":\"pending\"}"),
-            ));
+            // F21 — one implementation: the recovery share (the unique
+            // obligation, the provider's merged cooldown and the
+            // F18/F21-bodied `cooldown_hit`/`recovery_pending` events)
+            // lives in `recovery::provider_limited`; the settle
+            // transaction extends it with the terminal event. No
+            // `existing_cooldown` reaches `transition` — the Appendix B
+            // upsert still keeps `max(existing, new)` at the store.
+            let share = provider_limited(run, None, now, policy);
+            state_changes.extend(share.state_changes);
+            events.extend(share.events);
         }
         Settlement::NoHandoff
         | Settlement::PaneLost

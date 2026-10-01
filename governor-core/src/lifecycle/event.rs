@@ -86,6 +86,14 @@ pub enum Event {
     /// `provider_limited` — the provider-limit judgment cleared the policy
     /// threshold (F21/F23).
     ProviderLimited,
+    /// `evidence(digest)` — the transcript/git evidence digest changed
+    /// (F23); a digest that differs from `evidence_digest` records it and
+    /// bumps `evidence_generation`, so the pending Jev answers go stale
+    /// (F20) and reviews re-ask under the new generation.
+    Evidence {
+        /// The newly observed evidence digest.
+        digest: Digest,
+    },
     /// `effect_result` — a journaled effect resolved (F8).
     EffectResult(EffectResult),
     /// `restart` — the daemon restarted and re-derived the Run (F28);

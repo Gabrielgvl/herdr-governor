@@ -38,6 +38,16 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "settle provider_limited (F21)",
     ),
     (
+        "*",
+        "evidence(unchanged digest)",
+        "ignored — the same digest re-keys nothing (F23)",
+    ),
+    (
+        "unsettled",
+        "evidence(new digest)",
+        "recorded; evidence_generation+1 — in judging the pending acceptance ask is re-planned for judging_digest, no second freeze row; unanswered reviews re-ask (F23)",
+    ),
+    (
         "reserved",
         "obs(absent)",
         "settle unresolved(launch_not_started)",
@@ -96,7 +106,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "active",
         "obs(blocked)",
-        "ask blocked_on_input and provider_limited",
+        "ask blocked_on_input and provider_limited — once per blocked episode (F21)",
     ),
     ("active", "deadline(idle)", "settle no_handoff"),
     ("active", "handoff(valid)", "freeze; judging"),
@@ -134,7 +144,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "judging",
         "repair follow-up dispatched before repair_deadline",
-        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify",
+        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify; a fresh nudge episode opens (F25)",
     ),
     (
         "judging",
@@ -145,6 +155,11 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "judging",
         "obs(absent)",
         "stays judging; the frozen handoff is judged",
+    ),
+    (
+        "judging",
+        "obs(blocked)",
+        "ask blocked_on_input and provider_limited — once per blocked episode (F21)",
     ),
     ("judging", "handoff(new digest)", "re-freeze; stays judging"),
     (
@@ -166,7 +181,7 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
     (
         "repair",
         "repair follow-up dispatched before repair_deadline",
-        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify",
+        "work_generation+1; active — the journal's dispatched_at lands inside [rejected_at, repair_deadline); a provably-absent failure does not qualify; a fresh nudge episode opens (F25)",
     ),
     (
         "repair",
@@ -195,4 +210,9 @@ pub const TRANSITION_RULES: &[(&str, &str, &str)] = &[
         "stays repair — the pending dispatch's result decides",
     ),
     ("repair", "obs(absent)", "stays repair until the deadline"),
+    (
+        "repair",
+        "obs(blocked)",
+        "ask blocked_on_input and provider_limited — once per blocked episode (F21)",
+    ),
 ];

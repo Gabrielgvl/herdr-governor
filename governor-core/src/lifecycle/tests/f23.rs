@@ -293,14 +293,8 @@ fn f23_periodic_reviews_pause_while_the_owner_is_absent() {
 #[test]
 fn f23_unchanged_evidence_is_never_re_asked() {
     let run = run_in(State::Active);
-    // the ask for this generation exists in any state — no second one.
-    for state in [
-        EffectState::Planned,
-        EffectState::Dispatching,
-        EffectState::Acknowledged,
-        EffectState::Failed,
-        EffectState::Unconfirmed,
-    ] {
+    // the ask for this generation is still in flight — no second one.
+    for state in [EffectState::Planned, EffectState::Dispatching] {
         let journal = Vec::from([journal_effect(
             &run,
             "review:0",
@@ -309,9 +303,22 @@ fn f23_unchanged_evidence_is_never_re_asked() {
         )]);
         assert!(
             periodic_review(&run, false, &journal).is_none(),
-            "one review per evidence_generation, whatever its outcome"
+            "at most one ask in flight per key"
         );
     }
+    // and a completed (answered) review suppresses the generation's ask.
+    let mut answered = journal_effect(
+        &run,
+        "review:0",
+        EffectKind::JevEvaluate,
+        EffectState::Acknowledged,
+    );
+    answered.receipt = Some(EffectReceipt::Judgments(review_record(&run, Vec::new())));
+    let journal = Vec::from([answered]);
+    assert!(
+        periodic_review(&run, false, &journal).is_none(),
+        "one completed review per evidence_generation"
+    );
     // and never while the run is not being supervised.
     let run_judging = run_in(State::Judging);
     assert!(periodic_review(&run_judging, false, &[]).is_none());

@@ -134,6 +134,7 @@ pub(super) fn predecessor_run(tier_start: Option<&str>, provider: Option<&str>) 
         base_commit: None,
         work_generation: 1,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -144,6 +145,7 @@ pub(super) fn predecessor_run(tier_start: Option<&str>, provider: Option<&str>) 
         max_age_deadline: Timestamp(0),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement: None,
         settled_at: None,
     }

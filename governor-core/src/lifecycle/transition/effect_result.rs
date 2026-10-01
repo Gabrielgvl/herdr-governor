@@ -18,7 +18,7 @@ use crate::lifecycle::{
 };
 use crate::routing::{Decision, JudgmentOutcome, PlacementPlan};
 
-use super::{repair_dispatch_in_window, triple_of};
+use super::repair_dispatch_in_window;
 
 /// F8 — how a resolution journals.
 fn journal_state(outcome: EffectOutcome) -> EffectState {
@@ -50,11 +50,16 @@ pub(super) fn on_effect_result(
     journal: &[Effect],
 ) -> Transition {
     let (now, policy) = env;
-    // F20 — a Jev result applies only while its versions still hold; a stale
-    // one journals its set with outcome `stale` and does nothing else.
+    // F20 — a Jev result is stale only when a generation moved; `version`
+    // is the conditional write's compare-and-swap guard, never a staleness
+    // test here. A stale one journals its set with outcome `stale` and
+    // does nothing else.
     let stale = match &result.receipt {
         Some(EffectReceipt::Judgments(record)) => match record.set.versions {
-            Some(versions) => versions != triple_of(run),
+            Some(versions) => {
+                versions.work_generation != run.work_generation
+                    || versions.evidence_generation != run.evidence_generation
+            }
             None => false,
         },
         Some(
@@ -95,7 +100,7 @@ pub(super) fn on_effect_result(
         return transition;
     }
     let consequences = match run.state {
-        State::Reserved | State::Starting => launch_result(run, result, decision, journal),
+        State::Starting => launch_result(run, result, decision, journal),
         State::Prompting => prompt_result(run, result),
         State::Repair => repair_result(run, result, env, journal),
         // F24 — a Run back in `judging` keeps its open rejection window
@@ -104,7 +109,11 @@ pub(super) fn on_effect_result(
         // settle apply exactly as in `repair`.
         State::Judging if run.rejected_at.is_some() => repair_result(run, result, env, journal),
         State::Active | State::Judging => review_result(run, result, now, policy),
-        State::Settled => nothing(),
+        // F13 — the launch plan write moves `reserved` to `starting` before
+        // any effect is dispatched, so an effect result arriving in
+        // `reserved` can only journal (the F8 write above): the launch has
+        // no topology in flight yet and nothing else applies.
+        State::Reserved | State::Settled => nothing(),
     };
     transition.state_changes.extend(consequences.state_changes);
     transition.events.extend(consequences.events);
@@ -112,9 +121,9 @@ pub(super) fn on_effect_result(
     transition
 }
 
-/// `reserved`/`starting` — the launch pipeline's effect results (F14/F15):
-/// topology acknowledgements plan the first `agent_start`; a start result
-/// captures identity or walks the persisted candidates.
+/// `starting` — the launch pipeline's effect results (F14/F15): topology
+/// acknowledgements plan the first `agent_start`; a start result captures
+/// identity or walks the persisted candidates.
 fn launch_result(
     run: &Run,
     result: &EffectResult,
@@ -348,6 +357,11 @@ fn repair_result(
                 next.judging_digest = None;
                 next.idle_since = None;
                 next.idle_deadline = None;
+                // F25 — the new work generation opens a fresh nudge
+                // episode: the previous generation's spent nudge must not
+                // suppress this one's (episode numbers keep nudge keys
+                // unique).
+                next.nudge_episode = next.nudge_episode.saturating_add(1);
             });
             return Transition {
                 state_changes: Vec::from([write_run(run, record)]),

@@ -10,7 +10,7 @@ use governor_core::lifecycle::{PromptCertainty, Run, Settlement, State, Unresolv
 use proptest::option;
 use proptest::prelude::{Strategy, prop_oneof};
 
-use super::common_strategies::{RUN_ID, arb_timestamp, pick, text};
+use super::common_strategies::{RUN_ID, arb_digest, arb_timestamp, pick, text};
 
 fn arb_state() -> impl Strategy<Value = State> {
     pick(&[
@@ -88,6 +88,7 @@ fn base_run(state: State) -> Run {
         base_commit: None,
         work_generation: 0,
         evidence_generation: 0,
+        evidence_digest: None,
         child_status: None,
         idle_since: None,
         idle_deadline: None,
@@ -98,6 +99,7 @@ fn base_run(state: State) -> Run {
         max_age_deadline: Timestamp(0),
         nudge_episode: 0,
         nudged_episode: None,
+        blocked_episode: 0,
         settlement: None,
         settled_at: None,
     }
@@ -106,9 +108,9 @@ fn base_run(state: State) -> Run {
 fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run> {
     (
         states,
-        0_u64..64,                        // version
-        (0_u64..8, 0_u64..8),             // work_generation, evidence_generation
-        (0_u64..8, option::of(0_u64..8)), // nudge_episode, nudged_episode
+        0_u64..64,                                  // version
+        (0_u64..8, 0_u64..8),                       // work_generation, evidence_generation
+        (0_u64..8, option::of(0_u64..8), 0_u64..8), // nudge_episode, nudged_episode, blocked_episode
         (
             option::of(arb_timestamp()),
             option::of(arb_timestamp()),
@@ -127,11 +129,12 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
             arb_timestamp(),
             arb_identity(),
             option::of((0_u8..4).prop_map(|i| Provider(format!("prov-{i}")))),
+            option::of(arb_digest()),
         ),
     )
         .prop_map(|(state, version, gens, episodes, times, rest)| {
             let (work_generation, evidence_generation) = gens;
-            let (nudge_episode, nudged_episode) = episodes;
+            let (nudge_episode, nudged_episode, blocked_episode) = episodes;
             let (
                 idle_since,
                 idle_deadline,
@@ -147,6 +150,7 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
                 gen_settled_at,
                 gen_identity,
                 provider,
+                evidence_digest,
             ) = rest;
             // the record invariants: identity exists once a start could have
             // been acknowledged, prompt_certainty once the prompt could have
@@ -167,8 +171,10 @@ fn arb_run_in(states: impl Strategy<Value = State>) -> impl Strategy<Value = Run
                 version,
                 work_generation,
                 evidence_generation,
+                evidence_digest,
                 nudge_episode,
                 nudged_episode,
+                blocked_episode,
                 idle_since,
                 idle_deadline,
                 repair_deadline,

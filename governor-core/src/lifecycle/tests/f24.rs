@@ -7,13 +7,14 @@ use alloc::vec::Vec;
 
 use crate::identity::{Digest, Timestamp};
 use crate::lifecycle::{
-    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, Event, JudgmentVerdict, Settlement,
-    State, transition,
+    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectState, Event, JudgmentVerdict,
+    Settlement, State, Versioned, transition,
 };
 
 use super::builders::{
-    EMPTY_READ, NOW, dispatched_outbox, effect_keys, frozen, frozen_writes, is_quiet, run_in,
-    run_result, settlement_of, stamped, test_policy, updated_run,
+    EMPTY_READ, NOW, dispatched_outbox, effect_keys, effect_writes, frozen, frozen_writes,
+    is_quiet, run_in, run_result, settlement_of, stamped, test_policy, triple, updated_records,
+    updated_run,
 };
 
 // ---- F24 — suppression follows the completed assessment, not the freeze
@@ -332,4 +333,141 @@ pub(super) fn f24_judging_late_unqualifying_result_settles_rejected() {
         Some(Settlement::Rejected),
         "a provably-absent repair past the deadline settles rejected (F24)"
     );
+}
+
+#[test]
+fn f24_judging_without_a_rejection_window_ignores_outbox_results() {
+    // only a `judging` Run with an OPEN rejection window routes effect
+    // results through the repair lane — without `rejected_at` an outbox
+    // result is supervision only and can never settle the Run rejected.
+    let mut run = run_in(State::Judging);
+    run.evidence_generation = 1;
+    run.rejected_at = None;
+    run.repair_deadline = Some(Timestamp(400)); // past, but no window is open
+    let journal = Vec::from([dispatched_outbox(&run, 3, Timestamp(300))]);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            run_result(
+                &run,
+                "outbox:3",
+                EffectKind::Prompt,
+                EffectOutcome::Failed {
+                    certainty: EffectCertainty::Absent,
+                },
+                None,
+            ),
+        ),
+        NOW,
+        &test_policy(),
+        (None, &journal, &[]),
+        "/fp",
+    );
+    assert!(
+        updated_records(&t).is_empty(),
+        "no rejection window → the repair lane is unreachable"
+    );
+    assert_eq!(
+        effect_writes(&t),
+        Vec::from([("run:r-1:outbox:3", EffectState::Failed)]),
+        "the journal write still stands"
+    );
+}
+
+// ---- F23×F24 — an `evidence` change in `judging` bumps
+// `evidence_generation`, which stales the pending acceptance ask's answer
+// (F20): the ask is re-planned for `judging_digest` in the same
+// transition — the freeze row stands and `judgment_deadline` still bounds
+// the wait. ----
+
+#[test]
+pub(super) fn f24_evidence_in_judging_replans_the_acceptance_ask() {
+    let mut run = run_in(State::Judging);
+    run.evidence_generation = 1;
+    run.evidence_digest = Some(Digest([1; 32]));
+    run.judging_digest = Some(Digest([9; 32]));
+    run.judgment_deadline = Some(Timestamp(700));
+    let handoffs = Vec::from([frozen(&run, 0, 9)]);
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            Event::Evidence {
+                digest: Digest([2; 32]),
+            },
+        ),
+        NOW,
+        &test_policy(),
+        (None, &[], &handoffs),
+        "/fp",
+    );
+    let record = updated_run(&t);
+    assert_eq!(record.state, State::Judging);
+    assert_eq!(record.evidence_digest, Some(Digest([2; 32])));
+    assert_eq!(record.evidence_generation, 2, "the change re-keys the asks");
+    assert_eq!(
+        record.judging_digest,
+        Some(Digest([9; 32])),
+        "the re-planned ask still assesses the frozen handoff"
+    );
+    assert_eq!(
+        record.judgment_deadline,
+        Some(Timestamp(700)),
+        "the armed deadline bound stands"
+    );
+    assert!(
+        frozen_writes(&t).is_empty(),
+        "the freeze row stands — no duplicate"
+    );
+    assert_eq!(
+        effect_keys(&t),
+        Vec::from(["run:r-1:accept:0:2"]),
+        "the acceptance ask is re-planned under the new generation"
+    );
+    // and a verdict answering the old generation's ask is now stale (F20).
+    let mut stale = triple(record);
+    stale.evidence_generation = 1;
+    let t_stale = transition(
+        record,
+        &Versioned {
+            requested_against: stale,
+            value: Event::Judgment(JudgmentVerdict::Accept),
+        },
+        NOW,
+        &test_policy(),
+        (None, &[], &handoffs),
+        "/fp",
+    );
+    assert!(
+        is_quiet(&t_stale),
+        "the previous generation's pending answer went stale"
+    );
+}
+
+/// `judging` with no digest under assessment has no pending ask to
+/// re-plan — the evidence still records and re-keys.
+#[test]
+fn f24_evidence_in_judging_without_a_pending_ask_only_rekeys() {
+    let mut run = run_in(State::Judging);
+    run.evidence_generation = 1;
+    run.evidence_digest = Some(Digest([1; 32]));
+    run.judging_digest = None;
+    let t = transition(
+        &run,
+        &stamped(
+            &run,
+            Event::Evidence {
+                digest: Digest([2; 32]),
+            },
+        ),
+        NOW,
+        &test_policy(),
+        EMPTY_READ,
+        "/fp",
+    );
+    let record = updated_run(&t);
+    assert_eq!(record.evidence_generation, 2);
+    assert!(t.effects.is_empty(), "no ask in flight to re-plan");
+    assert!(frozen_writes(&t).is_empty());
 }

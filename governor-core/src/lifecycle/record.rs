@@ -63,6 +63,10 @@ pub struct Run {
     pub work_generation: u64,
     /// `evidence_generation`.
     pub evidence_generation: u64,
+    /// `evidence_digest` — the last recorded transcript/git evidence digest
+    /// (F23): an `evidence` event carrying a different digest records it and
+    /// bumps `evidence_generation`.
+    pub evidence_digest: Option<Digest>,
     /// `child_status` — the last observed status.
     pub child_status: Option<ChildStatus>,
     /// `idle_since` — when the current idle episode began.
@@ -92,6 +96,11 @@ pub struct Run {
     pub nudge_episode: u64,
     /// `nudged_episode` — which episode already got its one nudge (F23).
     pub nudged_episode: Option<u64>,
+    /// `blocked_episode` — the current blocked episode (F23): a `blocked`
+    /// observation after a non-blocked one opens the next number, and the
+    /// episode's `provider_limited` ask names it (`blocked:<episode>`).
+    /// A `working`, `idle` or `done` observation ends the episode.
+    pub blocked_episode: u64,
     /// `settlement` + `settlement_reason` — immutable once set (F20).
     pub settlement: Option<Settlement>,
     /// `settled_at` — set iff `settlement` is (Appendix B CHECK).

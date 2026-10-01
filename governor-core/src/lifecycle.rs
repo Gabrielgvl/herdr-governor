@@ -15,6 +15,7 @@ use crate::identity::{DedupKey, EffectId, EffectKey, EventId, Timestamp};
 mod change;
 mod effect;
 mod event;
+mod launch;
 mod record;
 mod rules;
 mod settle;
@@ -28,6 +29,7 @@ pub use effect::{
     EffectTarget, EffectWrite,
 };
 pub use event::{Event, JudgmentVerdict, VersionTriple, Versioned};
+pub use launch::launch_plan;
 pub use record::{CreatedTopology, OwnerChange, Run, RunUpdate};
 pub use rules::TRANSITION_RULES;
 pub use settle::settle;
@@ -88,8 +90,14 @@ fn planned_effect(
 }
 
 /// One mailbox event for this Run: `dedup_key` is `run:<id>:<suffix>` (F18 —
-/// stable keys make repeats no-ops).
-fn mailbox_event(run: &Run, kind: MailboxEventKind, suffix: &str, body: String) -> MailboxEvent {
+/// stable keys make repeats no-ops). Crate-visible so `recovery`'s
+/// settlement share emits through the same derivation.
+pub(crate) fn mailbox_event(
+    run: &Run,
+    kind: MailboxEventKind,
+    suffix: &str,
+    body: String,
+) -> MailboxEvent {
     let dedup_key = DedupKey(format!("run:{}:{}", run.id.0, suffix));
     MailboxEvent {
         id: EventId(format!("evt:{}", dedup_key.0)),
