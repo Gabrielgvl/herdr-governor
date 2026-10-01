@@ -65,29 +65,33 @@ pub fn plan_adoption(
     Ok(owner_transition(run, adopter.clone()))
 }
 
-/// H#24 — whether `caller` is the Run's own child, resolved against the
-/// fresh snapshot: a row matching the captured identity's parts (terminal,
-/// kind, name — and the captured session once Herdr reported it) that
-/// reports `caller`'s session makes that caller the child, so a handover or
-/// adoption naming it is refused `CALLER_IS_RUN`. The snapshot's report —
-/// not the persisted `native_session` — is what counts: a child whose
-/// session arrived on the wire but was never captured is refused all the
-/// same.
+/// H#24 — whether `caller` is the Run's own child: the union of two
+/// proofs. Once the identity captured a `native_session`, that session IS
+/// the child's caller key — a kind-and-session match makes the caller the
+/// child whatever the snapshot reports, since F28/A4 lets the child
+/// re-prove under a new incarnation, terminal and pane after a Herdr
+/// discontinuity. For a sessionless persisted identity the child resolves
+/// through the fresh snapshot instead: a row matching the captured
+/// terminal, kind and name that reports `caller`'s session names it — a
+/// session that arrived on the wire but was never captured is refused all
+/// the same. Either proof makes a handover or adoption naming that caller
+/// `CALLER_IS_RUN`.
 fn caller_is_run_child(run: &Run, caller: &CallerKey, agents: &[AgentRow]) -> bool {
     let Some(identity) = &run.identity else {
         return false;
     };
-    caller.agent_kind == identity.agent_kind
-        && agents.iter().any(|row| {
+    if caller.agent_kind != identity.agent_kind {
+        return false;
+    }
+    match &identity.native_session {
+        Some(session) => caller.native_session == *session,
+        None => agents.iter().any(|row| {
             row.1 == identity.terminal_id
                 && row.2.as_ref() == Some(&identity.agent_kind)
                 && row.3.as_ref() == Some(&identity.agent_name)
                 && row.4.as_ref() == Some(&caller.native_session)
-                && match &identity.native_session {
-                    Some(session) => row.4.as_ref() == Some(session),
-                    None => true,
-                }
-        })
+        }),
+    }
 }
 
 /// F19 — whether a fresh snapshot still shows the Run owner's native

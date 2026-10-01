@@ -213,10 +213,77 @@ fn f4_sessionless_child_cannot_adopt_itself() {
     );
 }
 
+#[test]
+fn f4_reincarnated_child_cannot_be_handed_to_itself() {
+    // F28/A4 — after a Herdr discontinuity the child re-proves by native
+    // session alone: new incarnation, new terminal, new pane. The captured
+    // session is still its caller key, so handing the Run to the child's
+    // re-incarnated pane is CALLER_IS_RUN even though no row matches the
+    // captured terminal (H#24).
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([
+        occupied(
+            "w6:p3",
+            "term-2",
+            "kind-1",
+            "gov-deadbeef",
+            Some("sess-child"),
+            None,
+        ),
+        occupied("w6:p7", "t7", "kind-b", "successor", Some("sess-b"), None),
+    ]);
+    assert_eq!(
+        plan_handover(&run, &owner, &PaneId("w6:p3".into()), &agents),
+        Err(Refusal::CallerIsRun),
+        "F4/H#24 — the captured session re-proves the child across the incarnation change"
+    );
+    // an unrelated successor is still allowed.
+    assert_eq!(
+        plan_handover(&run, &owner, &PaneId("w6:p7".into()), &agents),
+        Ok(owner_change(&run, key("kind-b", "sess-b"))),
+        "F4 — an unrelated successor is never the child"
+    );
+}
+
+#[test]
+fn f4_reincarnated_child_cannot_adopt_itself() {
+    // Same gap through `adopt`: the owner's session is gone from the
+    // snapshot (no ADOPT_OWNER_LIVE) and the child's re-incarnated row sits
+    // on a terminal the captured identity never named — adopting under the
+    // re-proven key is still CALLER_IS_RUN.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([
+        occupied(
+            "w6:p3",
+            "term-2",
+            "kind-1",
+            "gov-deadbeef",
+            Some("sess-child"),
+            None,
+        ),
+        occupied("w6:p7", "t7", "kind-b", "successor", Some("sess-b"), None),
+    ]);
+    assert_eq!(
+        plan_adoption(&run, &key("kind-1", "sess-child"), &agents, false, false),
+        Err(Refusal::CallerIsRun),
+        "F4/H#24 — the Run's child cannot adopt it after re-proving under a new incarnation"
+    );
+    // an unrelated adopter is still allowed.
+    assert_eq!(
+        plan_adoption(&run, &key("kind-b", "sess-b"), &agents, false, false),
+        Ok(owner_change(&run, key("kind-b", "sess-b"))),
+        "F4 — an unrelated adopter is never the child"
+    );
+}
+
 // ---- H#24 — every conjunct of the child check is individually required ----
-// Each test below matches the captured identity in full except for one
-// field; the caller must be allowed through, so a `&&` weakened to `||`
-// in `caller_is_run_child` surfaces as a spurious CALLER_IS_RUN.
+// The persisted identity is sessionless, so the snapshot resolution below
+// runs: each test reports the caller's session on a row matching the
+// captured terminal, kind and name — except for the one field under test.
+// The caller must be allowed through, so a `&&` weakened to `||` in
+// `caller_is_run_child` surfaces as a spurious CALLER_IS_RUN.
 
 #[test]
 fn f4_caller_is_run_child_requires_caller_kind() {
@@ -224,7 +291,7 @@ fn f4_caller_is_run_child_requires_caller_kind() {
     // caller's session, but the caller's kind differs from the captured
     // agent_kind — not the child.
     let owner = key("kind-a", "sess-a");
-    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let run = run(&owner, Some(child("w6:p9", None)), None);
     let agents = Vec::from([occupied(
         "w6:p9",
         "term-1",
@@ -246,7 +313,7 @@ fn f4_caller_is_run_child_requires_terminal() {
     // The row reports the caller's kind and session and the identity's
     // kind and name, but sits on another terminal — not the child.
     let owner = key("kind-a", "sess-a");
-    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let run = run(&owner, Some(child("w6:p9", None)), None);
     let agents = Vec::from([occupied(
         "w6:p9",
         "term-other",
@@ -268,7 +335,7 @@ fn f4_caller_is_run_child_requires_row_kind() {
     // The row's terminal, name and session match but its occupant kind
     // differs from the captured agent_kind — not the child.
     let owner = key("kind-a", "sess-a");
-    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let run = run(&owner, Some(child("w6:p9", None)), None);
     let agents = Vec::from([occupied(
         "w6:p9",
         "term-1",
@@ -290,7 +357,7 @@ fn f4_caller_is_run_child_requires_row_name() {
     // The row's terminal, kind and session match but its occupant name
     // differs from the captured agent_name — not the child.
     let owner = key("kind-a", "sess-a");
-    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let run = run(&owner, Some(child("w6:p9", None)), None);
     let agents = Vec::from([occupied(
         "w6:p9",
         "term-1",
@@ -309,10 +376,10 @@ fn f4_caller_is_run_child_requires_row_name() {
 
 #[test]
 fn f4_caller_is_run_child_requires_row_session() {
-    // The persisted session agrees with the row's report, but the row's
-    // session is not the caller's — the caller never reached this child.
+    // The row matches terminal, kind and name, but the session it reports
+    // is not the caller's — the caller never reached this child.
     let owner = key("kind-a", "sess-a");
-    let run = run(&owner, Some(child("w6:p9", Some("sess-x"))), None);
+    let run = run(&owner, Some(child("w6:p9", None)), None);
     let agents = Vec::from([occupied(
         "w6:p9",
         "term-1",
