@@ -21,6 +21,7 @@ fn f18_mailbox_event_kind_spellings() {
         (MailboxEventKind::BlockedOnInput, "blocked_on_input"),
         (MailboxEventKind::OutsideScope, "outside_scope"),
         (MailboxEventKind::LaunchFailed, "launch_failed"),
+        (MailboxEventKind::LaunchAnswered, "launch_answered"),
         (MailboxEventKind::PromptUnconfirmed, "prompt_unconfirmed"),
         (
             MailboxEventKind::FollowUpUnconfirmed,
@@ -134,10 +135,26 @@ fn f18_launch_failed_binds_the_launch() {
         None,
         "run-scoped kinds never bind a Launch"
     );
-    assert!(
-        MailboxEventKind::LaunchFailed.binds_launch(),
-        "launch_failed is the launch-only kind (F18)"
+    assert_eq!(
+        MailboxEventKind::LaunchAnswered
+            .dedup_key(&MailboxSubject::Launch(LaunchId("l1".into())), None),
+        Some(DedupKey("launch:l1:launch_answered".into())),
+        "launch_answered keys on the Launch (F18)"
     );
+    assert_eq!(
+        MailboxEventKind::LaunchAnswered.dedup_key(&MailboxSubject::Run(RunId("r1".into())), None),
+        None,
+        "launch_answered never binds a Run"
+    );
+    for kind in [
+        MailboxEventKind::LaunchFailed,
+        MailboxEventKind::LaunchAnswered,
+    ] {
+        assert!(
+            kind.binds_launch(),
+            "launch-only kinds bind the Launch (F18)"
+        );
+    }
     assert!(
         !MailboxEventKind::FollowUpExpired.binds_launch(),
         "run events are not launch-bound"

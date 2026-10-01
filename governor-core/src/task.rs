@@ -15,12 +15,14 @@ use crate::identity::{CallerKey, DeliveryId, Digest, PaneId, ProjectRoot, RunId}
 
 mod envelope;
 mod launch;
+mod launch_row;
 mod refusal;
 
 pub use envelope::Envelope;
 pub use launch::{
     AbstainReason, Launch, LaunchOutcome, LaunchPhase, LaunchResponse, admission_decision,
 };
+pub use launch_row::{admit, begin, decided, finish, new_launch};
 pub use refusal::Refusal;
 
 /// F5 — a `doneWhen` list must carry at least one verifiable item.
@@ -372,5 +374,7 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod launch_row_tests;
 #[cfg(test)]
 mod req_tests;

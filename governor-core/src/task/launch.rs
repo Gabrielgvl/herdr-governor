@@ -135,6 +135,30 @@ pub enum LaunchOutcome {
     },
 }
 
+impl LaunchOutcome {
+    /// F5 — the spec spelling of the outcome (`launches.outcome`).
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Launched { .. } => "launched",
+            Self::Abstained { .. } => "abstained",
+            Self::Rejected => "rejected",
+            Self::Failed { .. } => "failed",
+        }
+    }
+
+    /// F5 — the abstention reason's spec spelling; `None` for outcomes that
+    /// carry none (`launched`/`rejected`/`failed` carry certainty or
+    /// evidence instead).
+    #[must_use]
+    pub fn reason_str(&self) -> Option<&'static str> {
+        match self {
+            Self::Abstained { reason } => Some(reason.as_str()),
+            Self::Launched { .. } | Self::Rejected | Self::Failed { .. } => None,
+        }
+    }
+}
+
 /// F5 — the `herdr_launch` result: `pending` means the Launch was recorded
 /// and continues through the daemon.
 #[expect(

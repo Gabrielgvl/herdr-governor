@@ -258,12 +258,13 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - stalled after the nudge;
     - blocked on input;
     - outside scope;
-    - launch failed;
+    - launch answered — the Launch's terminal outcome (`launched`, `abstained`, `rejected` or `failed`); exactly one per Launch;
+    - launch failed — additionally, when that terminal outcome is `failed`;
     - prompt or follow-up unconfirmed;
     - follow-up expired;
     - cooldown hit;
     - a recovery pending, blocked or dispatched.
-  - **Destination:** always the Run's current owner, or for launch-only events the Launch's caller, derived when read. Adoption therefore redirects unread events automatically (H#84, H#91).
+  - **Destination:** always the Run's current owner, or for launch-only events (`launch_answered`, `launch_failed`) the Launch's caller, derived when read. Adoption therefore redirects unread events automatically (H#84, H#91).
   - **Hints:** after an event commits, one hint prompt effect goes to the owner's pane.
     - Conditions: the pane is fresh and `unique`, idle or done, and still holds the owner's native session, and its harness has a qualified `hint_consumption` capability.
     - Limits: at most one per 5 s per owner, never retried, never sent to a busy pane (H#85–87).
