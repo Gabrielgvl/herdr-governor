@@ -5,14 +5,17 @@
 //! so this is the first Herdr mutation a launch commits — its result events
 //! land in `starting`, where the launch pipeline consumes them.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::identity::PaneId;
+use crate::config::Policy;
+use crate::identity::{PaneId, RunId, Timestamp, mint_agent_name};
 use crate::lifecycle::{
-    EffectKind, EffectTarget, Run, State, Transition, edited, effect_key, nothing, planned_effect,
-    write_run,
+    EffectKind, EffectTarget, Run, State, Transition, edited, effect_key, nothing, op_digest,
+    planned_effect, write_run,
 };
 use crate::routing::{Decision, PlacementPlan};
+use crate::task::Launch;
 
 /// F13/F14 — the launch plan transaction (Appendix C `reserved` | "topology
 /// effect planned"): journal exactly the one topology effect `plan` names
@@ -54,6 +57,9 @@ pub fn launch_plan(
     let record = edited(run, |next| {
         next.state = State::Starting;
     });
+    // Topology kinds render deterministically at plan time — the target is
+    // the whole operation descriptor, so the digest takes no params (OQ-15).
+    let digest = op_digest(kind, Some(&target), &[]);
     Transition {
         state_changes: Vec::from([write_run(run, record)]),
         events: Vec::new(),
@@ -62,6 +68,57 @@ pub fn launch_plan(
             kind,
             effect_key(run, suffix),
             Some(target),
+            Some(digest),
         )]),
+    }
+}
+
+/// F13/Appendix B "Route" — the reserved Run the Route transaction writes:
+/// `reserved` with `max_age_deadline` fixed at reserve (F22), the minted
+/// `gov-<runId[0..8]>` name (F2/H#52), the Launch's caller as first owner and
+/// the F23 `base_commit` baseline the daemon pinned before the first
+/// topology effect. Supervision obligations apply from this moment
+/// (H#36/H#44).
+#[must_use]
+pub fn reserved_run(
+    launch: &Launch,
+    run_id: RunId,
+    cwd: String,
+    base_commit: Option<String>,
+    now: Timestamp,
+    policy: &Policy,
+) -> Run {
+    let child_name = mint_agent_name(&run_id).0;
+    Run {
+        id: run_id,
+        launch: launch.id.clone(),
+        owner: launch.caller.clone(),
+        owner_generation: 0,
+        version: 0,
+        state: State::Reserved,
+        prompt_certainty: None,
+        child_name,
+        identity: None,
+        operating_point: None,
+        provider: None,
+        tier_start: None,
+        cwd,
+        base_commit,
+        work_generation: 0,
+        evidence_generation: 0,
+        evidence_digest: None,
+        child_status: None,
+        idle_since: None,
+        idle_deadline: None,
+        repair_deadline: None,
+        rejected_at: None,
+        judgment_deadline: None,
+        judging_digest: None,
+        max_age_deadline: now.after(policy.max_age),
+        nudge_episode: 0,
+        nudged_episode: None,
+        blocked_episode: 0,
+        settlement: None,
+        settled_at: None,
     }
 }

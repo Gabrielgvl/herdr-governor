@@ -8,7 +8,7 @@ use crate::config::Policy;
 use crate::identity::Timestamp;
 use crate::lifecycle::{
     Effect, EffectKind, EffectTarget, Run, Settlement, State, Transition, effect_key, journaled,
-    nothing, planned_effect, settle,
+    nothing, op_digest, planned_effect, settle,
 };
 
 pub(super) fn on_cancel(
@@ -45,11 +45,15 @@ fn close_effect(run: &Run, journal: &[Effect]) -> Option<Effect> {
         return None;
     }
     run.identity.clone().map(|identity| {
+        // `close` takes no params — the captured Child target is its whole
+        // rendered form (OQ-15).
+        let target = EffectTarget::Child(identity);
         planned_effect(
             run,
             EffectKind::Close,
             key,
-            Some(EffectTarget::Child(identity)),
+            Some(target.clone()),
+            Some(op_digest(EffectKind::Close, Some(&target), &[])),
         )
     })
 }

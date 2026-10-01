@@ -9,7 +9,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::delivery::{MailboxEvent, MailboxEventKind, MailboxSubject};
-use crate::identity::{DedupKey, EffectId, EffectKey, EventId, Timestamp};
+use crate::identity::{DedupKey, Digest, EffectId, EffectKey, EventId, Timestamp};
 
 mod change;
 mod effect;
@@ -25,10 +25,10 @@ mod transition;
 pub use change::{StateChange, Transition};
 pub use effect::{
     Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
-    EffectTarget, EffectWrite,
+    EffectTarget, EffectWrite, op_digest,
 };
 pub use event::{Event, JudgmentVerdict, VersionTriple, Versioned};
-pub use launch::launch_plan;
+pub use launch::{launch_plan, reserved_run};
 pub use record::{CreatedTopology, OwnerChange, Run, RunUpdate};
 pub use rules::TRANSITION_RULES;
 pub use settle::settle;
@@ -37,8 +37,9 @@ pub use supervision::periodic_review;
 pub use transition::transition;
 
 /// The empty transition — losing transitions and no-op events commit nothing
-/// (F20).
-fn nothing() -> Transition {
+/// (F20). Crate-visible so the task module's Launch-row builders refuse with
+/// the same empty value.
+pub(crate) fn nothing() -> Transition {
     Transition {
         state_changes: Vec::new(),
         events: Vec::new(),
@@ -58,12 +59,16 @@ fn journaled(journal: &[Effect], key: &EffectKey) -> bool {
 }
 
 /// Ids are derived deterministically from the unique key they belong to, so
-/// a re-planned effect or re-emitted event names the same row.
+/// a re-planned effect or re-emitted event names the same row. `payload_digest`
+/// is the caller's `op_digest` over the rendered operation descriptor (F8) —
+/// `Some` for the deterministically-rendered Herdr kinds, `None` for
+/// `jev_evaluate` whose rendered form depends on dispatch-time state.
 fn planned_effect(
     run: &Run,
     kind: EffectKind,
     key: EffectKey,
     target: Option<EffectTarget>,
+    payload_digest: Option<Digest>,
 ) -> Effect {
     Effect {
         id: EffectId(format!("eff:{}", key.0)),
@@ -72,7 +77,7 @@ fn planned_effect(
         subject_launch: Some(run.launch.clone()),
         subject_run: Some(run.id.clone()),
         target,
-        payload_digest: None,
+        payload_digest,
         state: EffectState::Planned,
         certainty: None,
         receipt: None,

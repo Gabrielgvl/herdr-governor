@@ -150,6 +150,7 @@ pub(super) fn judging_write(run: &Run, digest: Digest, env: (Timestamp, &Policy)
         next.idle_since = None;
         next.idle_deadline = None;
     });
+    // `jev_evaluate` renders on dispatch-time state — no plan-time digest.
     let ask = planned_effect(
         run,
         EffectKind::JevEvaluate,
@@ -157,6 +158,7 @@ pub(super) fn judging_write(run: &Run, digest: Digest, env: (Timestamp, &Policy)
             run,
             &format!("accept:{}:{}", run.work_generation, generation),
         ),
+        None,
         None,
     );
     (record, ask)

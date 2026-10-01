@@ -3,6 +3,9 @@
 //! targets, the `Effect` row itself and the `EffectWrite` a transition
 //! requests.
 
+use alloc::format;
+use alloc::string::String;
+
 use crate::identity::{
     ChildIdentity, Digest, EffectId, EffectKey, LaunchId, PaneId, RunId, TabId, Timestamp,
 };
@@ -235,4 +238,85 @@ pub struct EffectWrite {
     /// The result to record — a `Judgments` receipt also writes the
     /// `judgment_sets`/`judgments` rows (Appendix B "Effect result").
     pub receipt: Option<EffectReceipt>,
+}
+
+/// F8/OQ-15 — the plan-time operation digest a `planned` row's
+/// `payload_digest` carries: `sha256` over the canonical operation descriptor
+/// `gov-op-v1`, the kind's stored spelling, the canonical target and the
+/// canonical params — each framed `u64` big-endian length plus bytes, the
+/// framing `config::args_digest` uses, so no two descriptors share a digest
+/// across a separator and serialization order never leaks in.
+///
+/// `params` are the persisted inputs the dispatcher rebuilds the operation
+/// from, already canonicalized by the caller: `agent_start` passes the
+/// candidate's `args_digest` over `args` (its argv); `prompt` passes the
+/// effect key — the persisted selector naming the body recipe the dispatcher
+/// renders (the Launch's Task for `prompt:task`, the episode's nudge for
+/// `nudge:<episode>`); `tab_create`/`pane_split`/`close` pass empty bytes —
+/// the target is their whole rendered form. Opaque catalog names (harness
+/// kinds, operating-point ids) never enter the descriptor: spec §7 N8 makes
+/// them renameable without observable change, digest bytes included.
+/// `jev_evaluate` takes no digest: its rendered request is not a pure
+/// function of the Task (`related_tab` joins only when caller tabs exist),
+/// so `planned` rows of that kind keep `payload_digest = NULL` — the
+/// honest record, not a gap.
+#[must_use]
+pub fn op_digest(kind: EffectKind, target: Option<&EffectTarget>, params: &[u8]) -> Digest {
+    use sha2::Digest as _;
+    let target_bytes = canonical_target(target);
+    let mut hasher = sha2::Sha256::new();
+    for part in [
+        b"gov-op-v1".as_slice(),
+        kind.as_str().as_bytes(),
+        target_bytes.as_bytes(),
+        params,
+    ] {
+        hasher.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(part);
+    }
+    Digest(hasher.finalize().into())
+}
+
+/// The canonical `EffectTarget` rendering `op_digest` hashes — the variant
+/// tag plus one `name=<len>:<bytes>` frame per field in fixed order, the
+/// `Task::render` convention; `None` renders `-`. `Child` carries the
+/// captured identity (F10 re-verifies it) minus `agent_kind` — an opaque
+/// catalog name the N8 renaming maps, so hashing it would make the digest
+/// differ across a renaming that must change no behaviour. `AgentPane`
+/// carries the placement plan.
+fn canonical_target(target: Option<&EffectTarget>) -> String {
+    let Some(inner) = target else {
+        return String::from("-\n");
+    };
+    match inner {
+        EffectTarget::ExistingTab(tab) => frame("existing_tab", &tab.0),
+        EffectTarget::CallerContext(pane) => frame("caller_context", &pane.0),
+        EffectTarget::AgentPane(plan) => match plan {
+            PlacementPlan::NewTab => String::from("agent_pane=-\n"),
+            PlacementPlan::ExistingTab { tab } => frame("agent_pane_existing_tab", &tab.0),
+        },
+        EffectTarget::Child(identity) => {
+            let mut out = String::from("child\n");
+            for (name, value) in [
+                ("herdr_incarnation", identity.herdr_incarnation.0.as_str()),
+                ("terminal_id", identity.terminal_id.0.as_str()),
+                ("agent_name", identity.agent_name.0.as_str()),
+                ("pane_id", identity.pane_id.0.as_str()),
+            ] {
+                out.push_str(&frame(name, value));
+            }
+            out.push_str(&match &identity.native_session {
+                Some(session) => frame("native_session", &session.0),
+                None => String::from("native_session=-\n"),
+            });
+            out
+        }
+    }
+}
+
+/// One canonical-render field: `name=<len>:<bytes>` — the length frame keeps
+/// the form injective when a value contains separators (same convention as
+/// `Task::render`'s field lines).
+fn frame(name: &str, value: &str) -> String {
+    format!("{name}={}:{value}\n", value.len())
 }

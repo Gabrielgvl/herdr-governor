@@ -34,6 +34,9 @@ pub enum MailboxEventKind {
     OutsideScope,
     /// The Launch failed (F5 `failed`).
     LaunchFailed,
+    /// The Launch reached a terminal outcome — `launched`, `abstained`,
+    /// `rejected` or `failed` — and the caller is owed the answer (F5/F18).
+    LaunchAnswered,
     /// The Task prompt's acknowledgement was unconfirmed (F16).
     PromptUnconfirmed,
     /// A follow-up's dispatch was unconfirmed (F17).
@@ -62,6 +65,7 @@ impl MailboxEventKind {
             Self::BlockedOnInput => "blocked_on_input",
             Self::OutsideScope => "outside_scope",
             Self::LaunchFailed => "launch_failed",
+            Self::LaunchAnswered => "launch_answered",
             Self::PromptUnconfirmed => "prompt_unconfirmed",
             Self::FollowUpUnconfirmed => "follow_up_unconfirmed",
             Self::FollowUpExpired => "follow_up_expired",
@@ -74,11 +78,12 @@ impl MailboxEventKind {
 
     /// F18 — whether the kind binds a Launch rather than a Run (the
     /// destination is then the Launch's caller instead of a Run's current
-    /// owner). Only `launch_failed` is launch-only.
+    /// owner). `launch_failed` and `launch_answered` are the launch-only
+    /// kinds.
     #[must_use]
     pub const fn binds_launch(&self) -> bool {
         match self {
-            Self::LaunchFailed => true,
+            Self::LaunchFailed | Self::LaunchAnswered => true,
             Self::HandoffAccepted
             | Self::HandoffRejected
             | Self::Settled
@@ -96,7 +101,7 @@ impl MailboxEventKind {
     }
 
     /// F18 — the stable `dedup_key` for one event:
-    /// `launch:<id>:<kind>` for the launch-only kind, `run:<id>:<kind>` for
+    /// `launch:<id>:<kind>` for a launch-only kind, `run:<id>:<kind>` for
     /// a kind that fires at most once per Run, and
     /// `run:<id>:<kind>:<qualifier>` for a recurrent kind — the qualifier is
     /// the stall's `nudge_episode` for `stalled`, the `evidence_generation`
@@ -130,6 +135,7 @@ impl MailboxEventKind {
             Self::HandoffAccepted
             | Self::Settled
             | Self::LaunchFailed
+            | Self::LaunchAnswered
             | Self::PromptUnconfirmed
             | Self::CooldownHit
             | Self::RecoveryPending
@@ -176,8 +182,8 @@ pub struct MailboxEvent {
 
 impl MailboxEvent {
     /// F18 — emit one actionable event: validates that the kind binds the
-    /// given subject (`launch_failed` takes a `Launch`, every other kind a
-    /// `Run`) and derives the stable `dedup_key`; `qualifier` is required
+    /// given subject (the launch-only kinds take a `Launch`, every other
+    /// kind a `Run`) and derives the stable `dedup_key`; `qualifier` is required
     /// exactly for the recurrent kinds (see
     /// [`MailboxEventKind::dedup_key`]). Returns `None` on a violated
     /// pairing or qualifier rule rather than emitting an unkeyable event.

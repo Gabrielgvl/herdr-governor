@@ -8,13 +8,13 @@ use alloc::vec::Vec;
 
 use crate::config::Policy;
 use crate::delivery::MailboxEventKind;
-use crate::identity::{ChildStatus, EffectKey, NativeSession, PaneId};
+use crate::identity::{ChildIdentity, ChildStatus, EffectKey, NativeSession, PaneId};
 use crate::routing::{Judgment, JudgmentOutcome, JudgmentRecord, Question, noul_yes};
 
 use super::{
     Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectTarget, Run,
-    Settlement, State, Timestamp, Transition, effect_key, mailbox_event, nothing, planned_effect,
-    settle, update_if_changed, write_run,
+    Settlement, State, Timestamp, Transition, effect_key, mailbox_event, nothing, op_digest,
+    planned_effect, settle, update_if_changed, write_run,
 };
 
 /// The fields a `unique` observation refreshes: the last seen status, the
@@ -108,7 +108,14 @@ pub fn periodic_review(run: &Run, owner_absent: bool, journal: &[Effect]) -> Opt
     // in-flight attempt suppresses this one while a failed one re-asks.
     let base = effect_key(run, &format!("review:{}", run.evidence_generation));
     let key = next_ask_key(journal, &base)?;
-    Some(planned_effect(run, EffectKind::JevEvaluate, key, None))
+    // `jev_evaluate` renders on dispatch-time state — no plan-time digest.
+    Some(planned_effect(
+        run,
+        EffectKind::JevEvaluate,
+        key,
+        None,
+        None,
+    ))
 }
 
 pub(super) fn on_unique(
@@ -178,6 +185,17 @@ fn work_resumed(
     })
 }
 
+/// F9/F25 — the episode's one nudge, shared by the idle and review paths so
+/// its persisted descriptor cannot drift between them. OQ-15 — the nudge's
+/// params are the effect key: the persisted selector naming the episode's
+/// nudge recipe the dispatcher renders.
+fn nudge_effect(run: &Run, identity: ChildIdentity) -> Effect {
+    let key = effect_key(run, &format!("nudge:{}", run.nudge_episode));
+    let target = EffectTarget::Child(identity);
+    let digest = op_digest(EffectKind::Prompt, Some(&target), key.0.as_bytes());
+    planned_effect(run, EffectKind::Prompt, key, Some(target), Some(digest))
+}
+
 /// `active` + `obs(idle|done)` with no handoff — F25: the idle episode opens
 /// at the observation (`idle_deadline` is the episode start + the policy
 /// window) and the child gets the episode's one nudge (F23).
@@ -199,12 +217,7 @@ fn idle_observed(
     if record.nudged_episode != Some(record.nudge_episode)
         && let Some(identity) = record.identity.clone()
     {
-        effects.push(planned_effect(
-            run,
-            EffectKind::Prompt,
-            effect_key(run, &format!("nudge:{}", run.nudge_episode)),
-            Some(EffectTarget::Child(identity)),
-        ));
+        effects.push(nudge_effect(run, identity));
         record.nudged_episode = Some(record.nudge_episode);
     }
     if record == *run {
@@ -236,7 +249,13 @@ fn blocked_observed(
     let base = effect_key(run, &format!("blocked:{}", record.blocked_episode));
     let mut effects = Vec::new();
     if let Some(key) = next_ask_key(journal, &base) {
-        effects.push(planned_effect(run, EffectKind::JevEvaluate, key, None));
+        effects.push(planned_effect(
+            run,
+            EffectKind::JevEvaluate,
+            key,
+            None,
+            None,
+        ));
     }
     let mut state_changes = Vec::new();
     if record != *run {
@@ -329,12 +348,7 @@ fn apply_review(run: &Run, record: &JudgmentRecord, now: Timestamp, policy: &Pol
                         // eligibility rule): the episode's one nudge stays
                         // unspent, so an unblocked stall still nudges.
                     } else if let Some(identity) = next.identity.clone() {
-                        effects.push(planned_effect(
-                            run,
-                            EffectKind::Prompt,
-                            effect_key(run, &format!("nudge:{}", run.nudge_episode)),
-                            Some(EffectTarget::Child(identity)),
-                        ));
+                        effects.push(nudge_effect(run, identity));
                         next.nudged_episode = Some(next.nudge_episode);
                     } else {
                         // no captured identity: the episode's nudge stays

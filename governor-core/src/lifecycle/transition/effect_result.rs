@@ -7,14 +7,14 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::config::Policy;
+use crate::config::{Policy, args_digest};
 use crate::delivery::MailboxEventKind;
 use crate::identity::{ChildIdentity, EffectKey, Timestamp};
 use crate::lifecycle::supervision::review_result;
 use crate::lifecycle::{
     Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
     EffectTarget, EffectWrite, PromptCertainty, Run, Settlement, State, StateChange, Transition,
-    edited, effect_key, mailbox_event, nothing, planned_effect, settle, write_run,
+    edited, effect_key, mailbox_event, nothing, op_digest, planned_effect, settle, write_run,
 };
 use crate::routing::{Decision, JudgmentOutcome, PlacementPlan};
 
@@ -134,7 +134,9 @@ fn launch_result(
     match result.kind {
         EffectKind::TabCreate => match result.outcome {
             // a new tab's initial pane hosts the child — never split (H#102)
-            EffectOutcome::Acknowledged => plan_agent_start(run, PlacementPlan::NewTab, 0),
+            EffectOutcome::Acknowledged => {
+                plan_agent_start(run, PlacementPlan::NewTab, 0, decision)
+            }
             EffectOutcome::PreInteractiveFailed
             | EffectOutcome::Failed {
                 certainty: EffectCertainty::Absent | EffectCertainty::Unknown,
@@ -154,7 +156,7 @@ fn launch_result(
                         | EffectTarget::Child(_) => None,
                     });
                 match plan {
-                    Some(placement) => plan_agent_start(run, placement, 0),
+                    Some(placement) => plan_agent_start(run, placement, 0, decision),
                     None => nothing(),
                 }
             }
@@ -171,8 +173,31 @@ fn launch_result(
     }
 }
 
-/// The `agent_start` effect for candidate `index` into `plan`'s pane.
-fn plan_agent_start(run: &Run, plan: PlacementPlan, index: usize) -> Transition {
+/// The `agent_start` effect for candidate `index` into `plan`'s pane. The
+/// payload digest covers the persisted candidate's `args` — the argv the
+/// dispatcher replays verbatim (F15, OQ-15). The candidate's harness and
+/// operating point stay out of the descriptor: they are opaque catalog
+/// names whose renaming must change no behaviour (spec §7 N8). The digest
+/// is absent only when the persisted decision cannot name that candidate
+/// (the row then carries an honest NULL, never a guess).
+fn plan_agent_start(
+    run: &Run,
+    plan: PlacementPlan,
+    index: usize,
+    decision: Option<&Decision>,
+) -> Transition {
+    let target = EffectTarget::AgentPane(plan);
+    let digest = decision
+        .and_then(|d| d.candidates.get(index))
+        .map(|candidate| {
+            op_digest(
+                EffectKind::AgentStart,
+                Some(&target),
+                args_digest(candidate.args.iter().map(String::as_str))
+                    .0
+                    .as_slice(),
+            )
+        });
     Transition {
         state_changes: Vec::new(),
         events: Vec::new(),
@@ -180,7 +205,8 @@ fn plan_agent_start(run: &Run, plan: PlacementPlan, index: usize) -> Transition 
             run,
             EffectKind::AgentStart,
             effect_key(run, &format!("start:{index}")),
-            Some(EffectTarget::AgentPane(plan)),
+            Some(target),
+            digest,
         )]),
     }
 }
@@ -221,7 +247,7 @@ fn agent_start_result(
             if has_next {
                 match target {
                     Some(EffectTarget::AgentPane(plan)) => {
-                        return plan_agent_start(run, plan, tried);
+                        return plan_agent_start(run, plan, tried, decision);
                     }
                     Some(
                         EffectTarget::ExistingTab(_)
@@ -267,14 +293,21 @@ fn started(
             next.tier_start = Some(c.tier.clone());
         }
     });
+    // F8/OQ-15 — the prompt's params are the effect key: the persisted
+    // selector naming the body recipe the dispatcher renders (here the
+    // Launch's Task, which `prompt:task` points at).
+    let key = effect_key(run, "prompt:task");
+    let target = EffectTarget::Child(identity.clone());
+    let digest = op_digest(EffectKind::Prompt, Some(&target), key.0.as_bytes());
     Transition {
         state_changes: Vec::from([write_run(run, record)]),
         events: Vec::new(),
         effects: Vec::from([planned_effect(
             run,
             EffectKind::Prompt,
-            effect_key(run, "prompt:task"),
-            Some(EffectTarget::Child(identity.clone())),
+            key,
+            Some(target),
+            Some(digest),
         )]),
     }
 }
