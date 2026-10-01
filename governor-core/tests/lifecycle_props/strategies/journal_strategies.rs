@@ -1,6 +1,6 @@
 //! Journal-side generators split out of the property proofs: the F8 journal
-//! row states, arbitrary effect journals, the launch seed topology, frozen
-//! handoffs, the persisted routing `Decision` and the Jev-result input tuple.
+//! row states, arbitrary effect journals, frozen handoffs, the persisted
+//! routing `Decision` and the Jev-result input tuple.
 
 use governor_core::acceptance::FrozenHandoff;
 use governor_core::config::{ConfigVersion, OperatingPointId, Provider, Tier};
@@ -127,21 +127,35 @@ pub(crate) fn arb_journal() -> impl Strategy<Value = Vec<Effect>> {
     arb_journal_from(JOURNAL_KEYS, || arb_journal_state().boxed())
 }
 
-/// The topology effects a launch plan journals (Appendix C `reserved` →
-/// `starting`): `tab_create`/`pane_split`, `dispatching`.
-const SEED_TOPOLOGY_KEYS: &[(&str, EffectKind)] = &[
-    ("tab", EffectKind::TabCreate),
-    ("split", EffectKind::PaneSplit),
-];
+/// A routing `Decision` over `candidates` — the shape F13 persists.
+fn decision_of(candidates: Vec<Candidate>) -> Decision {
+    Decision {
+        judged_tier: Tier(arb::text("t0")),
+        requested_tier: None,
+        policy_cap: None,
+        policy_floor: None,
+        caller_uplift: None,
+        recovery_minimum: None,
+        exploration: Exploration {
+            assigned: false,
+            executed: false,
+        },
+        start_tier: Tier(arb::text("t0")),
+        candidates,
+        config_version: ConfigVersion(arb::text("cfg-1")),
+    }
+}
 
-/// A fresh Run's seed journal — the topology rows the launch plan write
-/// committed before any `transition` ran.
-pub(crate) fn arb_seed_topology() -> impl Strategy<Value = Vec<Effect>> {
-    arb_journal_from(SEED_TOPOLOGY_KEYS, || {
-        arb::arb_timestamp()
-            .prop_map(|at| (EffectState::Dispatching, None, Some(at)))
-            .boxed()
-    })
+/// A persisted routing decision — the candidate list the launch
+/// pipeline walks on pre-interactive failures.
+pub(crate) fn arb_decision() -> impl Strategy<Value = Decision> {
+    prop_vec(arb_candidate(), 0..4).prop_map(decision_of)
+}
+
+/// A persisted routing decision that can launch — F13 abstains without a
+/// candidate, so a decision that reached `launch_plan` names at least one.
+pub(crate) fn arb_launch_decision() -> impl Strategy<Value = Decision> {
+    prop_vec(arb_candidate(), 1..5).prop_map(decision_of)
 }
 
 /// Arbitrary frozen handoffs for a Run — a small work-generation space
@@ -164,26 +178,6 @@ pub(crate) fn arb_handoffs() -> impl Strategy<Value = Vec<FrozenHandoff>> {
             }),
         0..4,
     )
-}
-
-/// A persisted routing decision — the candidate list the launch
-/// pipeline walks on pre-interactive failures.
-pub(crate) fn arb_decision() -> impl Strategy<Value = Decision> {
-    prop_vec(arb_candidate(), 0..4).prop_map(|candidates| Decision {
-        judged_tier: Tier(arb::text("t0")),
-        requested_tier: None,
-        policy_cap: None,
-        policy_floor: None,
-        caller_uplift: None,
-        recovery_minimum: None,
-        exploration: Exploration {
-            assigned: false,
-            executed: false,
-        },
-        start_tier: Tier(arb::text("t0")),
-        candidates,
-        config_version: ConfigVersion(arb::text("cfg-1")),
-    })
 }
 
 fn arb_candidate() -> impl Strategy<Value = Candidate> {

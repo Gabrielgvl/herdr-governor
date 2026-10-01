@@ -270,7 +270,7 @@ pub fn arb_event() -> impl Strategy<Value = Event> {
                 handoff_reading,
             },
         ),
-        2 => arb_digest().prop_map(|digest| Event::Handoff { digest }),
+        1 => arb_digest().prop_map(|digest| Event::Handoff { digest }),
         2 => arb_verdict().prop_map(Event::Judgment),
         2 => arb_deadline_kind().prop_map(Event::Deadline),
         1 => any::<bool>().prop_map(|close_pane| Event::Cancel { close_pane }),
@@ -303,15 +303,19 @@ pub fn arb_stamped_event() -> impl Strategy<Value = Event> {
 /// whether the owner is absent for the reconcile pass.
 pub type PrefixStep = (Event, StampSpec, u64, bool);
 
+/// The step list of an event prefix — events, stamp specs, `now` deltas
+/// (monotonic; reconcile time never moves backwards) and the reconcile
+/// lane's owner-absence flag.
+pub(crate) fn arb_steps() -> impl Strategy<Value = Vec<PrefixStep>> {
+    prop_vec(
+        (arb_event(), arb_stamp_spec(), 0_u64..120_000, any::<bool>()),
+        0..64,
+    )
+}
+
 /// A start timestamp plus an arbitrary event prefix.
 pub fn arb_prefix() -> impl Strategy<Value = (Timestamp, Vec<PrefixStep>)> {
-    (
-        arb_timestamp(),
-        prop_vec(
-            (arb_event(), arb_stamp_spec(), 0_u64..120_000, any::<bool>()),
-            0..64,
-        ),
-    )
+    (arb_timestamp(), arb_steps())
 }
 
 #[cfg(test)]

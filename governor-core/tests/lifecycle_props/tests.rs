@@ -1,70 +1,18 @@
-//! The F22 lifecycle proofs and their rig: the miniature of the store's
-//! conditional-write contract, the record/silence oracles, and the deadline
-//! settlement table they assert against.
+//! The F22 lifecycle proofs: the record/silence oracles the safety and
+//! deadline properties assert against. The miniature store (`Sim`), the
+//! freeze destination and the state-aware seeds live in `strategies`; the
+//! literal Appendix C deadline table lives in `deadline_oracle`.
 
-use governor_core::acceptance::FrozenHandoff;
 use governor_core::identity::Timestamp;
 use governor_core::lifecycle::{
-    DeadlineKind, Effect, EffectKind, EffectState, Event, Run, Settlement, State, StateChange,
-    Transition, UnresolvedReason, periodic_review, transition,
+    DeadlineKind, EffectKind, EffectState, Event, Run, State, StateChange, Transition,
+    periodic_review, transition,
 };
-use governor_core::routing::Decision;
-use proptest::option;
 use proptest::prelude::{ProptestConfig, prop_assert, prop_assert_eq, proptest};
 
-use crate::strategies as arb;
-use crate::strategies::journal_strategies::{arb_decision, arb_journal, arb_seed_topology};
-
-/// The coordinator-supplied destination a new freeze writes (F24).
-pub(crate) const FREEZE_PATH: &str = "/state/handoffs/new";
-
-/// The store's conditional-write contract in miniature (Appendix B):
-/// `UpdateRun` applies while `expected_version` still holds,
-/// `WriteEffect` updates its journaled row, planned effects join the
-/// journal, freezes join the handoffs.
-struct Sim {
-    run: Run,
-    journal: Vec<Effect>,
-    handoffs: Vec<FrozenHandoff>,
-    decision: Option<Decision>,
-}
-
-impl Sim {
-    fn apply(&mut self, transition: &Transition) {
-        for change in &transition.state_changes {
-            match change {
-                StateChange::UpdateRun(update) => {
-                    assert!(
-                        update.expected_version == self.run.version,
-                        "conditional run write must be computed against the live row"
-                    );
-                    self.run = update.record.clone();
-                }
-                StateChange::WriteEffect(write) => {
-                    // an UPDATE against an unjournaled key matches no row
-                    if let Some(row) = self.journal.iter_mut().find(|row| row.key == write.key) {
-                        row.state = write.state;
-                        row.certainty = write.certainty;
-                        row.receipt = write.receipt.clone();
-                    }
-                }
-                StateChange::FreezeHandoff(handoff) => self.handoffs.push(handoff.clone()),
-                StateChange::BindCaller(_)
-                | StateChange::RecordLaunch(_)
-                | StateChange::ReserveRun(_)
-                | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
-                | StateChange::ExpireFollowUps { .. }
-                | StateChange::RecordRecovery(_)
-                | StateChange::SetCooldown(_)
-                | StateChange::AckEvent(_) => {}
-            }
-        }
-        for effect in &transition.effects {
-            self.journal.push(effect.clone());
-        }
-    }
-}
+use crate::deadline_oracle::{deadline_probe_journals, expected_deadline_settlement};
+use crate::strategies::journal_strategies::arb_journal;
+use crate::strategies::{self as arb, FREEZE_PATH, Sim};
 
 /// The `Run` records a transition writes.
 fn updated_records(transition: &Transition) -> Vec<&Run> {
@@ -111,38 +59,6 @@ fn assert_record_coherent(record: &Run) {
     );
 }
 
-/// The settlement Appendix C attaches to a deadline kind firing at `now`,
-/// or `None` when that deadline does not apply to this Run.
-fn expected_deadline_settlement(
-    run: &Run,
-    kind: DeadlineKind,
-    now: Timestamp,
-) -> Option<Settlement> {
-    let overdue = |deadline: Option<Timestamp>| deadline.is_some_and(|d| now >= d);
-    if kind == DeadlineKind::MaxAge && now >= run.max_age_deadline {
-        Some(Settlement::Unresolved {
-            reason: UnresolvedReason::MaxAge,
-        })
-    } else if kind == DeadlineKind::Idle && run.state == State::Active && overdue(run.idle_deadline)
-    {
-        Some(Settlement::NoHandoff)
-    } else if kind == DeadlineKind::Repair
-        && (run.state == State::Repair || run.state == State::Judging)
-        && overdue(run.repair_deadline)
-    {
-        Some(Settlement::Rejected)
-    } else if kind == DeadlineKind::Judgment
-        && run.state == State::Judging
-        && overdue(run.judgment_deadline)
-    {
-        Some(Settlement::Unresolved {
-            reason: UnresolvedReason::JudgmentUnavailable,
-        })
-    } else {
-        None
-    }
-}
-
 proptest! {
     #![proptest_config({
         let mut config = ProptestConfig::with_cases(10_000);
@@ -152,28 +68,26 @@ proptest! {
 
     /// F22 — safety over arbitrary event prefixes: at most one
     /// settlement, never two prompts per effect key, no transition out
-    /// of a settlement. The prefix drives a freshly `reserved` Run whose
-    /// journal holds only the launch plan's topology effects; each event
-    /// is stamped fresh at delivery or perturbed like a late async
-    /// result, and the reconcile lane's `periodic_review` runs between
-    /// events.
+    /// of a settlement. Each prefix replays over a Run seeded into one
+    /// of the six unsettled states by the real transitions —
+    /// `launch_plan` moves `reserved` to `starting`, effect results walk
+    /// it to `prompting`/`active`, a handoff freezes it into `judging`,
+    /// a rejection into `repair` — so deep-state lanes are exercised,
+    /// each event is stamped fresh at delivery or perturbed like a late
+    /// async result, and the reconcile lane's `periodic_review` runs
+    /// between events.
     #[test]
-    fn f22_safety_over_event_prefixes(
-        (start, steps) in arb::arb_prefix(),
-        run in arb::arb_reserved_run(),
-        seed in arb_seed_topology(),
-        decision in option::of(arb_decision()),
-    ) {
+    fn f22_safety_over_event_prefixes(world in arb::arb_seeded_prefix()) {
         let policy = arb::test_policy();
         let mut sim = Sim {
-            run,
-            journal: seed,
-            handoffs: Vec::new(),
-            decision,
+            run: world.run,
+            journal: world.journal,
+            handoffs: world.handoffs,
+            decision: world.decision,
         };
-        let mut now = start;
+        let mut now = world.start;
         let mut settlements = 0_u32;
-        for (event, spec, delta, owner_absent) in steps {
+        for (event, spec, delta, owner_absent) in world.steps {
             now = Timestamp(now.0.saturating_add(i64::try_from(delta).unwrap_or(i64::MAX)));
             let was_settled = sim.run.state == State::Settled;
             let stamped = arb::stamped(&sim.run, event, spec);
@@ -258,7 +172,10 @@ proptest! {
     /// each applicable deadline settles the Run with its Appendix C
     /// settlement, and a full sweep settles it exactly once. Every
     /// unsettled Run carries `max_age_deadline`, so the sweep always
-    /// terminates it.
+    /// terminates it. `deadline(repair)` on a `judging`/`repair` Run is
+    /// additionally probed against a journal holding a qualifying
+    /// in-window outbox dispatch — which holds the settle — and a
+    /// non-qualifying one — which does not.
     #[test]
     fn f22_settles_past_every_deadline(
         run in arb::arb_unsettled_run(),
@@ -283,41 +200,44 @@ proptest! {
         // each applicable deadline settles in isolation; every other
         // kind is quiet — a deadline only ever fires its own lane
         for kind in kinds {
-            let stamped = arb::stamped(&run, Event::Deadline(kind), arb::StampSpec::Fresh);
-            let outcome = transition(
-                &run,
-                &stamped,
-                now,
-                &policy,
-                (None, &[], &[]),
-                FREEZE_PATH,
-            );
-            match expected_deadline_settlement(&run, kind, now) {
-                Some(expected) => {
-                    let records = updated_records(&outcome);
-                    prop_assert_eq!(records.len(), 1, "a due deadline writes the Run once");
-                    let record = records.first().copied();
-                    prop_assert_eq!(
-                        record.and_then(|r| r.settlement),
-                        Some(expected),
-                        "the deadline settles with its Appendix C settlement"
-                    );
-                    prop_assert_eq!(
-                        record.map(|r| r.state),
-                        Some(State::Settled),
-                        "the deadline leaves the Run settled"
-                    );
-                    prop_assert_eq!(
-                        record.and_then(|r| r.settled_at),
-                        Some(now),
-                        "settled_at records the firing time"
-                    );
-                }
-                None => {
-                    prop_assert!(
-                        is_quiet(&outcome),
-                        "a deadline that does not apply commits nothing"
-                    );
+            for journal in deadline_probe_journals(&run, kind, now) {
+                let stamped =
+                    arb::stamped(&run, Event::Deadline(kind), arb::StampSpec::Fresh);
+                let outcome = transition(
+                    &run,
+                    &stamped,
+                    now,
+                    &policy,
+                    (None, &journal, &[]),
+                    FREEZE_PATH,
+                );
+                match expected_deadline_settlement(&run, kind, now, &journal) {
+                    Some(expected) => {
+                        let records = updated_records(&outcome);
+                        prop_assert_eq!(records.len(), 1, "a due deadline writes the Run once");
+                        let record = records.first().copied();
+                        prop_assert_eq!(
+                            record.and_then(|r| r.settlement),
+                            Some(expected),
+                            "the deadline settles with its Appendix C settlement"
+                        );
+                        prop_assert_eq!(
+                            record.map(|r| r.state),
+                            Some(State::Settled),
+                            "the deadline leaves the Run settled"
+                        );
+                        prop_assert_eq!(
+                            record.and_then(|r| r.settled_at),
+                            Some(now),
+                            "settled_at records the firing time"
+                        );
+                    }
+                    None => {
+                        prop_assert!(
+                            is_quiet(&outcome),
+                            "a deadline that does not apply commits nothing"
+                        );
+                    }
                 }
             }
         }

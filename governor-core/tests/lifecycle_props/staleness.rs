@@ -13,10 +13,11 @@ use proptest::prelude::{ProptestConfig, prop_assert, prop_assert_eq, prop_assume
 use proptest::strategy::Strategy as _;
 
 use crate::strategies as arb;
+use crate::strategies::FREEZE_PATH;
 use crate::strategies::journal_strategies::{
     arb_decision, arb_handoffs, arb_jev_result, arb_journal,
 };
-use crate::tests::{FREEZE_PATH, is_quiet};
+use crate::tests::is_quiet;
 
 proptest! {
     #![proptest_config({
