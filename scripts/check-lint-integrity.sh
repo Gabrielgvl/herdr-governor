@@ -101,7 +101,13 @@ fi
 # allow/deny/warn/forbid attributes — top-level or nested inside cfg_attr —
 # every #[expect] carries a reason and, inside member src/ trees, may not
 # name the purity lints (disallowed_methods/types/macros in any spelling)
-# or a group that silences them (clippy::all, clippy::style, warnings); no
+# or a group that silences them (clippy::all, clippy::style, warnings); and
+# EVERYWHERE scanned — member src/ and member tests/ alike — an #[expect]
+# may not name the function-length lint (too_many_lines, bare or
+# clippy::-prefixed, r# spellings canonicalized) or a group containing it
+# (clippy::pedantic, warnings): the 100-line function cap (clippy
+# too_many_lines, threshold pinned by I2) is a calibrated limit no
+# attribute may silence, and the tests/ escape does not reach it; no
 # #[ignore]; no #[mutants::skip] in any spelling; and no release-only cfg —
 # cfg, cfg_attr or cfg! forms of not(test) — the committed-tree mirror of
 # R8. Catches intent in committed files the diff gate misses. Non-.rs
@@ -129,6 +135,7 @@ KIND_MSG = {
     "suppress": "suppression attribute",
     "expect-reason": "expect without reason",
     "expect-target": "expect names a banned purity lint/group",
+    "expect-target-anywhere": "expect names an unsilenceable lint/group",
     "ignore": "ignored test",
     "mutants-skip": "mutants::skip attribute",
     "not-test": "release-only cfg (R8)",

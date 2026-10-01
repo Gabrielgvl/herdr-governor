@@ -165,7 +165,10 @@ Verdicts are FAIL or REPORT:
   any spelling) or a silencing group (`clippy::all`, `clippy::style`,
   `warnings`): FAIL. The reasoned-expect escape is scoped positively —
   only member `tests/` trees claim it; every other `.rs` path keeps the
-  banned-target rule.
+  banned-target rule. One ban has no escape at all: an `#[expect]` naming
+  the function-length lint (`too_many_lines`, bare or `clippy::`-prefixed)
+  or a group containing it (`clippy::pedantic`, `warnings`) fails in
+  `src/` and `tests/` alike — the 100-line function cap is unsilenceable.
 - **R3** — test deletion in any disguise: removed test markers (`#[test]`,
   `#[tokio::test]`, `#[cfg(test)]`, `fn test_*`), deleted or type-changed
   (`T` — e.g. a test file swapped for a symlink) files on the compiled test
@@ -231,7 +234,10 @@ cover `src`, `tests`, `*/src`, `*/tests` — the dirs that exist:
   `cfg`/`cfg_attr`/`cfg!` form of `not(test)` (trailing comma and `[]`/`{}`
   macro delimiters included) — the committed-tree mirror of R8. The
   reasoned-expect escape applies only inside member `tests/` trees —
-  positively claimed, not inferred from "not under `src/`". The scan is
+  positively claimed, not inferred from "not under `src/`" — and it never
+  reaches the unsilenceable set: `#[expect]` of `too_many_lines`,
+  `clippy::pedantic` or `warnings` fails in `src/` and `tests/` alike.
+  The scan is
   fail-closed: a crashed producer or an unreadable in-scope file/dir is
   a FAIL, not an empty result.
 - **I4** — `.githooks/*` and `scripts/*.sh` keep their exec bit.
@@ -444,7 +450,7 @@ diff gate.
 | `just lint` | `cargo fmt --check` + `cargo clippy --all-targets --locked -- -D warnings` |
 | `just test` | `cargo nextest run --locked` |
 | `just deny` | `cargo deny check` (supply chain) |
-| `just hygiene` | `typos`, `tombi`, `cargo sort --check`, `cargo shear`, `shellcheck`, `shfmt`, file-length ceiling |
+| `just hygiene` | `typos`, `tombi`, `cargo sort --check`, `cargo shear`, `shellcheck`, `shfmt`, 500-line file ceiling |
 | `just wf` | `actionlint` + `zizmor` on `.github/workflows/` |
 | `just guard` | `check-lint-integrity.sh` + `check-protected-diff.sh` |
 | `just guard-selftest` | the gates' own adversarial suite (`scripts/`) — without it a gate regression ships green |
@@ -525,8 +531,14 @@ correct today and activates itself as code lands:
   pretends to test — stated, not absorbed.
 - `just cov` is informational until real code makes per-file floors honest;
   a floor on a skeleton is cargo-cult.
-- The file-length ceiling (800 lines warn) is a placeholder until real code
-  lands.
+- File length is calibrated and hard: `just hygiene` fails on any `.rs`
+  file over 500 lines (recalibrated on the Phase-3 core on 2026-09-30 —
+  files were clustering just under the old 800 placeholder). Functions
+  stay at ≤ 100 lines via clippy `too_many_lines`
+  (`too-many-lines-threshold = 100`, pinned in both `clippy.toml` files by
+  I2), and no `#[expect]` may silence it — I3/R2 ban the lint and its
+  containing groups (`clippy::pedantic`, `warnings`) as expect targets in
+  `src/` and `tests/` alike.
 - I9 and I10 are lexical tripwires: comments and strings count, and inline
   `#[cfg(test)]` modules inside `src/` files are scanned — a false positive
   means reword or move the text, never weaken the scan.

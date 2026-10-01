@@ -258,6 +258,8 @@ EXPECTED_CASES = {
     "schema-fixture-byte-change",
     "stale-owner-approval",
     "banned-expect",
+    "unsilenceable-expect",
+    "raised-lines-threshold",
     "no-std",
     "mutants-skip-attr",
 }
@@ -888,6 +890,26 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         proc = self.check()
         self.assertNotIn("R2", proc.stdout)
         self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    @case("unsilenceable-expect", "cheat", "an expect of the function-length lint or its groups in a member tests/ diff still fails R2 — the escape does not reach it")
+    def test_unsilenceable_expect_in_member_tests_fails_r2(self):
+        for line in (
+            '#[expect(clippy::too_many_lines, reason = "x")]',
+            '#[expect(too_many_lines, reason = "x")]',
+            '#[expect(clippy::pedantic, reason = "x")]',
+            '#[expect(warnings, reason = "x")]',
+        ):
+            with self.subTest(line=line):
+                self.repo.write(
+                    BIN_TEST,
+                    '#[test]\nfn test_bin() {\n    assert!(true, "smoke");\n}\n'
+                    + line + '\nfn helper() {}\n')
+                proc = self.check()
+                self.assertIn("FAIL R2", proc.stdout)
+                self.assertNotEqual(proc.returncode, 0)
+                self.repo.write(
+                    BIN_TEST,
+                    '#[test]\nfn test_bin() {\n    assert!(true, "smoke");\n}\n')
 
     @case("deleted-test", "cheat", "#[test] attribute removed under a surviving signature")
     def test_test_deletion_fails(self):
@@ -2061,6 +2083,103 @@ class LintIntegrityTests(unittest.TestCase):
                 self.assertNotEqual(proc.returncode, 0)
                 self.assertIn("I3", proc.stdout)
                 self.repo.remove(p)
+
+    @case("unsilenceable-expect", "cheat", "expect of the function-length lint or a silencing group fails I3 in member src/ — every spelling and form")
+    def test_unsilenceable_expect_fails_i3_src(self):
+        for attr in (
+            '#[expect(too_many_lines, reason = "x")]',
+            '#[expect(clippy::too_many_lines, reason = "x")]',
+            '#[expect(clippy::r#too_many_lines, reason = "x")]',
+            '#[r#expect(clippy::too_many_lines, reason = "x")]',
+            '#[expect(clippy::pedantic, reason = "x")]',
+            '#[expect(warnings, reason = "x")]',
+            '#[expect(r#warnings, reason = "x")]',
+            '#![expect(clippy::too_many_lines, reason = "x")]',
+            '#![expect(clippy::pedantic, reason = "x")]',
+            '#[cfg_attr(test, expect(clippy::too_many_lines, reason = "x"))]',
+            '#[cfg_attr(test, expect(clippy::pedantic, reason = "x"))]',
+            '#[cfg_attr(test, expect(warnings, reason = "x"))]',
+        ):
+            with self.subTest(attr=attr):
+                self.repo.write(CORE_LIB, real_file(CORE_LIB) + attr + "\nfn g() {}\n")
+                proc = self.check()
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("I3", proc.stdout)
+                self.repo.write(CORE_LIB, real_file(CORE_LIB))
+
+    @case("unsilenceable-expect", "cheat", "the member tests/ escape does NOT reach the function-length lint or its groups")
+    def test_unsilenceable_expect_fails_i3_tests(self):
+        base = '#[test]\nfn test_bin() {\n    assert!(true, "smoke");\n}\n'
+        for attr in (
+            '#[expect(too_many_lines, reason = "x")]',
+            '#[expect(clippy::too_many_lines, reason = "x")]',
+            '#[expect(clippy::r#too_many_lines, reason = "x")]',
+            '#[expect(clippy::pedantic, reason = "x")]',
+            '#[expect(warnings, reason = "x")]',
+            '#[cfg_attr(test, expect(clippy::too_many_lines, reason = "x"))]',
+            '#[cfg_attr(test, expect(clippy::pedantic, reason = "x"))]',
+            '#[cfg_attr(test, expect(warnings, reason = "x"))]',
+        ):
+            with self.subTest(attr=attr):
+                self.repo.write(BIN_TEST, base + attr + "\nfn helper() {}\n")
+                proc = self.check()
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("I3", proc.stdout)
+                self.repo.write(BIN_TEST, base)
+        with self.subTest(attr="inner"):
+            self.repo.write(
+                BIN_TEST,
+                '#![expect(clippy::too_many_lines, reason = "x")]\n' + base)
+            proc = self.check()
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("I3", proc.stdout)
+            self.repo.write(BIN_TEST, base)
+
+    @case("unsilenceable-expect", "control", "a reasoned expect of an ordinary lint in member tests/ stays sanctioned")
+    def test_ordinary_expect_in_tests_ok_i3(self):
+        self.repo.write(
+            BIN_TEST,
+            '#[expect(dead_code, reason = "helper kept for a later case")]\n'
+            "fn helper() {}\n"
+            '#[test]\nfn test_bin() {\n    assert!(true, "smoke");\n}\n')
+        proc = self.check()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    @case("unsilenceable-expect", "control", "the reasoned disallowed_* fixture escape in member tests/ is not narrowed")
+    def test_purity_expect_escape_in_tests_ok_i3(self):
+        self.repo.write(
+            BIN_TEST,
+            '#![expect(clippy::disallowed_methods, reason = "fixture I/O")]\n'
+            '#[test]\nfn test_bin() {\n    assert!(true, "smoke");\n}\n')
+        proc = self.check()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    @case("raised-lines-threshold", "cheat", "raising too-many-lines-threshold in either clippy.toml fails I2")
+    def test_raised_lines_threshold_fails_i2(self):
+        for path, old, new in (
+            ("clippy.toml",
+             "too-many-lines-threshold      = 100",
+             "too-many-lines-threshold      = 500"),
+            (CORE + "/clippy.toml",
+             "too-many-lines-threshold = 100",
+             "too-many-lines-threshold = 500"),
+        ):
+            with self.subTest(path=path):
+                self.repo.write(path, real_file(path).replace(old, new))
+                proc = self.check()
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("I2", proc.stdout)
+                self.repo.write(path, real_file(path))
+
+    @case("raised-lines-threshold", "control", "an unpinned clippy threshold stays editable — the pin names one option exactly")
+    def test_other_threshold_edit_ok_i2(self):
+        self.repo.write(
+            "clippy.toml",
+            real_file("clippy.toml").replace(
+                "cognitive-complexity-threshold = 20",
+                "cognitive-complexity-threshold = 25"))
+        proc = self.check()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
 
     def _stub_bin(self, name, body):
         stub = Path(tempfile.mkdtemp(prefix="guardrails-stub-"))
@@ -3939,6 +4058,30 @@ class StripperTests(unittest.TestCase):
         self.assertEqual(
             self.findings(
                 '#[expect(dead_code, r#reason = "x")]\nfn g() {}\n'),
+            [])
+
+    def test_unsilenceable_expect_targets_flagged_outside_src_scope(self):
+        # src_scope=False (member tests/ trees) disables the purity-target
+        # ban but never the function-length one — the escape cannot reach
+        # too_many_lines, its pedantic group, or the warnings group
+        for attr in (
+            '#[expect(too_many_lines, reason = "x")]',
+            '#[expect(clippy::too_many_lines, reason = "x")]',
+            '#[expect(clippy::r#too_many_lines, reason = "x")]',
+            '#[expect(clippy::pedantic, reason = "x")]',
+            '#[expect(warnings, reason = "x")]',
+            '#[cfg_attr(test, expect(clippy::too_many_lines, reason = "x"))]',
+        ):
+            with self.subTest(attr=attr):
+                self.assertEqual(
+                    self.findings(attr + "\nfn g() {}\n", src_scope=False),
+                    [("expect-target-anywhere", 1)])
+        # and the tests/-scoped purity escape is untouched by the new set
+        self.assertEqual(
+            self.findings(
+                '#[expect(clippy::disallowed_methods, reason = "x")]\n'
+                "fn g() {}\n",
+                src_scope=False),
             [])
 
 
