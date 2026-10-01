@@ -212,3 +212,119 @@ fn f4_sessionless_child_cannot_adopt_itself() {
         "F4 — an unrelated adopter is never the child"
     );
 }
+
+// ---- H#24 — every conjunct of the child check is individually required ----
+// Each test below matches the captured identity in full except for one
+// field; the caller must be allowed through, so a `&&` weakened to `||`
+// in `caller_is_run_child` surfaces as a spurious CALLER_IS_RUN.
+
+#[test]
+fn f4_caller_is_run_child_requires_caller_kind() {
+    // The row matches the identity's terminal, kind, name and the
+    // caller's session, but the caller's kind differs from the captured
+    // agent_kind — not the child.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([occupied(
+        "w6:p9",
+        "term-1",
+        "kind-1",
+        "gov-deadbeef",
+        Some("sess-child"),
+        None,
+    )]);
+    let adopter = key("kind-2", "sess-child");
+    assert_eq!(
+        plan_adoption(&run, &adopter, &agents, false, false),
+        Ok(owner_change(&run, adopter)),
+        "F4/H#24 — a caller of another kind is not the Run's child"
+    );
+}
+
+#[test]
+fn f4_caller_is_run_child_requires_terminal() {
+    // The row reports the caller's kind and session and the identity's
+    // kind and name, but sits on another terminal — not the child.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([occupied(
+        "w6:p9",
+        "term-other",
+        "kind-1",
+        "gov-deadbeef",
+        Some("sess-child"),
+        None,
+    )]);
+    let adopter = key("kind-1", "sess-child");
+    assert_eq!(
+        plan_adoption(&run, &adopter, &agents, false, false),
+        Ok(owner_change(&run, adopter)),
+        "F4/H#24 — a row on another terminal is not the Run's child"
+    );
+}
+
+#[test]
+fn f4_caller_is_run_child_requires_row_kind() {
+    // The row's terminal, name and session match but its occupant kind
+    // differs from the captured agent_kind — not the child.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([occupied(
+        "w6:p9",
+        "term-1",
+        "kind-2",
+        "gov-deadbeef",
+        Some("sess-child"),
+        None,
+    )]);
+    let adopter = key("kind-1", "sess-child");
+    assert_eq!(
+        plan_adoption(&run, &adopter, &agents, false, false),
+        Ok(owner_change(&run, adopter)),
+        "F4/H#24 — a row occupied by another kind is not the Run's child"
+    );
+}
+
+#[test]
+fn f4_caller_is_run_child_requires_row_name() {
+    // The row's terminal, kind and session match but its occupant name
+    // differs from the captured agent_name — not the child.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-child"))), None);
+    let agents = Vec::from([occupied(
+        "w6:p9",
+        "term-1",
+        "kind-1",
+        "gov-other",
+        Some("sess-child"),
+        None,
+    )]);
+    let adopter = key("kind-1", "sess-child");
+    assert_eq!(
+        plan_adoption(&run, &adopter, &agents, false, false),
+        Ok(owner_change(&run, adopter)),
+        "F4/H#24 — a row occupied by another name is not the Run's child"
+    );
+}
+
+#[test]
+fn f4_caller_is_run_child_requires_row_session() {
+    // The persisted session agrees with the row's report, but the row's
+    // session is not the caller's — the caller never reached this child.
+    let owner = key("kind-a", "sess-a");
+    let run = run(&owner, Some(child("w6:p9", Some("sess-x"))), None);
+    let agents = Vec::from([occupied(
+        "w6:p9",
+        "term-1",
+        "kind-1",
+        "gov-deadbeef",
+        Some("sess-x"),
+        None,
+    )]);
+    let adopter = key("kind-1", "sess-child");
+    assert_eq!(
+        plan_adoption(&run, &adopter, &agents, false, false),
+        Ok(owner_change(&run, adopter)),
+        "F4/H#24 — a row reporting another session is not the caller"
+    );
+}
