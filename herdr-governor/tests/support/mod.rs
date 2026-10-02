@@ -2,4 +2,5 @@
 //! (conditional-protected once created — see `docs/guardrails.md`).
 //! Each test crate pulls this in with `#[cfg(test)] pub mod support;`.
 
+pub mod crash;
 pub mod fake_herdr;
