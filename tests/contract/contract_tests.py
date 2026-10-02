@@ -16,6 +16,8 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -2087,6 +2089,88 @@ class A1PrimeNativeStdio(unittest.TestCase):
                                     f"{harness}: {n}")
                 self.assertTrue(
                     set(rec.get("env_values", {})) <= self.HERDR_PWD)
+
+
+class Phase4AdapterContract(unittest.TestCase):
+    """P4.H3 — the H1 Herdr client proven against both legs (p4-plan
+    §P4.H3; spec §10 Phase 4 DoD "just contract: Herdr adapter methods
+    pass against fake and real Herdr").
+
+    Fake leg (always): the H2 suite under herdr-governor/tests/ — every
+    test carries the `contract_fake_herdr_` prefix so the nextest filter
+    can never vacuously match zero tests; a non-empty all-pass is the
+    assertion.
+
+    Live leg (opt-in, OQ-10): only when GOV_HERDR_LIVE_SOCK names the
+    socket of a DEDICATED, ISOLATED named probe session —
+    `herdr --session <name> server` plus one `herdr --session <name>
+    workspace create` (tab.create needs an active workspace) — never the
+    owner's live session. Unset → a recorded skip (self-containment:
+    `just contract` stays green on any host); set-but-dead or any op
+    verdict false → failure (fail-closed on a broken leg). The bin itself
+    refuses the inherited HERDR_SOCKET_PATH and any socket outside a
+    `sessions/<name>/` directory; the suite re-checks the first before
+    invoking it. No live Jev leg by design (fixture-pinned wire).
+
+    Cargo is shelled from inside the `just contract` recipe boundary;
+    the gate stays `just contract`."""
+
+    ROOT = Path(__file__).resolve().parents[2]
+    LIVE_ENV = "GOV_HERDR_LIVE_SOCK"
+    NEXTEST_SUMMARY = re.compile(r"(\d+) tests? run: (\d+) passed")
+
+    def _cargo(self, *args):
+        # Colour off whatever the caller's terminal forces (FORCE_COLOR,
+        # CARGO_TERM_COLOR=always): the suite parses nextest's summary text.
+        env = {k: v for k, v in os.environ.items() if k != "FORCE_COLOR"}
+        env.update(CARGO_TERM_COLOR="never", NO_COLOR="1")
+        proc = subprocess.run(["cargo", *args], cwd=self.ROOT, env=env,
+                              capture_output=True, text=True, check=False)
+        return proc
+
+    def test_p4h3_fake_leg_nonempty_pass(self):
+        """The H2 fake-server contract tests run and pass, at least one."""
+        proc = self._cargo("nextest", "run", "--locked", "--color", "never",
+                           "-p", "herdr-governor", "-E",
+                           "test(/contract_fake_herdr/)")
+        self.assertEqual(proc.returncode, 0,
+                         f"fake leg failed:\n{proc.stdout}\n{proc.stderr}")
+        found = self.NEXTEST_SUMMARY.search(proc.stderr)
+        self.assertIsNotNone(found, f"no nextest summary:\n{proc.stderr}")
+        run, passed = (int(x) for x in found.groups())
+        self.assertGreater(run, 0, "fake-leg filter matched zero tests")
+        self.assertEqual(run, passed)
+        print(f"P4.H3 fake leg: {passed}/{run} contract_fake_herdr tests "
+              "passed", file=sys.stderr)
+
+    def test_p4h3_live_leg_probe(self):
+        """With GOV_HERDR_LIVE_SOCK set: every probe op verdict is ok on
+        a real protocol-22 server; unset: recorded skip."""
+        sock = os.environ.get(self.LIVE_ENV)
+        if not sock:
+            msg = f"SKIP live leg: {self.LIVE_ENV} unset"
+            print(msg, file=sys.stderr)
+            self.skipTest(msg)
+        live = os.environ.get("HERDR_SOCKET_PATH")
+        if live and os.path.exists(live) and os.path.exists(sock):
+            self.assertFalse(os.path.samefile(live, sock),
+                             f"{self.LIVE_ENV} names the live session socket")
+        self.assertTrue(os.path.exists(sock), f"{sock}: socket absent")
+        proc = self._cargo("run", "--locked", "-q", "-p", "herdr-governor",
+                           "--bin", "herdr_probe", "--", "check", sock)
+        self.assertEqual(proc.returncode, 0,
+                         f"probe failed:\n{proc.stdout}\n{proc.stderr}")
+        report = json.loads(proc.stdout)
+        self.assertTrue(report["all_ok"], report)
+        verdicts = {r["op"]: r["ok"] for r in report["ops"]}
+        for op in ("ping", "session.snapshot", "agent.list", "tab.create",
+                   "pane.get", "pane.split", "pane.read", "events.subscribe",
+                   "agent.get:absent", "agent.prompt:shell-pane",
+                   "pane.close"):
+            self.assertTrue(verdicts.get(op), f"{op}: {report}")
+        ping = next(r for r in report["ops"] if r["op"] == "ping")
+        self.assertEqual(ping["detail"]["protocol"], 22)
+        print(f"P4.H3 live leg: {len(report['ops'])} ops ok", file=sys.stderr)
 
 
 if __name__ == "__main__":

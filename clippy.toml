@@ -27,3 +27,10 @@ disallowed-methods = [
 # disallowed-macros exists too ({ path, reason, replacement }); the panic/dbg/print lints above
 # already cover the usual suspects — add entries only when a real pattern recurs.
 disallowed-names = ["..", "tmp", "tmp2", "data2", "flag2"]   # ".." appends to clippy's default ["foo","baz","quux"]
+
+# clippy::multiple_crate_versions waiver (owner ruling 2026-10-01, Phase 4 D0). rustls needs
+# rustls-webpki, whose weak `ring?/alloc` feature makes Cargo lock ring even though nothing enables
+# it; ring 0.17 pins windows-sys ^0.52 for cfg(aarch64-pc-windows) only, next to everyone else's
+# ^0.61. That copy never builds on the linux-only deny.toml targets. Scoped to windows-sys, whose
+# duplicates are platform bindings.
+allowed-duplicate-crates = ["windows-sys"]
