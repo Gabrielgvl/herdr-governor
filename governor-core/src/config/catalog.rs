@@ -120,6 +120,13 @@ pub const DEFAULT_JUDGMENT_WINDOW: Duration = Duration::from_mins(30);
 /// F25 — the default idle window: 15 minutes.
 pub const DEFAULT_IDLE_WINDOW: Duration = Duration::from_mins(15);
 
+/// F22 — the `Config::validate` bound on every policy window: 10 years.
+/// Any validated `now.after(window)` stays inside the store's year-9999
+/// deadline horizon, so `Timestamp::after`'s saturation is a backstop for
+/// unvalidated `Policy` values, not a live path. (`Duration::from_days`
+/// is not a stable `const fn` on the pinned toolchain, hence hours.)
+pub const MAX_POLICY_WINDOW: Duration = Duration::from_hours(3_650 * 24);
+
 /// F27 — one loaded `catalog.toml`: the catalog, the policy and the version
 /// every decision made under it records.
 #[derive(Debug, Clone, PartialEq)]
@@ -173,6 +180,12 @@ pub enum ConfigError {
         /// The dotted path of the duration.
         field: String,
     },
+    /// A duration bound exceeds `MAX_POLICY_WINDOW` — a 10-year-plus
+    /// window is a config mistake, not a spelling of "no deadline".
+    DurationTooLong {
+        /// The dotted path of the duration.
+        field: String,
+    },
 }
 
 impl core::fmt::Display for ConfigError {
@@ -195,6 +208,12 @@ impl core::fmt::Display for ConfigError {
             }
             Self::ZeroDuration { field } => {
                 write!(formatter, "{field}: duration must be positive")
+            }
+            Self::DurationTooLong { field } => {
+                write!(
+                    formatter,
+                    "{field}: duration exceeds the 10-year policy bound"
+                )
             }
         }
     }
@@ -292,6 +311,11 @@ fn validate_policy(policy: &Policy, errors: &mut Vec<ConfigError>) {
     ] {
         if bound.is_zero() {
             errors.push(ConfigError::ZeroDuration {
+                field: field.into(),
+            });
+        }
+        if bound > MAX_POLICY_WINDOW {
+            errors.push(ConfigError::DurationTooLong {
                 field: field.into(),
             });
         }

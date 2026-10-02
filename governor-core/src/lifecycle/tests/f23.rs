@@ -252,7 +252,7 @@ fn f23_stale_judgment_set_journals_stale_and_applies_nothing() {
         | StateChange::ReserveRun(_)
         | StateChange::UpdateRun(_)
         | StateChange::ChangeOwner(_)
-        | StateChange::RecordFollowUp(_)
+        | StateChange::WriteFollowUp(_)
         | StateChange::ExpireFollowUps { .. }
         | StateChange::RecordRecovery(_)
         | StateChange::SetCooldown(_)

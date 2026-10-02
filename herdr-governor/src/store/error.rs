@@ -63,7 +63,8 @@ pub enum ConflictKind {
     Owner,
     /// The journal row is not in the state the write transitions from (F8).
     Effect,
-    /// `(run_id, message_key)` already queued (F17).
+    /// `(run_id, message_key)` already queued, or the outbox row is not in
+    /// the state the write transitions from (F17/F9).
     FollowUp,
     /// The obligation is past `pending` (F21).
     Recovery,

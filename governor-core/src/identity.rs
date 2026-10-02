@@ -32,8 +32,13 @@ pub struct Timestamp(pub i64);
 
 impl Timestamp {
     /// The absolute deadline `window` after `self` (F22 — deadlines are
-    /// stored absolute and never reset). Saturating: a pathological window
-    /// pins to `i64::MAX` — "effectively never" — rather than wrapping into
+    /// stored absolute and never reset). The saturation is a backstop
+    /// only: `Config::validate` bounds every policy window to
+    /// [`MAX_POLICY_WINDOW`](crate::config::MAX_POLICY_WINDOW), so for a
+    /// validated policy and a clock before year 9989 the sum never
+    /// saturates and always encodes. An unvalidated `Policy` — a test or
+    /// probe builds the struct directly — can still reach it: a
+    /// pathological window pins to `i64::MAX` rather than wrapping into
     /// the past.
     #[must_use]
     pub(crate) fn after(self, window: Duration) -> Self {

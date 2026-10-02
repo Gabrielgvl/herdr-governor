@@ -26,7 +26,7 @@ fn updated_records(transition: &Transition) -> Vec<&Run> {
             | StateChange::ReserveRun(_)
             | StateChange::ChangeOwner(_)
             | StateChange::WriteEffect(_)
-            | StateChange::RecordFollowUp(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::ExpireFollowUps { .. }
             | StateChange::RecordRecovery(_)
             | StateChange::SetCooldown(_)
@@ -339,7 +339,7 @@ proptest! {
                 | StateChange::RecordLaunch(_)
                 | StateChange::ReserveRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)

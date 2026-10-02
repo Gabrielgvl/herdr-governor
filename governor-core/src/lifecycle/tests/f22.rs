@@ -354,7 +354,7 @@ fn f22_failed_results_journal_their_certainty() {
                 | StateChange::ReserveRun(_)
                 | StateChange::UpdateRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)

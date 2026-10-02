@@ -296,7 +296,7 @@ pub(super) fn updated_records(t: &Transition) -> Vec<&Run> {
             | StateChange::ReserveRun(_)
             | StateChange::ChangeOwner(_)
             | StateChange::WriteEffect(_)
-            | StateChange::RecordFollowUp(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::ExpireFollowUps { .. }
             | StateChange::RecordRecovery(_)
             | StateChange::SetCooldown(_)
@@ -322,7 +322,7 @@ pub(super) fn effect_writes(t: &Transition) -> Vec<(&str, EffectState)> {
             | StateChange::ReserveRun(_)
             | StateChange::UpdateRun(_)
             | StateChange::ChangeOwner(_)
-            | StateChange::RecordFollowUp(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::ExpireFollowUps { .. }
             | StateChange::RecordRecovery(_)
             | StateChange::SetCooldown(_)
@@ -343,7 +343,7 @@ pub(super) fn frozen_writes(t: &Transition) -> Vec<&FrozenHandoff> {
             | StateChange::UpdateRun(_)
             | StateChange::ChangeOwner(_)
             | StateChange::WriteEffect(_)
-            | StateChange::RecordFollowUp(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::ExpireFollowUps { .. }
             | StateChange::RecordRecovery(_)
             | StateChange::SetCooldown(_)

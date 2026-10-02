@@ -31,6 +31,7 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::{Params as SqlParams, Transaction, ffi, params_from_iter};
 
 use governor_core::config::Qualification;
+use governor_core::delivery::{FollowUpWrite, OutboxState};
 use governor_core::identity::{CallerKey, Timestamp};
 use governor_core::lifecycle::{EffectState, StateChange, Transition};
 
@@ -43,25 +44,55 @@ use super::rows::{Params, ts_encode};
 /// Refuses a transition the vocabulary forbids before any transaction
 /// opens: a `failed` journal write without a certainty (Appendix B CHECK,
 /// OQ-13 — certainty is the core's decision, never the store's), a journal
-/// write asking for `planned` (that is the plan-time `effects` insert), or
-/// a planned effect that is not `planned`.
+/// write asking for `planned` (that is the plan-time `effects` insert), an
+/// outbox enqueue that is not `queued` or an outbox resolution to a state
+/// that is not `submitted`/`unconfirmed` (F17/F9 — the only edges), or a
+/// planned effect that is not `planned`.
 pub(super) fn check_well_formed(transition: &Transition) -> Result<(), ApplyError> {
     for change in &transition.state_changes {
-        let StateChange::WriteEffect(write) = change else {
-            continue;
+        let (key, reason) = match change {
+            StateChange::WriteEffect(write) => {
+                let reason = match write.state {
+                    EffectState::Failed if write.certainty.is_none() => {
+                        "failed without a certainty"
+                    }
+                    EffectState::Planned => "planned is the plan-time journal write",
+                    EffectState::Dispatching
+                    | EffectState::Acknowledged
+                    | EffectState::Failed
+                    | EffectState::Unconfirmed => continue,
+                };
+                (write.key.0.clone(), reason)
+            }
+            StateChange::WriteFollowUp(FollowUpWrite::Enqueue(message))
+                if message.state != OutboxState::Queued =>
+            {
+                (
+                    follow_up::entry_key(&message.run, message.seq),
+                    "a follow-up enqueues queued",
+                )
+            }
+            StateChange::WriteFollowUp(FollowUpWrite::Resolve { run, seq, state })
+                if !matches!(state, OutboxState::Submitted | OutboxState::Unconfirmed) =>
+            {
+                (
+                    follow_up::entry_key(run, *seq),
+                    "a follow-up resolves to submitted or unconfirmed",
+                )
+            }
+            StateChange::WriteFollowUp(_)
+            | StateChange::BindCaller(_)
+            | StateChange::RecordLaunch(_)
+            | StateChange::ReserveRun(_)
+            | StateChange::UpdateRun(_)
+            | StateChange::ChangeOwner(_)
+            | StateChange::ExpireFollowUps { .. }
+            | StateChange::RecordRecovery(_)
+            | StateChange::SetCooldown(_)
+            | StateChange::FreezeHandoff(_)
+            | StateChange::AckEvent(_) => continue,
         };
-        let reason = match write.state {
-            EffectState::Failed if write.certainty.is_none() => "failed without a certainty",
-            EffectState::Planned => "planned is the plan-time journal write",
-            EffectState::Dispatching
-            | EffectState::Acknowledged
-            | EffectState::Failed
-            | EffectState::Unconfirmed => continue,
-        };
-        return Err(ApplyError::MalformedWrite {
-            key: write.key.0.clone(),
-            reason,
-        });
+        return Err(ApplyError::MalformedWrite { key, reason });
     }
     if let Some(effect) = transition
         .effects
@@ -90,7 +121,7 @@ pub(super) fn apply_in(
             StateChange::UpdateRun(update) => update_run::apply(tx, update, now)?,
             StateChange::ChangeOwner(owner) => change_owner::apply(tx, owner, now)?,
             StateChange::WriteEffect(write) => write_effect::apply(tx, write, now)?,
-            StateChange::RecordFollowUp(message) => follow_up::record(tx, message, now)?,
+            StateChange::WriteFollowUp(write) => follow_up::apply(tx, write, now)?,
             StateChange::ExpireFollowUps { run, reason } => {
                 follow_up::expire(tx, run, *reason, now)?;
             }

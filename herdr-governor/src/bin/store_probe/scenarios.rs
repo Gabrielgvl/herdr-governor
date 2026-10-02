@@ -1,5 +1,6 @@
 //! The canned crash scenarios (P4.S4): the 12 named Appendix-B
-//! transactions plus the four composed launch scenarios. Every
+//! transactions, the four composed launch scenarios, and the two P4.1
+//! follow-up edges (`follow_up`). Every
 //! `Transition` is built through the public core API — P4.0's launch-row
 //! builders, `launch_plan`, `settle` and constructed values — never SQL,
 //! so the matrix exercises the real writers' statement lists. A scenario
@@ -7,11 +8,13 @@
 //! applied without crash injection) and the `target` the probe kills
 //! mid-apply.
 
+mod follow_up;
+
 use core::time::Duration;
 
 use governor_core::acceptance::FrozenHandoff;
 use governor_core::config::{ConfigVersion, OperatingPointId, Policy, Provider, Tier};
-use governor_core::delivery::{MessageBody, OutboxMessage, OutboxState};
+use governor_core::delivery::{FollowUpWrite, MessageBody, OutboxMessage, OutboxState};
 use governor_core::identity::{
     AgentKind, AgentName, CallerBinding, CallerKey, ChildIdentity, Digest, EffectId, EffectKey,
     HerdrIncarnation, IdempotencyKey, LaunchId, MessageKey, NativeSession, PaneId, ProjectRoot,
@@ -51,6 +54,8 @@ pub fn scenario(name: &str) -> Option<(Vec<Transition>, Transition)> {
             effect_result(),
         ),
         "enqueue_follow_up" => (routed(), enqueue_follow_up()),
+        "dispatch_follow_up" => (follow_up::dispatch_seed(), follow_up::dispatch_follow_up()),
+        "resolve_follow_up" => (follow_up::resolve_seed(), follow_up::resolve_follow_up()),
         "settle" => (chain(started(), [enqueue_follow_up()]), settle_limited()),
         "handover" => (
             vec![bind(1), bind(2), admit_launch(), route()],
@@ -349,9 +354,9 @@ fn effect_result() -> Transition {
     ])
 }
 
-/// Appendix B "Enqueue a follow-up": the queued outbox row.
-fn enqueue_follow_up() -> Transition {
-    changes(vec![StateChange::RecordFollowUp(OutboxMessage {
+/// The one follow-up every outbox scenario moves: `r-1` seq 1, `queued`.
+fn follow_up_message() -> OutboxMessage {
+    OutboxMessage {
         run: run_reserved().id,
         seq: 1,
         message_key: MessageKey("m-1".into()),
@@ -361,7 +366,14 @@ fn enqueue_follow_up() -> Transition {
         state: OutboxState::Queued,
         effect: None,
         expiry_reason: None,
-    })])
+    }
+}
+
+/// Appendix B "Enqueue a follow-up": the queued outbox row.
+fn enqueue_follow_up() -> Transition {
+    changes(vec![StateChange::WriteFollowUp(FollowUpWrite::Enqueue(
+        follow_up_message(),
+    ))])
 }
 
 /// Appendix B "Settle" with `provider_limited`: the conditional run write,

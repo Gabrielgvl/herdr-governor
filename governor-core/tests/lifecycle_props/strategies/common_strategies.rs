@@ -62,7 +62,7 @@ impl Sim {
                 | StateChange::RecordLaunch(_)
                 | StateChange::ReserveRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)

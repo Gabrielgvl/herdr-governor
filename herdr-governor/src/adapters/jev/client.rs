@@ -5,13 +5,15 @@
 //! and timeout are caller parameters (catalog data), never literals here.
 
 use std::fmt;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::time::Duration;
 
 use governor_core::routing::{Judgment, Question, request_size_outcome};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use reqwest::redirect;
+use rustix::fs::{Mode, OFlags};
+use rustix::io::Errno;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt as _;
 
@@ -37,27 +39,35 @@ impl fmt::Debug for ApiKey {
 }
 
 impl ApiKey {
-    /// Read the credential file: it must exist, be mode `0600` exactly,
-    /// and hold one non-empty header-safe token (surrounding whitespace
-    /// and a trailing newline are trimmed). Any other state is
+    /// Read the credential file: it must exist, not be a symlink (the
+    /// open is `O_NOFOLLOW`, so a linked path refuses as `ELOOP`), be
+    /// mode `0600` exactly, be owned by the effective uid, and hold one
+    /// non-empty header-safe token (surrounding whitespace and a
+    /// trailing newline are trimmed). Any other state is
     /// `CredentialUnavailable` — no request is ever sent with a key the
     /// adapter could not vouch for.
     pub async fn read_0600(path: &Path) -> Result<Self, JevError> {
-        let file = File::open(path)
-            .await
-            .map_err(|e| JevError::CredentialUnavailable {
-                reason: if e.kind() == std::io::ErrorKind::NotFound {
-                    "missing"
-                } else {
-                    "unreadable"
-                },
-            })?;
-        Self::from_file(file).await
+        let fd = rustix::fs::open(
+            path,
+            OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(|errno| JevError::CredentialUnavailable {
+            reason: if errno == Errno::NOENT {
+                "missing"
+            } else if errno == Errno::LOOP {
+                "symlink"
+            } else {
+                "unreadable"
+            },
+        })?;
+        Self::from_file(File::from_std(std::fs::File::from(fd))).await
     }
 
-    /// The verdict and the bytes come from one open handle: the mode is
-    /// `fstat`ed on `file` and the token read from the same descriptor,
-    /// so no path swap between the two can substitute a looser file.
+    /// The verdict and the bytes come from one open handle: the mode and
+    /// owner are `fstat`ed on `file` and the token read from the same
+    /// descriptor, so no path swap between the two can substitute a
+    /// looser file.
     pub(super) async fn from_file(mut file: File) -> Result<Self, JevError> {
         let meta = file
             .metadata()
@@ -65,11 +75,8 @@ impl ApiKey {
             .map_err(|_io| JevError::CredentialUnavailable {
                 reason: "unreadable",
             })?;
-        if meta.permissions().mode() & 0o777 != 0o600 {
-            return Err(JevError::CredentialUnavailable {
-                reason: "mode_not_0600",
-            });
-        }
+        vouch(meta.mode(), meta.uid(), rustix::process::geteuid().as_raw())
+            .map_err(|reason| JevError::CredentialUnavailable { reason })?;
         let mut bytes = Vec::new();
         (&mut file)
             .take(KEY_MAX_BYTES.saturating_add(1))
@@ -241,6 +248,20 @@ impl Client {
 fn install_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _already_installed = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
+/// The credential verdict as a pure function so the seam test needs no
+/// filesystem: the opened file must be mode `0600` (`mode` is the raw
+/// `st_mode`; only the permission bits are judged — the `S_IFREG` check
+/// stays a follow-up) and owned by the effective uid.
+pub(super) fn vouch(mode: u32, uid: u32, euid: u32) -> Result<(), &'static str> {
+    if mode & 0o777 != 0o600 {
+        Err("mode_not_0600")
+    } else if uid != euid {
+        Err("foreign_owner")
+    } else {
+        Ok(())
     }
 }
 

@@ -143,7 +143,7 @@ impl Rename {
                 certainty: write.certainty,
                 receipt: write.receipt.as_ref().map(|r| self.receipt(r)),
             }),
-            StateChange::RecordFollowUp(message) => StateChange::RecordFollowUp(message.clone()),
+            StateChange::WriteFollowUp(write) => StateChange::WriteFollowUp(write.clone()),
             StateChange::ExpireFollowUps { run, reason } => StateChange::ExpireFollowUps {
                 run: run.clone(),
                 reason: *reason,

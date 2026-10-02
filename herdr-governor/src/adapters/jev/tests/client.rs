@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt as _;
 
 use governor_core::routing::JudgmentOutcome;
 
-use super::super::client::{ApiKey, Client};
+use super::super::client::{ApiKey, Client, vouch};
 use super::super::error::JevError;
 use super::{FAKE_KEY, credential_file, fake_key};
 
@@ -40,6 +40,62 @@ async fn error_unresolvable_key() {
         assert_eq!(err.component(), "api_key");
     }
     assert!(ApiKey::read_0600(&path).await.is_err(), "empty file");
+}
+
+/// A symlinked credential is refused at open: `O_NOFOLLOW` turns the
+/// final link component into `ELOOP` even when the target is itself a
+/// perfectly vouched 0600 file, so the refusal is about the path, never
+/// about what the target would have been.
+#[tokio::test]
+async fn symlinked_credential_is_refused() {
+    let (dir, real) = credential_file(FAKE_KEY, 0o600);
+    let link = dir.path().join("linked");
+    std::os::unix::fs::symlink(&real, &link).expect("symlink");
+    let err = ApiKey::read_0600(&link).await.expect_err("symlink");
+    assert!(
+        matches!(err, JevError::CredentialUnavailable { reason: "symlink" }),
+        "{err}"
+    );
+}
+
+/// A credential owned by a different uid is refused on the same open
+/// handle that vouches the mode. Building one needs privilege (a
+/// `chown`), so the leg skips with a reason when the test runs
+/// unprivileged.
+#[tokio::test]
+async fn foreign_owned_credential_is_refused() {
+    let (_dir, path) = credential_file(FAKE_KEY, 0o600);
+    let euid = rustix::process::geteuid().as_raw();
+    let foreign = if euid == 0 { 65534 } else { 0 };
+    if rustix::fs::chown(&path, Some(rustix::process::Uid::from_raw(foreign)), None).is_err() {
+        eprintln!("foreign-owner leg skipped: cannot chown unprivileged (euid {euid})");
+        return;
+    }
+    let err = ApiKey::read_0600(&path).await.expect_err("foreign owner");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "foreign_owner"
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// The pure verdict: `0600` owned by the effective uid passes, and every
+/// other state names the requirement it failed. File-type bits in
+/// `st_mode` are ignored (the `S_IFREG` check is a stated follow-up).
+#[test]
+fn vouch_requires_mode_and_owner() {
+    assert_eq!(vouch(0o100_600, 1000, 1000), Ok(()));
+    assert_eq!(vouch(0o040_600, 1000, 1000), Ok(()));
+    for mode in [0o100_644, 0o100_640, 0o100_700] {
+        assert_eq!(vouch(mode, 1000, 1000), Err("mode_not_0600"), "{mode:o}");
+    }
+    assert_eq!(vouch(0o100_600, 0, 1000), Err("foreign_owner"));
+    assert_eq!(vouch(0o100_600, 1000, 0), Err("foreign_owner"));
+    assert_eq!(vouch(0o100_644, 0, 1000), Err("mode_not_0600"));
 }
 
 /// The mode verdict and the bytes come from the opened handle, not from

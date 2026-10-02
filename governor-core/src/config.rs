@@ -10,7 +10,8 @@ mod qualification;
 pub use catalog::{
     Catalog, Config, ConfigError, ConfigVersion, CostClass, DEFAULT_EXPLORATION_RATE,
     DEFAULT_IDLE_WINDOW, DEFAULT_JUDGMENT_WINDOW, DEFAULT_MAX_AGE, DEFAULT_RECOVERY_EXPIRY,
-    DEFAULT_REPAIR_WINDOW, OperatingPoint, OperatingPointId, Policy, Provider, Tier,
+    DEFAULT_REPAIR_WINDOW, MAX_POLICY_WINDOW, OperatingPoint, OperatingPointId, Policy, Provider,
+    Tier,
 };
 pub use qualification::{Capability, Qualification, args_digest};
 
@@ -79,3 +80,5 @@ mod tests {
 
 #[cfg(test)]
 mod f26_f27_tests;
+#[cfg(test)]
+mod f27_bounds_tests;

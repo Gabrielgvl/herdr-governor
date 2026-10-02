@@ -10,21 +10,22 @@ mod dedup;
 #[cfg(test)]
 mod effects;
 #[cfg(test)]
+pub mod follow_up;
+#[cfg(test)]
 pub mod support;
 
 #[cfg(test)]
 mod tests {
     use governor_core::acceptance::FrozenHandoff;
     use governor_core::config::{Capability, OperatingPointId, Provider, Qualification};
-    use governor_core::delivery::{ExpiryReason, MessageBody, OutboxMessage, OutboxState};
-    use governor_core::identity::{
-        Digest, EffectId, EventId, LaunchId, MessageKey, RelayInstanceId, RunId, Timestamp,
-    };
+    use governor_core::delivery::{ExpiryReason, OutboxState};
+    use governor_core::identity::{Digest, EventId, LaunchId, RelayInstanceId, RunId, Timestamp};
     use governor_core::lifecycle::{OwnerChange, RunUpdate, Settlement, State, StateChange};
     use governor_core::recovery::{Cooldown, RecoveryObligation, RecoveryOrigin, RecoveryStatus};
     use governor_core::task::{LaunchOutcome, LaunchPhase};
     use herdr_governor::store::{ApplyError, ConflictKind, StoreError};
 
+    use crate::follow_up::{dispatched, enqueue};
     use crate::support::{
         LATER, NOW, binding, caller, changes, count, effect, event, launch, run, seeded, store,
         transition,
@@ -332,26 +333,12 @@ mod tests {
     #[test]
     fn expire_only_queued() {
         let (_dir, mut store) = seeded();
-        let message = |seq: u64, state: OutboxState| {
-            StateChange::RecordFollowUp(OutboxMessage {
-                run: RunId("r-1".into()),
-                seq,
-                message_key: MessageKey(format!("m-{seq}")),
-                sender: caller(1),
-                body_digest: Digest([0x44; 32]),
-                body: MessageBody::Inline("hi".into()),
-                state,
-                effect: (state == OutboxState::Dispatching)
-                    .then(|| EffectId("eff:run:r-1:prompt:task".into())),
-                expiry_reason: None,
-            })
-        };
-        let queued = message(1, OutboxState::Queued);
-        let dispatching = message(2, OutboxState::Dispatching);
-        store
-            .apply(&changes(vec![queued.clone(), dispatching]), NOW)
-            .unwrap();
-        let err = store.apply(&changes(vec![queued]), NOW).unwrap_err();
+        store.apply(&changes(vec![enqueue(1)]), NOW).unwrap();
+        // seq 2 reaches `dispatching` the only way a row can: enqueued, its
+        // prompt effect planned, then dispatched with that effect's own
+        // dispatch commit.
+        dispatched(&mut store, 2);
+        let err = store.apply(&changes(vec![enqueue(1)]), NOW).unwrap_err();
         assert!(
             matches!(
                 err,

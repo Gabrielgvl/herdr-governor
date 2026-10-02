@@ -3,8 +3,10 @@
 //! gates are the ordering barrier, the single prompt slot and F17's safe
 //! moment.
 
+use alloc::collections::BTreeSet;
+
 use crate::config::Capability;
-use crate::identity::ChildStatus;
+use crate::identity::{ChildStatus, EffectId};
 use crate::lifecycle::{
     Effect, EffectKind, EffectState, EffectTarget, PromptCertainty, Run, State,
 };
@@ -30,7 +32,13 @@ fn prompt_in_flight(state: EffectState) -> bool {
 /// - an `unconfirmed` prompt to the identity bars the queue: the Task
 ///   prompt's `prompt_certainty`, a journaled `unconfirmed` prompt effect,
 ///   or an `unconfirmed` entry at the head (F9 — until transcript evidence
-///   or settlement resolves it);
+///   or settlement resolves it). A journaled `unconfirmed` prompt effect
+///   that an outbox entry of this Run links (`effect_id`) is unbarred once
+///   that entry is `submitted`: transcript evidence resolved the follow-up
+///   (F9/F17), and the outbox row is the source of truth for it while the
+///   journal row keeps its wire fact. The set of such lifted effect ids is
+///   built once per call, so the two unbounded histories are each scanned
+///   once;
 /// - a `planned` or `dispatching` prompt effect to the identity holds the
 ///   single slot — one prompt at a time;
 /// - the head of the queue is the earliest entry still holding the
@@ -71,10 +79,17 @@ pub fn next_dispatchable_follow_up<'a>(
                 | None => false,
             }
     };
+    let lifted: BTreeSet<&EffectId> = outbox
+        .iter()
+        .filter(|m| m.run == run.id && m.state == OutboxState::Submitted)
+        .filter_map(|m| m.effect.as_ref())
+        .collect();
     let barrier = run.prompt_certainty == Some(PromptCertainty::Unconfirmed)
-        || prompt_effects
-            .iter()
-            .any(|effect| prompts_to_child(effect) && effect.state == EffectState::Unconfirmed);
+        || prompt_effects.iter().any(|effect| {
+            prompts_to_child(effect)
+                && effect.state == EffectState::Unconfirmed
+                && !lifted.contains(&effect.id)
+        });
     if barrier {
         return None;
     }
