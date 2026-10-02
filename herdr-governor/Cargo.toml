@@ -9,6 +9,7 @@ repository.workspace = true
 description = "Durable daemon that launches coding agents into Herdr panes and supervises Runs to Settlement"
 
 [dependencies]
+governor-core = { path = "../governor-core", version = "0.1.0" }
 # reqwest 0.12 + rustls-tls-native-roots-no-provider + explicit rustls dep:
 # OS root store + aws-lc-rs provider. Enabling neither ring, webpki-roots
 # (MPL-2.0), nor rustls-platform-verifier (jni pins syn 2) keeps

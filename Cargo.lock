@@ -337,6 +337,7 @@ dependencies = [
 name = "herdr-governor"
 version = "0.1.0"
 dependencies = [
+ "governor-core",
  "reqwest",
  "rusqlite",
  "rustls",
