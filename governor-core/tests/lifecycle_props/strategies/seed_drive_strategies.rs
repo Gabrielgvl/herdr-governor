@@ -8,8 +8,8 @@
 use governor_core::config::Policy;
 use governor_core::identity::{ChildIdentity, Digest, EffectId, EffectKey, Observation, Timestamp};
 use governor_core::lifecycle::{
-    Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectTarget,
-    Event, JudgmentVerdict, Run, launch_plan, transition,
+    Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResolution, EffectResult, EffectState,
+    EffectTarget, Event, JudgmentVerdict, Run, launch_plan, transition,
 };
 use governor_core::routing::Decision;
 
@@ -87,18 +87,31 @@ impl Drive {
     }
 }
 
-/// An `effect_result` event delivering `outcome` for `key`.
+/// An `effect_result` event delivering `outcome` for `key`. The receipt
+/// rides only an acknowledgement (F13): passing one with any other
+/// outcome is a misuse of this helper, which drops it — no scripted drive
+/// does. Failures carry no cause here.
 fn result(
     key: EffectKey,
     kind: EffectKind,
     outcome: EffectOutcome,
     receipt: Option<EffectReceipt>,
 ) -> Event {
+    let resolution = match outcome {
+        EffectOutcome::Acknowledged => EffectResolution::Acknowledged { receipt },
+        EffectOutcome::PreInteractiveFailed => {
+            EffectResolution::PreInteractiveFailed { cause: None }
+        }
+        EffectOutcome::Failed { certainty } => EffectResolution::Failed {
+            certainty,
+            cause: None,
+        },
+        EffectOutcome::Unconfirmed => EffectResolution::Unconfirmed,
+    };
     Event::EffectResult(EffectResult {
         key,
         kind,
-        outcome,
-        receipt,
+        resolution,
     })
 }
 

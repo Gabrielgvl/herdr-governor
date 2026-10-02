@@ -4,16 +4,88 @@
 
 use alloc::vec::Vec;
 
+use crate::identity::EffectKey;
 use crate::identity::{Digest, Timestamp};
 use crate::lifecycle::{
-    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectState, Event, JudgmentVerdict,
-    Settlement, State, transition,
+    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectResolution, EffectResult,
+    EffectState, Event, FailureCause, JudgmentVerdict, Settlement, State, transition,
 };
 
 use super::builders::{
     EMPTY_READ, NOW, dispatched_outbox, effect_keys, effect_writes, is_quiet, journal_effect,
     run_in, run_result, settlement_of, stamped, test_policy, updated_records, updated_run,
 };
+
+#[test]
+fn f24_repair_qualification_per_resolution_variant() {
+    // the qualifying predicate is "the resolution's certainty is not
+    // `absent`": an in-window outbox result that was possibly consumed
+    // (`acknowledged`, `unconfirmed`, `failed/unknown`) opens a new work
+    // generation and revives the run; one that provably never ran
+    // (`failed/absent`, the pre-interactive class) does not — past the
+    // deadline it settles `rejected` instead. The complement of the
+    // predicate would invert every row of this table (review F16).
+    let mut run = run_in(State::Repair);
+    run.evidence_generation = 1;
+    run.rejected_at = Some(Timestamp(200));
+    run.repair_deadline = Some(Timestamp(400)); // past at NOW
+    let journal = Vec::from([dispatched_outbox(&run, 3, Timestamp(300))]);
+    let cause = || Some(FailureCause("boom".into()));
+    for (resolution, qualifies) in [
+        (EffectResolution::Acknowledged { receipt: None }, true),
+        (EffectResolution::Unconfirmed, true),
+        (
+            EffectResolution::Failed {
+                certainty: EffectCertainty::Unknown,
+                cause: cause(),
+            },
+            true,
+        ),
+        (
+            EffectResolution::Failed {
+                certainty: EffectCertainty::Absent,
+                cause: cause(),
+            },
+            false,
+        ),
+        (
+            EffectResolution::PreInteractiveFailed { cause: cause() },
+            false,
+        ),
+    ] {
+        let t = transition(
+            &run,
+            &stamped(
+                &run,
+                Event::EffectResult(EffectResult {
+                    key: EffectKey("run:r-1:outbox:3".into()),
+                    kind: EffectKind::Prompt,
+                    resolution: resolution.clone(),
+                }),
+            ),
+            NOW,
+            &test_policy(),
+            (None, &journal, &[]),
+            "/fp",
+        );
+        let record = updated_run(&t);
+        if qualifies {
+            assert_eq!(record.state, State::Active, "{resolution:?} qualifies");
+            assert_eq!(
+                record.work_generation,
+                run.work_generation + 1,
+                "{resolution:?} opens a new work generation"
+            );
+            assert_eq!(settlement_of(record), None);
+        } else {
+            assert_eq!(
+                settlement_of(record),
+                Some(Settlement::Rejected),
+                "{resolution:?} proved the prompt never ran: past the deadline it settles"
+            );
+        }
+    }
+}
 
 #[test]
 fn f24_repair_deadline_fires_despite_an_unrelated_dispatching_row() {

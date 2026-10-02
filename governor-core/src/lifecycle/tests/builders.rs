@@ -15,8 +15,9 @@ use crate::identity::{
     TerminalId, Timestamp,
 };
 use crate::lifecycle::{
-    Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectTarget,
-    Event, Run, Settlement, State, StateChange, Transition, VersionTriple, Versioned, transition,
+    Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResolution,
+    EffectResult, EffectState, EffectTarget, EffectWrite, Event, Run, Settlement, State,
+    StateChange, Transition, VersionTriple, Versioned, transition,
 };
 use crate::routing::{
     Candidate, Decision, Exploration, Judgment, JudgmentOutcome, JudgmentPurpose, JudgmentRecord,
@@ -175,6 +176,27 @@ pub(super) fn dispatched_outbox(run: &Run, seq: u64, at: Timestamp) -> Effect {
     row
 }
 
+/// The typed resolution for `(outcome, receipt)` — the receipt rides only
+/// an acknowledgement; passing one with any other outcome is a test
+/// misuse this helper drops, never a core concern (no cause is ever
+/// attached here).
+pub(super) fn resolution_of(
+    outcome: EffectOutcome,
+    receipt: Option<EffectReceipt>,
+) -> EffectResolution {
+    match outcome {
+        EffectOutcome::Acknowledged => EffectResolution::Acknowledged { receipt },
+        EffectOutcome::PreInteractiveFailed => {
+            EffectResolution::PreInteractiveFailed { cause: None }
+        }
+        EffectOutcome::Failed { certainty } => EffectResolution::Failed {
+            certainty,
+            cause: None,
+        },
+        EffectOutcome::Unconfirmed => EffectResolution::Unconfirmed,
+    }
+}
+
 pub(super) fn result_event(
     key: EffectKey,
     kind: EffectKind,
@@ -184,9 +206,18 @@ pub(super) fn result_event(
     Event::EffectResult(EffectResult {
         key,
         kind,
-        outcome,
-        receipt,
+        resolution: resolution_of(outcome, receipt),
     })
+}
+
+/// The certainty a journal write records: a result's resolution certainty,
+/// a terminal write's own, none for a dispatch commit.
+pub(super) fn certainty_of(write: &EffectWrite) -> Option<EffectCertainty> {
+    match write {
+        EffectWrite::Dispatch { .. } => None,
+        EffectWrite::Result { resolution, .. } => resolution.certainty(),
+        EffectWrite::Terminal { certainty, .. } => Some(*certainty),
+    }
 }
 
 pub(super) fn run_result(
@@ -316,7 +347,7 @@ pub(super) fn effect_writes(t: &Transition) -> Vec<(&str, EffectState)> {
     t.state_changes
         .iter()
         .filter_map(|change| match change {
-            StateChange::WriteEffect(write) => Some((write.key.0.as_str(), write.state)),
+            StateChange::WriteEffect(write) => Some((write.key().0.as_str(), write.state())),
             StateChange::BindCaller(_)
             | StateChange::RecordLaunch(_)
             | StateChange::ReserveRun(_)

@@ -15,7 +15,7 @@ use governor_core::identity::{
     NativeSession, PaneId, RunId, TabId, TerminalId, Timestamp,
 };
 use governor_core::lifecycle::{
-    Effect, EffectCertainty, EffectKind, EffectReceipt, EffectState, EffectTarget,
+    Effect, EffectCertainty, EffectKind, EffectReceipt, EffectResolution, EffectState, EffectTarget,
 };
 use governor_core::routing::PlacementPlan;
 
@@ -283,14 +283,22 @@ fn receipt_to_json(receipt: &EffectReceipt) -> Value {
     }
 }
 
-/// `result_json` for a result-commit write: the receipt's JSON, or `NULL`
-/// when the write carries none.
+/// `result_json` for a result-commit write: the acknowledged receipt's
+/// tagged JSON, a failure's OQ-11 cause as `{"error": …}`, or `NULL` when
+/// the resolution carries neither.
 pub(in crate::store) fn result_json(
-    receipt: Option<&EffectReceipt>,
+    resolution: &EffectResolution,
 ) -> Result<Option<String>, StoreError> {
-    receipt
-        .map(|r| json_write(&receipt_to_json(r), TABLE, "result_json"))
-        .transpose()
+    let value = match resolution {
+        EffectResolution::Acknowledged { receipt: Some(r) } => receipt_to_json(r),
+        EffectResolution::Failed { cause: Some(c), .. }
+        | EffectResolution::PreInteractiveFailed { cause: Some(c) } => json!({"error": c.0}),
+        EffectResolution::Acknowledged { receipt: None }
+        | EffectResolution::Failed { cause: None, .. }
+        | EffectResolution::PreInteractiveFailed { cause: None }
+        | EffectResolution::Unconfirmed => return Ok(None),
+    };
+    json_write(&value, TABLE, "result_json").map(Some)
 }
 
 /// `None` for the writer's `{"error": …}` failure cause (OQ-11); otherwise

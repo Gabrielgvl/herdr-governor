@@ -7,8 +7,8 @@ use alloc::vec::Vec;
 
 use crate::delivery::MailboxEventKind;
 use crate::lifecycle::{
-    Effect, EffectState, EffectWrite, PromptCertainty, Run, State, StateChange, Transition, edited,
-    effect_key, mailbox_event, write_run,
+    Effect, EffectResolution, EffectState, EffectWrite, PromptCertainty, Run, State, StateChange,
+    Transition, edited, effect_key, mailbox_event, write_run,
 };
 
 pub(super) fn on_restart(run: &Run, journal: &[Effect]) -> Transition {
@@ -17,11 +17,9 @@ pub(super) fn on_restart(run: &Run, journal: &[Effect]) -> Transition {
     let mut state_changes = Vec::new();
     for effect in journal {
         if effect.state == EffectState::Dispatching {
-            state_changes.push(StateChange::WriteEffect(EffectWrite {
+            state_changes.push(StateChange::WriteEffect(EffectWrite::Result {
                 key: effect.key.clone(),
-                state: EffectState::Unconfirmed,
-                certainty: None,
-                receipt: None,
+                resolution: EffectResolution::Unconfirmed,
             }));
         }
     }

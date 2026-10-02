@@ -239,11 +239,9 @@ pub fn finish(
         ..launch.clone()
     })]);
     if let Some(certainty) = stranded {
-        state_changes.push(StateChange::WriteEffect(EffectWrite {
+        state_changes.push(StateChange::WriteEffect(EffectWrite::Terminal {
             key: eval_key(launch),
-            state: EffectState::Failed,
-            certainty: Some(certainty),
-            receipt: None,
+            certainty,
         }));
     }
     state_changes.extend(settled.state_changes);
@@ -486,15 +484,17 @@ pub(in crate::task) mod fixtures {
     pub(in crate::task) fn stranded_certainty(
         state: Option<EffectState>,
     ) -> Option<EffectCertainty> {
-        writes(&finish(
+        let t = finish(
             &launch(),
             abstain(AbstainReason::InterruptedBeforeDecision),
             state,
             None,
             NOW,
             &policy(),
-        ))
-        .first()
-        .and_then(|write| write.certainty)
+        );
+        match writes(&t).as_slice() {
+            [EffectWrite::Terminal { certainty, .. }] => Some(*certainty),
+            [..] => None,
+        }
     }
 }

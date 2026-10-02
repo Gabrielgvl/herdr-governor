@@ -8,8 +8,8 @@ use governor_core::identity::{
     Timestamp,
 };
 use governor_core::lifecycle::{
-    Effect, EffectCertainty, EffectKind, EffectState, EffectWrite, Run, State, StateChange,
-    Transition,
+    Effect, EffectCertainty, EffectKind, EffectResolution, EffectState, EffectWrite, Run, State,
+    StateChange, Transition,
 };
 use governor_core::task::{Launch, LaunchOutcome, LaunchPhase, Task};
 use herdr_governor::store::Store;
@@ -114,13 +114,29 @@ pub fn effect(key: &str, launch: Option<&str>, run: Option<&str>) -> Effect {
     }
 }
 
+/// The dispatch commit: `planned` → `dispatching`.
 #[must_use]
-pub fn write(key: &str, state: EffectState, certainty: Option<EffectCertainty>) -> StateChange {
-    StateChange::WriteEffect(EffectWrite {
+pub fn dispatch(key: &str) -> StateChange {
+    StateChange::WriteEffect(EffectWrite::Dispatch {
         key: EffectKey(key.into()),
-        state,
+    })
+}
+
+/// The result commit: `dispatching` → the resolution's state.
+#[must_use]
+pub fn result(key: &str, resolution: EffectResolution) -> StateChange {
+    StateChange::WriteEffect(EffectWrite::Result {
+        key: EffectKey(key.into()),
+        resolution,
+    })
+}
+
+/// The OQ-13 terminal write: a stranded row closed `failed`.
+#[must_use]
+pub fn terminal(key: &str, certainty: EffectCertainty) -> StateChange {
+    StateChange::WriteEffect(EffectWrite::Terminal {
+        key: EffectKey(key.into()),
         certainty,
-        receipt: None,
     })
 }
 

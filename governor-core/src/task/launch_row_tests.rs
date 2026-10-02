@@ -10,9 +10,10 @@ use crate::identity::{
     RunId, TabId, Timestamp, mint_agent_name,
 };
 use crate::lifecycle::{
-    EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
-    EffectTarget, Event, Run, Settlement, State, StateChange, Transition, UnresolvedReason,
-    VersionTriple, Versioned, launch_plan, op_digest, periodic_review, transition,
+    EffectCertainty, EffectKind, EffectReceipt, EffectResolution, EffectResult, EffectState,
+    EffectTarget, EffectWrite, Event, Run, Settlement, State, StateChange, Transition,
+    UnresolvedReason, VersionTriple, Versioned, launch_plan, op_digest, periodic_review,
+    transition,
 };
 use crate::routing::{Decision, PlacementPlan};
 
@@ -78,12 +79,11 @@ fn updates(t: &Transition) -> Vec<&Run> {
         .collect()
 }
 
-fn ack(key: &str, kind: EffectKind, receipt: EffectReceipt) -> Event {
+fn ack(key: &str, kind: EffectKind, receipt: Option<EffectReceipt>) -> Event {
     Event::EffectResult(EffectResult {
         key: EffectKey(key.into()),
         kind,
-        outcome: EffectOutcome::Acknowledged,
-        receipt: Some(receipt),
+        resolution: EffectResolution::Acknowledged { receipt },
     })
 }
 
@@ -324,9 +324,9 @@ fn finish_evaluating_abstain_fails_stranded_eval() {
             let t = finish(&l, abstain(r), Some(s), None, NOW, &policy());
             let w = writes(&t);
             assert_eq!(w.len(), 1);
-            assert_eq!(w[0].key.0, "launch:l-1:evaluate");
-            assert_eq!(w[0].state, EvalFailed);
-            assert!(w[0].certainty.is_some());
+            assert_eq!(w[0].key().0, "launch:l-1:evaluate");
+            assert_eq!(w[0].state(), EvalFailed);
+            assert!(matches!(w[0], EffectWrite::Terminal { .. }));
         }
     }
     let routed = phased(Routed);
@@ -399,13 +399,13 @@ fn planned_effect_stores_digest_for_herdr_kinds() {
     }
     let starting = run_in(Starting);
     let receipt = TabCreated { tab, pane };
-    let ev_tab = ack("run:r-1:tab", TabCreate, receipt);
+    let ev_tab = ack("run:r-1:tab", TabCreate, Some(receipt));
     let on_tab = transact(&starting, ev_tab, Some(&d));
     assert!(digested(&on_tab, AgentStart));
     let started = AgentStarted {
         identity: identity(),
     };
-    let ev_start = ack("run:r-1:start:0", AgentStart, started);
+    let ev_start = ack("run:r-1:start:0", AgentStart, Some(started));
     let on_start = transact(&starting, ev_start, Some(&d));
     assert!(digested(&on_start, Prompt));
     let obs = Event::Obs {

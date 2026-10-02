@@ -277,7 +277,7 @@ pub(super) fn review_result(
     now: Timestamp,
     policy: &Policy,
 ) -> Transition {
-    match (&result.receipt, result.outcome) {
+    match (result.resolution.receipt(), result.resolution.outcome()) {
         (Some(EffectReceipt::Judgments(record)), EffectOutcome::Acknowledged)
             if record.set.outcome == JudgmentOutcome::Answered =>
         {

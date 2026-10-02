@@ -21,8 +21,8 @@ use governor_core::identity::{
     RelayInstanceId, RunId, TerminalId, Timestamp, mint_agent_name,
 };
 use governor_core::lifecycle::{
-    Effect, EffectKind, EffectReceipt, EffectState, EffectWrite, OwnerChange, Run, RunUpdate,
-    Settlement, State, StateChange, Transition, launch_plan, reserved_run, settle,
+    Effect, EffectKind, EffectReceipt, EffectResolution, EffectState, EffectWrite, OwnerChange,
+    Run, RunUpdate, Settlement, State, StateChange, Transition, launch_plan, reserved_run, settle,
 };
 use governor_core::recovery::{RecoveryObligation, RecoveryOrigin, RecoveryStatus};
 use governor_core::routing::{Candidate, Decision, Exploration, PlacementPlan};
@@ -323,20 +323,16 @@ fn plan_effect() -> Transition {
 
 /// Appendix B "Dispatch an effect": `planned` → `dispatching`.
 fn dispatch(key: EffectKey) -> Transition {
-    changes(vec![StateChange::WriteEffect(EffectWrite {
+    changes(vec![StateChange::WriteEffect(EffectWrite::Dispatch {
         key,
-        state: EffectState::Dispatching,
-        certainty: None,
-        receipt: None,
     })])
 }
 
+/// Appendix B "Effect result": the `acknowledged` result commit.
 fn acknowledge(key: EffectKey, receipt: Option<EffectReceipt>) -> StateChange {
-    StateChange::WriteEffect(EffectWrite {
+    StateChange::WriteEffect(EffectWrite::Result {
         key,
-        state: EffectState::Acknowledged,
-        certainty: None,
-        receipt,
+        resolution: EffectResolution::Acknowledged { receipt },
     })
 }
 

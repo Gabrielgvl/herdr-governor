@@ -1,7 +1,7 @@
 //! P4.S3 — `store::apply` contract tests for the journal (`WriteEffect`)
-//! arms: dispatch commit, restart marking, the OQ-13 terminal write, the
-//! result commit with its `Judgments` receipt, the plan-time insert, and
-//! the composed abstained finish.
+//! kinds: the dispatch commit, the result commit (restart marking, the
+//! OQ-11 cause, the `Judgments` receipt), the OQ-13 terminal write, the
+//! plan-time insert, and the composed abstained finish.
 
 #[cfg(test)]
 mod tests {
@@ -10,7 +10,8 @@ mod tests {
     use governor_core::config::ConfigVersion;
     use governor_core::identity::{Digest, EffectKey, EventId, JudgmentSetId, RunId};
     use governor_core::lifecycle::{
-        EffectCertainty, EffectKind, EffectReceipt, EffectState, EffectWrite, StateChange,
+        EffectCertainty, EffectKind, EffectReceipt, EffectResolution, EffectState, FailureCause,
+        StateChange,
     };
     use governor_core::routing::{
         Judgment, JudgmentOutcome, JudgmentPurpose, JudgmentRecord, JudgmentSet, Probability,
@@ -20,8 +21,8 @@ mod tests {
     use herdr_governor::store::{ApplyError, ConflictKind, Store};
 
     use crate::support::{
-        LATER, NOW, binding, caller, changes, count, effect, event, launch, seeded, store,
-        transition, write,
+        LATER, NOW, binding, caller, changes, count, dispatch, effect, event, launch, result,
+        seeded, store, terminal, transition,
     };
 
     const KEY: &str = "run:r-1:prompt:task";
@@ -35,6 +36,24 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap()
+    }
+
+    fn result_json_of(store: &Store, key: &str) -> Option<String> {
+        store
+            .conn()
+            .query_row(
+                "SELECT result_json FROM effects WHERE effect_key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn failed(certainty: EffectCertainty, cause: &str) -> EffectResolution {
+        EffectResolution::Failed {
+            certainty,
+            cause: Some(FailureCause(cause.into())),
+        }
     }
 
     fn assert_effect_conflict(err: &ApplyError) {
@@ -53,20 +72,23 @@ mod tests {
     #[test]
     fn effect_arms_follow_the_journal_protocol() {
         let (_dir, mut store) = seeded();
-        // unconfirmed ← dispatching only: a planned row is a conflict.
-        let err = store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Unconfirmed, None)]),
-                LATER,
-            )
-            .unwrap_err();
-        assert_effect_conflict(&err);
-        store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Dispatching, None)]),
-                LATER,
-            )
-            .unwrap();
+        // A result commit follows `dispatching` only: on a planned row every
+        // resolution — the restart marking and a provably-absent failure
+        // included — is a conflict.
+        for resolution in [
+            EffectResolution::Unconfirmed,
+            EffectResolution::Failed {
+                certainty: EffectCertainty::Absent,
+                cause: None,
+            },
+        ] {
+            let err = store
+                .apply(&changes(vec![result(KEY, resolution)]), LATER)
+                .unwrap_err();
+            assert_effect_conflict(&err);
+        }
+        assert_eq!(effect_cols(&store, KEY).0, "planned");
+        store.apply(&changes(vec![dispatch(KEY)]), LATER).unwrap();
         let dispatched = store.effect(&EffectKey(KEY.into())).unwrap().unwrap();
         assert_eq!(dispatched.dispatched_at, Some(LATER));
         assert_eq!(
@@ -76,31 +98,30 @@ mod tests {
         );
         // A second dispatch commit loses: planned is the only source.
         let second = store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Dispatching, None)]),
-                LATER,
-            )
+            .apply(&changes(vec![dispatch(KEY)]), LATER)
             .unwrap_err();
         assert_effect_conflict(&second);
         store
             .apply(
-                &changes(vec![write(KEY, EffectState::Unconfirmed, None)]),
+                &changes(vec![result(KEY, EffectResolution::Unconfirmed)]),
                 LATER,
             )
             .unwrap();
         // unconfirmed never re-dispatches and never acknowledges.
-        for state in [EffectState::Dispatching, EffectState::Acknowledged] {
-            let third = store
-                .apply(&changes(vec![write(KEY, state, None)]), LATER)
-                .unwrap_err();
+        for write in [
+            dispatch(KEY),
+            result(KEY, EffectResolution::Acknowledged { receipt: None }),
+        ] {
+            let third = store.apply(&changes(vec![write]), LATER).unwrap_err();
             assert_effect_conflict(&third);
         }
+        assert_eq!(effect_cols(&store, KEY).0, "unconfirmed");
     }
 
     #[test]
     fn terminal_write_planned_persists_verbatim() {
         let (_dir, mut store) = seeded();
-        let absent = write(KEY, EffectState::Failed, Some(EffectCertainty::Absent));
+        let absent = terminal(KEY, EffectCertainty::Absent);
         store.apply(&changes(vec![absent]), LATER).unwrap();
         let (state, certainty, completed) = effect_cols(&store, KEY);
         assert_eq!(
@@ -113,20 +134,15 @@ mod tests {
     #[test]
     fn terminal_write_unconfirmed_persists_verbatim() {
         let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![dispatch(KEY)]), NOW).unwrap();
         store
             .apply(
-                &changes(vec![write(KEY, EffectState::Dispatching, None)]),
-                NOW,
-            )
-            .unwrap();
-        store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Unconfirmed, None)]),
+                &changes(vec![result(KEY, EffectResolution::Unconfirmed)]),
                 NOW,
             )
             .unwrap();
         // The core chose `unknown`; the store derives nothing.
-        let unknown = write(KEY, EffectState::Failed, Some(EffectCertainty::Unknown));
+        let unknown = terminal(KEY, EffectCertainty::Unknown);
         store.apply(&changes(vec![unknown]), LATER).unwrap();
         let (state, certainty, _) = effect_cols(&store, KEY);
         assert_eq!(
@@ -138,19 +154,17 @@ mod tests {
     #[test]
     fn terminal_write_acknowledged_conflicts() {
         let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![dispatch(KEY)]), NOW).unwrap();
         store
             .apply(
-                &changes(vec![write(KEY, EffectState::Dispatching, None)]),
+                &changes(vec![result(
+                    KEY,
+                    EffectResolution::Acknowledged { receipt: None },
+                )]),
                 NOW,
             )
             .unwrap();
-        store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Acknowledged, None)]),
-                NOW,
-            )
-            .unwrap();
-        let absent = write(KEY, EffectState::Failed, Some(EffectCertainty::Absent));
+        let absent = terminal(KEY, EffectCertainty::Absent);
         let err = store.apply(&changes(vec![absent]), LATER).unwrap_err();
         assert_effect_conflict(&err);
         let (state, certainty, _) = effect_cols(&store, KEY);
@@ -159,24 +173,123 @@ mod tests {
 
     #[test]
     fn failed_write_with_none_certainty_rejected() {
+        // Repurposed (P4.1): a `failed` journal write without a certainty
+        // and a `planned` journal write are unrepresentable in
+        // `EffectWrite` now, so the surviving `MalformedWrite` refusal for
+        // the journal is the plan-time insert of an effect that is not
+        // `planned` — refused before the transaction, nothing moves.
         let (_dir, mut store) = seeded();
-        let malformed = changes(vec![
-            StateChange::AckEvent(EventId("none".into())),
-            write(KEY, EffectState::Failed, None),
-        ]);
-        let err = store.apply(&malformed, LATER).unwrap_err();
-        assert!(matches!(err, ApplyError::MalformedWrite { .. }), "{err}");
-        let second = store
+        for state in [
+            EffectState::Dispatching,
+            EffectState::Acknowledged,
+            EffectState::Failed,
+            EffectState::Unconfirmed,
+        ] {
+            let mut stray = effect("run:r-1:nudge:9", None, Some("r-1"));
+            stray.state = state;
+            stray.certainty = (state == EffectState::Failed).then_some(EffectCertainty::Absent);
+            let malformed = transition(
+                vec![StateChange::AckEvent(EventId("none".into()))],
+                vec![],
+                vec![stray],
+            );
+            let err = store.apply(&malformed, LATER).unwrap_err();
+            assert!(
+                matches!(err, ApplyError::MalformedWrite { .. }),
+                "{state:?}: {err}"
+            );
+        }
+        assert_eq!(count(&store, "effects"), 1, "nothing was inserted");
+        assert_eq!(effect_cols(&store, KEY).0, "planned", "nothing moved");
+    }
+
+    #[test]
+    fn failed_result_persists_its_cause() {
+        let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![dispatch(KEY)]), NOW).unwrap();
+        store
             .apply(
-                &changes(vec![write(KEY, EffectState::Planned, None)]),
+                &changes(vec![result(
+                    KEY,
+                    failed(EffectCertainty::Unknown, "timeout"),
+                )]),
                 LATER,
             )
-            .unwrap_err();
-        assert!(
-            matches!(second, ApplyError::MalformedWrite { .. }),
-            "{second}"
+            .unwrap();
+        let (state, certainty, completed) = effect_cols(&store, KEY);
+        assert_eq!(
+            (state.as_str(), certainty.as_deref()),
+            ("failed", Some("unknown"))
         );
-        assert_eq!(effect_cols(&store, KEY).0, "planned", "nothing moved");
+        assert_eq!(completed.as_deref(), Some("2026-10-01T00:01:00.000Z"));
+        assert_eq!(
+            result_json_of(&store, KEY).as_deref(),
+            Some(r#"{"error":"timeout"}"#),
+            "the OQ-11 cause is the row's result_json"
+        );
+        let row = store.effect(&EffectKey(KEY.into())).unwrap().unwrap();
+        assert_eq!(row.receipt, None, "a cause is not a receipt");
+        assert_eq!(row.certainty, Some(EffectCertainty::Unknown));
+    }
+
+    #[test]
+    fn pre_interactive_failure_persists_absent_and_cause() {
+        let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![dispatch(KEY)]), NOW).unwrap();
+        store
+            .apply(
+                &changes(vec![result(
+                    KEY,
+                    EffectResolution::PreInteractiveFailed {
+                        cause: Some(FailureCause("agent_pane_busy".into())),
+                    },
+                )]),
+                LATER,
+            )
+            .unwrap();
+        let (state, certainty, _) = effect_cols(&store, KEY);
+        assert_eq!(
+            (state.as_str(), certainty.as_deref()),
+            ("failed", Some("absent")),
+            "a pre-interactive failure provably never ran (F15)"
+        );
+        assert_eq!(
+            result_json_of(&store, KEY).as_deref(),
+            Some(r#"{"error":"agent_pane_busy"}"#)
+        );
+        assert_eq!(
+            store
+                .effect(&EffectKey(KEY.into()))
+                .unwrap()
+                .unwrap()
+                .receipt,
+            None
+        );
+    }
+
+    #[test]
+    fn terminal_write_leaves_result_json_null() {
+        let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![dispatch(KEY)]), NOW).unwrap();
+        store
+            .apply(
+                &changes(vec![terminal(KEY, EffectCertainty::Unknown)]),
+                LATER,
+            )
+            .unwrap();
+        assert_eq!(
+            result_json_of(&store, KEY),
+            None,
+            "no cause, no receipt (OQ-B)"
+        );
+        assert_eq!(
+            effect_cols(&store, KEY),
+            (
+                "failed".into(),
+                Some("unknown".into()),
+                Some("2026-10-01T00:01:00.000Z".into())
+            )
+        );
     }
 
     #[test]
@@ -207,12 +320,12 @@ mod tests {
         );
         // Redelivery: the row write loses (the effect is acknowledged), so
         // nothing re-inserts.
-        let again = changes(vec![StateChange::WriteEffect(EffectWrite {
-            key: EffectKey(KEY.into()),
-            state: EffectState::Acknowledged,
-            certainty: None,
-            receipt: Some(EffectReceipt::Judgments(record)),
-        })]);
+        let again = changes(vec![result(
+            KEY,
+            EffectResolution::Acknowledged {
+                receipt: Some(EffectReceipt::Judgments(record)),
+            },
+        )]);
         let err = store.apply(&again, LATER).unwrap_err();
         assert_effect_conflict(&err);
         assert_eq!(
@@ -252,18 +365,13 @@ mod tests {
     /// `dispatching` ← `planned`, then the `acknowledged` result commit
     /// carrying `receipt`.
     fn dispatch_and_commit(key: &str, receipt: EffectReceipt, store: &mut Store) {
-        store
-            .apply(
-                &changes(vec![write(key, EffectState::Dispatching, None)]),
-                NOW,
-            )
-            .unwrap();
-        let commit = changes(vec![StateChange::WriteEffect(EffectWrite {
-            key: EffectKey(key.into()),
-            state: EffectState::Acknowledged,
-            certainty: None,
-            receipt: Some(receipt),
-        })]);
+        store.apply(&changes(vec![dispatch(key)]), NOW).unwrap();
+        let commit = changes(vec![result(
+            key,
+            EffectResolution::Acknowledged {
+                receipt: Some(receipt),
+            },
+        )]);
         store.apply(&commit, LATER).unwrap();
     }
 
@@ -345,11 +453,7 @@ mod tests {
         let finish = transition(
             vec![
                 StateChange::RecordLaunch(done),
-                write(
-                    "launch:l-2:evaluate",
-                    EffectState::Failed,
-                    Some(EffectCertainty::Absent),
-                ),
+                terminal("launch:l-2:evaluate", EffectCertainty::Absent),
             ],
             vec![event("ev-a", "l-2")],
             vec![],

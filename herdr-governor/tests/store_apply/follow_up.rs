@@ -12,10 +12,15 @@ use governor_core::identity::{
     AgentKind, AgentName, ChildIdentity, ChildStatus, Digest, EffectId, HerdrIncarnation,
     MessageKey, PaneId, RunId, TerminalId,
 };
-use governor_core::lifecycle::{Effect, EffectState, RunUpdate, State, StateChange};
+use governor_core::lifecycle::{
+    Effect, EffectResolution, EffectState, RunUpdate, State, StateChange,
+};
 use herdr_governor::store::{ApplyError, ConflictKind, Store};
 
-use crate::support::{LATER, NOW, caller, changes, count, run, seeded, transition, write};
+use crate::support::{
+    LATER, NOW, caller, changes, count, dispatch as dispatch_effect, result, run, seeded,
+    transition,
+};
 
 fn run_id() -> RunId {
     RunId("r-1".into())
@@ -101,10 +106,7 @@ pub fn dispatched(store: &mut Store, seq: u64) {
     plan(store, seq);
     store
         .apply(
-            &changes(vec![
-                write(&effect_key(seq), EffectState::Dispatching, None),
-                dispatch(seq),
-            ]),
+            &changes(vec![dispatch_effect(&effect_key(seq)), dispatch(seq)]),
             NOW,
         )
         .unwrap();
@@ -343,7 +345,7 @@ fn resolution_frees_the_queue_from_persisted_state() {
     store
         .apply(
             &changes(vec![
-                write(&effect_key(1), EffectState::Unconfirmed, None),
+                result(&effect_key(1), EffectResolution::Unconfirmed),
                 resolve(1, OutboxState::Unconfirmed),
             ]),
             LATER,

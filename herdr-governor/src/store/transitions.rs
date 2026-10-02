@@ -42,28 +42,15 @@ use super::rows::mailbox::MailboxRow;
 use super::rows::{Params, ts_encode};
 
 /// Refuses a transition the vocabulary forbids before any transaction
-/// opens: a `failed` journal write without a certainty (Appendix B CHECK,
-/// OQ-13 — certainty is the core's decision, never the store's), a journal
-/// write asking for `planned` (that is the plan-time `effects` insert), an
-/// outbox enqueue that is not `queued` or an outbox resolution to a state
-/// that is not `submitted`/`unconfirmed` (F17/F9 — the only edges), or a
-/// planned effect that is not `planned`.
+/// opens: an outbox enqueue that is not `queued` or an outbox resolution to
+/// a state that is not `submitted`/`unconfirmed` (F17/F9 — the only edges),
+/// or a planned effect that is not `planned`. A journal write needs no
+/// check: [`governor_core::lifecycle::EffectWrite`] makes a `failed` without
+/// a certainty, a `planned` write and a receipt on a failure unrepresentable
+/// (OQ-11/OQ-13 — the shape is the core's decision, never the store's).
 pub(super) fn check_well_formed(transition: &Transition) -> Result<(), ApplyError> {
     for change in &transition.state_changes {
         let (key, reason) = match change {
-            StateChange::WriteEffect(write) => {
-                let reason = match write.state {
-                    EffectState::Failed if write.certainty.is_none() => {
-                        "failed without a certainty"
-                    }
-                    EffectState::Planned => "planned is the plan-time journal write",
-                    EffectState::Dispatching
-                    | EffectState::Acknowledged
-                    | EffectState::Failed
-                    | EffectState::Unconfirmed => continue,
-                };
-                (write.key.0.clone(), reason)
-            }
             StateChange::WriteFollowUp(FollowUpWrite::Enqueue(message))
                 if message.state != OutboxState::Queued =>
             {
@@ -80,7 +67,8 @@ pub(super) fn check_well_formed(transition: &Transition) -> Result<(), ApplyErro
                     "a follow-up resolves to submitted or unconfirmed",
                 )
             }
-            StateChange::WriteFollowUp(_)
+            StateChange::WriteEffect(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::BindCaller(_)
             | StateChange::RecordLaunch(_)
             | StateChange::ReserveRun(_)
