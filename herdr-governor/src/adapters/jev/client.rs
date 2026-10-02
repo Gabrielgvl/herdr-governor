@@ -12,11 +12,17 @@ use std::time::Duration;
 use governor_core::routing::{Judgment, Question, request_size_outcome};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use reqwest::redirect;
+use tokio::fs::File;
+use tokio::io::AsyncReadExt as _;
 
 use super::error::{JevError, http_component};
 use super::wire::{
     self, JEV_RESPONSE_MAX_BYTES, Kind, Request, State, WireQuestion, question_name,
 };
+
+/// The credential-file read bound: a bearer token is a few hundred bytes;
+/// anything past this is not a key file and is never buffered further.
+const KEY_MAX_BYTES: u64 = 8 * 1024;
 
 /// The Jev bearer credential. Never printed, logged, serialized or
 /// compared: `Debug` is redacted and there is no `Display`. Built only
@@ -37,26 +43,46 @@ impl ApiKey {
     /// `CredentialUnavailable` — no request is ever sent with a key the
     /// adapter could not vouch for.
     pub async fn read_0600(path: &Path) -> Result<Self, JevError> {
-        let meta =
-            tokio::fs::metadata(path)
-                .await
-                .map_err(|e| JevError::CredentialUnavailable {
-                    reason: if e.kind() == std::io::ErrorKind::NotFound {
-                        "missing"
-                    } else {
-                        "unreadable"
-                    },
-                })?;
+        let file = File::open(path)
+            .await
+            .map_err(|e| JevError::CredentialUnavailable {
+                reason: if e.kind() == std::io::ErrorKind::NotFound {
+                    "missing"
+                } else {
+                    "unreadable"
+                },
+            })?;
+        Self::from_file(file).await
+    }
+
+    /// The verdict and the bytes come from one open handle: the mode is
+    /// `fstat`ed on `file` and the token read from the same descriptor,
+    /// so no path swap between the two can substitute a looser file.
+    pub(super) async fn from_file(mut file: File) -> Result<Self, JevError> {
+        let meta = file
+            .metadata()
+            .await
+            .map_err(|_io| JevError::CredentialUnavailable {
+                reason: "unreadable",
+            })?;
         if meta.permissions().mode() & 0o777 != 0o600 {
             return Err(JevError::CredentialUnavailable {
                 reason: "mode_not_0600",
             });
         }
-        let bytes = tokio::fs::read(path)
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(KEY_MAX_BYTES.saturating_add(1))
+            .read_to_end(&mut bytes)
             .await
             .map_err(|_io| JevError::CredentialUnavailable {
                 reason: "unreadable",
             })?;
+        if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > KEY_MAX_BYTES {
+            return Err(JevError::CredentialUnavailable {
+                reason: "not_header_safe",
+            });
+        }
         let token = std::str::from_utf8(&bytes)
             .map_err(|_utf8| JevError::CredentialUnavailable {
                 reason: "not_header_safe",

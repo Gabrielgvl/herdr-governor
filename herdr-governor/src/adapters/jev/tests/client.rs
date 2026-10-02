@@ -4,6 +4,8 @@
 //! Every fixture-reading fake-server test lives in the `tests/jev_fixtures/`
 //! integration crate now.
 
+use std::os::unix::fs::PermissionsExt as _;
+
 use governor_core::routing::JudgmentOutcome;
 
 use super::super::client::{ApiKey, Client};
@@ -38,6 +40,61 @@ async fn error_unresolvable_key() {
         assert_eq!(err.component(), "api_key");
     }
     assert!(ApiKey::read_0600(&path).await.is_err(), "empty file");
+}
+
+/// The mode verdict and the bytes come from the opened handle, not from
+/// the path: once a file is open, swapping what the path points at changes
+/// nothing. A handle on a 0644 file is refused even after a 0600 file is
+/// swapped in at its path; a handle on a 0600 file is accepted even after
+/// a 0644 file replaces it there. The old metadata-then-read shape passed
+/// the first case's swapped-in bytes.
+#[tokio::test]
+async fn credential_verdict_comes_from_the_open_handle() {
+    let (dir, loose) = credential_file(FAKE_KEY, 0o644);
+    let strict = dir.path().join("strict");
+    std::fs::write(&strict, FAKE_KEY).expect("write");
+    std::fs::set_permissions(&strict, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+
+    let opened_loose = tokio::fs::File::open(&loose).await.expect("open");
+    std::fs::rename(&strict, &loose).expect("swap a 0600 file in at the path");
+    let err = ApiKey::from_file(opened_loose)
+        .await
+        .expect_err("0644 handle");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "mode_not_0600"
+            }
+        ),
+        "{err}"
+    );
+
+    let opened_strict = tokio::fs::File::open(&loose)
+        .await
+        .expect("open the swapped-in 0600");
+    let other = credential_file(FAKE_KEY, 0o644);
+    std::fs::rename(&other.1, &loose).expect("swap a 0644 file in at the path");
+    ApiKey::from_file(opened_strict)
+        .await
+        .expect("the 0600 handle is unaffected by the path swap");
+}
+
+/// A credential file past the read bound is refused before it is buffered
+/// whole, and the bound is read from the same handle as the verdict.
+#[tokio::test]
+async fn oversized_credential_file_is_refused() {
+    let (_dir, path) = credential_file(&"k".repeat(8 * 1024 + 1), 0o600);
+    let err = ApiKey::read_0600(&path).await.expect_err("too large");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "not_header_safe"
+            }
+        ),
+        "{err}"
+    );
 }
 
 #[tokio::test]

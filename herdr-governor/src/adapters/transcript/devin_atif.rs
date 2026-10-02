@@ -10,7 +10,7 @@ use std::io::SeekFrom;
 
 use serde_json::Value;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncSeekExt as _};
 
 use super::error::{TranscriptError, unreadable};
 use super::pointer::ResolvedSource;
@@ -46,10 +46,7 @@ pub(super) async fn read(
     file.seek(SeekFrom::Start(0))
         .await
         .map_err(|e| unreadable(&e))?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)
-        .await
-        .map_err(|e| unreadable(&e))?;
+    let buf = read_bounded(file).await?;
     let doc: Value = serde_json::from_slice(&buf).map_err(|_json| malformed_json())?;
     let session_id = doc.get("session_id").and_then(Value::as_str);
     if session_id != source.expected_id() {
@@ -68,6 +65,28 @@ pub(super) async fn read(
         });
     }
     emit_tail(steps, pos, session_id, cursor)
+}
+
+/// Read the whole source, but never more than the ceiling: the metadata
+/// check above is advisory (the file may grow or be rewritten between it
+/// and the read), so the read itself is what enforces the budget.
+pub(super) async fn read_bounded(
+    reader: impl AsyncRead + Unpin,
+) -> Result<Vec<u8>, TranscriptError> {
+    let mut buf = Vec::new();
+    reader
+        .take(SOURCE_MAX_BYTES.saturating_add(1))
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| unreadable(&e))?;
+    let read = u64::try_from(buf.len()).unwrap_or(u64::MAX);
+    if read > SOURCE_MAX_BYTES {
+        return Err(TranscriptError::SourceExceedsBudget {
+            bytes_at_least: read,
+            budget: SOURCE_MAX_BYTES,
+        });
+    }
+    Ok(buf)
 }
 
 /// The content anchor: FNV-1a over the session id and the last consumed

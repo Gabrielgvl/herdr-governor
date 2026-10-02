@@ -161,7 +161,9 @@ fn parse_head(stdout: &[u8]) -> Result<String, GitError> {
         reason: "head_not_hex",
     })?;
     let sha = text.trim_end();
-    let hex = sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit());
+    // SHA-1 (40) or SHA-256 (64) object ids, lowercase as git prints them.
+    let hex = (sha.len() == 40 || sha.len() == 64)
+        && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
     if hex {
         Ok(sha.to_owned())
     } else {
@@ -172,8 +174,8 @@ fn parse_head(stdout: &[u8]) -> Result<String, GitError> {
 }
 
 /// Parses `status --porcelain=v1 -z`: NUL-separated `XY<space>path`
-/// entries; an `R`/`C` status is followed by one extra NUL-terminated entry,
-/// the source path. Paths are verbatim bytes — spaces and newlines included
+/// entries; an `R`/`C` in either column (index or worktree) is followed by
+/// one extra NUL-terminated entry, the source path. Paths are verbatim bytes — spaces and newlines included
 /// — and must be UTF-8 to become `String`s.
 fn parse_porcelain(stdout: &[u8]) -> Result<Vec<String>, GitError> {
     let mut dirty = Vec::new();
@@ -188,8 +190,10 @@ fn parse_porcelain(stdout: &[u8]) -> Result<Vec<String>, GitError> {
             }
             break;
         }
-        let (status, path) = match (entry.get(..3), entry.get(3..)) {
-            (Some([x, _, b' ']), Some(path)) if !path.is_empty() => (*x, path),
+        let (renamed, path) = match (entry.get(..3), entry.get(3..)) {
+            (Some([x, y, b' ']), Some(path)) if !path.is_empty() => {
+                (matches!(*x, b'R' | b'C') || matches!(*y, b'R' | b'C'), path)
+            }
             _ => {
                 return Err(GitError::Malformed {
                     reason: "truncated_entry",
@@ -197,7 +201,7 @@ fn parse_porcelain(stdout: &[u8]) -> Result<Vec<String>, GitError> {
             }
         };
         dirty.push(utf8_path(path)?);
-        if status == b'R' || status == b'C' {
+        if renamed {
             let source = entries
                 .next()
                 .filter(|s| !s.is_empty())
@@ -229,13 +233,14 @@ mod tests {
         worktree_evidence,
     };
 
-    /// Throwaway repository under a tempdir, isolated from the user's git
-    /// config. Never touches this worktree's own repository.
-    fn repo() -> (TempDir, PathBuf) {
+    /// Throwaway repository under a tempdir (`init_flags` e.g. the object
+    /// format), isolated from the user's git config. Never touches this
+    /// worktree's own repository.
+    fn repo(init_flags: &[&str]) -> (TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("repo");
         std::fs::create_dir_all(&root).unwrap();
-        git(&root, &["init", "-q", "-b", "main"]);
+        git(&root, &[&["init", "-q", "-b", "main"], init_flags].concat());
         (dir, root)
     }
 
@@ -274,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn clean_repo_yields_head_and_empty_dirty_set() {
-        let (_dir, root) = repo();
+        let (_dir, root) = repo(&[]);
         let sha = commit(&root, "init");
         let ev = worktree_evidence(&root).await.unwrap();
         assert_eq!(
@@ -290,11 +295,16 @@ mod tests {
             sha,
             "base_commit matches HEAD"
         );
+        // `git init --object-format=sha256`: a 64-hex HEAD is accepted.
+        let (_dir2, root2) = repo(&["--object-format=sha256"]);
+        let sha2 = commit(&root2, "init");
+        assert_eq!(sha2.len(), 64, "a SHA-256 object id");
+        assert_eq!(worktree_evidence(&root2).await.unwrap().head, sha2);
     }
 
     #[tokio::test]
     async fn dirty_repo_lists_modified_untracked_and_renamed_paths_verbatim() {
-        let (_dir, root) = repo();
+        let (_dir, root) = repo(&[]);
         write(&root, "d i r/a b.txt", "x");
         write(&root, "n\nl.txt", "x");
         write(&root, "keep.txt", "x");
@@ -309,11 +319,22 @@ mod tests {
             vec!["c d.txt", "d i r/a b.txt", "n\nl.txt", "new dir/u.txt"],
             "rename new+old, newline path, untracked file inside dir"
         );
+        // A worktree-side rename (` R new\0old\0`: `mv` + `git add -N`)
+        // reports both paths; the old parser read `old` as a truncated entry.
+        commit(&root, "settle");
+        std::fs::rename(root.join("keep.txt"), root.join("moved.txt")).unwrap();
+        git(&root, &["add", "-N", "moved.txt"]);
+        let moved = worktree_evidence(&root).await.unwrap();
+        assert_eq!(
+            moved.dirty,
+            vec!["moved.txt", "keep.txt"],
+            "worktree rename"
+        );
     }
 
     #[tokio::test]
     async fn unborn_head_is_typed() {
-        let (_dir, root) = repo();
+        let (_dir, root) = repo(&[]);
         assert!(
             matches!(base_commit(&root).await, Err(GitError::UnbornHead)),
             "unborn"
@@ -344,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_git_binary_is_unavailable() {
-        let (_dir, root) = repo();
+        let (_dir, root) = repo(&[]);
         let err = head("herdr-governor-no-such-git-binary", &root)
             .await
             .unwrap_err();
@@ -366,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn head_moved_mid_read_is_typed_not_panic() {
-        let (_dir, root) = repo();
+        let (_dir, root) = repo(&[]);
         let first = commit(&root, "one");
         let before = base_commit(&root).await.unwrap();
         let second = commit(&root, "two");
@@ -407,6 +428,11 @@ mod tests {
             "every entry, verbatim"
         );
         assert_eq!(
+            parse_porcelain(b" R n\0o\0 C c\0s\0RM a\0b\0?? z\0").unwrap(),
+            vec!["n", "o", "c", "s", "a", "b", "z"],
+            "worktree-column rename/copy and a mixed RM carry both paths"
+        );
+        assert_eq!(
             parse_porcelain(b"").unwrap(),
             Vec::<String>::new(),
             "empty output"
@@ -442,11 +468,17 @@ mod tests {
             sha,
             "trailing newline"
         );
+        let sha256 = "0123456789abcdef".repeat(4);
+        assert_eq!(parse_head(sha256.as_bytes()).unwrap(), sha256, "64-hex");
         for bad in [
             "",
             "HEAD\n",
             "0123456",
             "0123456789abcdef0123456789abcdef0123456g",
+            &format!("{sha}a"),
+            sha256.trim_end_matches('f'),
+            &format!("{sha256}0"),
+            &sha.to_ascii_uppercase(),
         ] {
             assert!(
                 matches!(

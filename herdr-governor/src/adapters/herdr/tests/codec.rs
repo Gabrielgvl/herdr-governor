@@ -57,6 +57,46 @@ fn frame_split_across_writes_parses() {
     assert!(matches!(decode_frame(&got), Ok(Frame::Result { .. })));
 }
 
+/// A 1 MiB frame arriving in 8 KiB chunks parses identically to one push,
+/// and each push scans only its own chunk (`unscanned() == 0` after every
+/// push that completes no line) — the linear-cost pin for the chunked read
+/// loop.
+#[test]
+fn frame_in_small_chunks_parses_identically_and_scans_once() {
+    let mut body = vec![b'x'; MAX_FRAME_BYTES - 1];
+    body.push(b'\n');
+    let mut whole = LineAccumulator::new();
+    whole.push(&body).expect("one push");
+    let want = whole.take_line().expect("take").expect("line");
+
+    let mut chunked = LineAccumulator::new();
+    let mut tail = body.chunks(8 * 1024).peekable();
+    while let Some(chunk) = tail.next() {
+        chunked.push(chunk).expect("chunk push");
+        if tail.peek().is_some() {
+            assert_eq!(chunked.unscanned(), 0, "a push scans only its chunk");
+            assert!(chunked.take_line().expect("take").is_none());
+            assert_eq!(chunked.unscanned(), 0, "a miss leaves nothing to rescan");
+        }
+    }
+    let got = chunked.take_line().expect("take").expect("line");
+    assert_eq!(got.len(), MAX_FRAME_BYTES - 1);
+    assert_eq!(got, want, "chunking does not change the frame");
+    // Two lines in one chunk: the second is found from where the first
+    // ended, not from the start of the buffer.
+    chunked.push(b"a\nbb\nc").expect("push");
+    assert_eq!(
+        chunked.take_line().expect("take").as_deref(),
+        Some(&b"a"[..])
+    );
+    assert_eq!(
+        chunked.take_line().expect("take").as_deref(),
+        Some(&b"bb"[..])
+    );
+    assert!(chunked.take_line().expect("take").is_none());
+    assert_eq!(chunked.unscanned(), 0);
+}
+
 #[test]
 fn frame_bound_accepts_exactly_1mib() {
     let mut acc = LineAccumulator::new();

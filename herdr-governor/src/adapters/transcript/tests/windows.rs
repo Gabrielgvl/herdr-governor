@@ -3,7 +3,10 @@
 
 use tempfile::tempdir;
 
-use super::super::{Cursor, TranscriptRoots, read_window, resolve};
+use tokio::io::AsyncReadExt as _;
+
+use super::super::devin_atif::read_bounded;
+use super::super::{Cursor, TranscriptError, TranscriptRoots, read_window, resolve};
 use super::{pointer, stage};
 
 #[tokio::test]
@@ -91,4 +94,34 @@ async fn window_is_deterministic_32k_tail() {
     let w3 = read_window(&src, w.cursor).await.unwrap();
     assert!(w3.events.is_empty(), "no new records → empty window");
     assert_eq!(w3.cursor, w.cursor, "the cursor stands");
+}
+
+/// The document read enforces the 8 MiB ceiling itself: a source that
+/// yields one byte more than the budget — a file grown after the metadata
+/// check — is `source_exceeds_budget`, and the read never buffers past
+/// `ceiling + 1`. Exactly the ceiling is read whole.
+#[tokio::test]
+async fn devin_bounded_read_refuses_a_source_grown_past_the_ceiling() {
+    const CEILING: u64 = 8 * 1024 * 1024;
+    let err = read_bounded(tokio::io::repeat(b' ').take(CEILING + 1))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            TranscriptError::SourceExceedsBudget {
+                bytes_at_least,
+                budget: CEILING,
+            } if bytes_at_least == CEILING + 1
+        ),
+        "one byte over the ceiling: {err:?}"
+    );
+    let whole = read_bounded(tokio::io::repeat(b' ').take(CEILING))
+        .await
+        .unwrap();
+    assert_eq!(
+        u64::try_from(whole.len()).unwrap(),
+        CEILING,
+        "exactly the ceiling reads"
+    );
 }

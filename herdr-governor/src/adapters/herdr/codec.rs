@@ -153,11 +153,17 @@ pub(crate) fn malformed(detail: impl Into<String>) -> HerdrError {
 /// truncation.
 pub(crate) struct LineAccumulator {
     buf: Vec<u8>,
+    /// `buf[..scanned]` holds no `\n`: every search resumes here, so each
+    /// byte is scanned once however finely the frame was chunked.
+    scanned: usize,
 }
 
 impl LineAccumulator {
     pub(crate) fn new() -> Self {
-        Self { buf: Vec::new() }
+        Self {
+            buf: Vec::new(),
+            scanned: 0,
+        }
     }
 
     /// Append a chunk read off the socket.
@@ -166,9 +172,14 @@ impl LineAccumulator {
         // Guard memory while a first line is still pending — the line-length
         // check itself lives in `take_line`, which also covers lines that
         // complete inside this chunk.
-        if self.buf.iter().position(|b| *b == b'\n').is_none() && self.buf.len() > MAX_FRAME_BYTES {
-            self.buf.clear();
-            return Err(HerdrError::FrameTooLarge);
+        if let Some(n) = self.newline() {
+            self.scanned = n;
+        } else {
+            self.scanned = self.buf.len();
+            if self.scanned > MAX_FRAME_BYTES {
+                self.reset();
+                return Err(HerdrError::FrameTooLarge);
+            }
         }
         Ok(())
     }
@@ -177,23 +188,50 @@ impl LineAccumulator {
     /// line is still pending. A line over the bound is a typed error and
     /// the buffer resets — the connection it fed is closed anyway.
     pub(crate) fn take_line(&mut self) -> Result<Option<Vec<u8>>, HerdrError> {
-        match self.buf.iter().position(|b| *b == b'\n') {
+        match self.newline() {
             Some(n) if n > MAX_FRAME_BYTES => {
-                self.buf.clear();
+                self.reset();
                 Err(HerdrError::FrameTooLarge)
             }
             Some(n) => {
                 let mut rest = self.buf.split_off(n.saturating_add(1));
                 self.buf.truncate(n);
                 std::mem::swap(&mut self.buf, &mut rest);
+                // The remainder past the `\n` has not been searched yet.
+                self.scanned = 0;
                 Ok(Some(rest))
             }
             None if self.buf.len() > MAX_FRAME_BYTES => {
-                self.buf.clear();
+                self.reset();
                 Err(HerdrError::FrameTooLarge)
             }
-            None => Ok(None),
+            None => {
+                self.scanned = self.buf.len();
+                Ok(None)
+            }
         }
+    }
+
+    /// Position of the first `\n`, searching only the not-yet-scanned tail.
+    fn newline(&self) -> Option<usize> {
+        self.buf
+            .get(self.scanned..)?
+            .iter()
+            .position(|b| *b == b'\n')
+            .map(|off| self.scanned.saturating_add(off))
+    }
+
+    fn reset(&mut self) {
+        self.buf.clear();
+        self.scanned = 0;
+    }
+
+    /// Bytes a further search would still have to visit — the cost pin:
+    /// zero after a push that completes no line, so a push scans only
+    /// its own chunk.
+    #[cfg(test)]
+    pub(crate) fn unscanned(&self) -> usize {
+        self.buf.len().saturating_sub(self.scanned)
     }
 }
 
