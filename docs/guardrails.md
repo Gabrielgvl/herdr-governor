@@ -98,7 +98,7 @@ covers every member's `*/tests/fixtures/**`.
 |---|---|
 | `hard` | Always protected; edits go through the owner. |
 | `section` | Protected per TOML section — `Cargo.toml` manifests only. Changes inside `[lints*]`, `[package]`, `[workspace*]`, `[profile.*]`, `[patch.*]`, `[replace]`, `[bin]`, `[lib]`, `[test]`, `[bench]`, `[example]`, `[features]` fail; changes to dependency sections, `[target.*]`, `[badges]`, `[package.metadata.*]` are always listed in the report — and dependency changes still need owner approval because `Cargo.lock` is hard-protected (see *Adding a dependency*). |
-| `conditional` | Protected once the path exists. |
+| `conditional` | Agent-writable; once the path exists, any change fails the diff gate (R1) until the owner-approved label clears it (owner policy 2026-10-02 — review at merge, not a write-time deny). |
 | `report` | Agent-writable; changes are listed in the gate report, not blocked. |
 
 The policy as shipped (the txt file is authoritative; this is its rendering):
@@ -108,9 +108,10 @@ The policy as shipped (the txt file is authoritative; this is its rendering):
   `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `.gitignore`, `.gitattributes`,
   `**/.gitattributes`, `Cargo.lock`, `build.rs`, `.claude/**`, `.codex/**`,
   `.devin/**`, `.pi/**`, `.githooks/**`, `scripts/**`, `.github/**`,
-  `docs/guardrails.md`, `.config/nextest.toml`, `.cargo/**`
-- **conditional:** `release-digests.txt`, `tests/fixtures/**`,
-  `tests/support/**`, `strategies/**`, `*_strategies.rs`
+  `docs/guardrails.md`, `.config/nextest.toml`, `.cargo/**`,
+  `release-digests.txt`
+- **conditional:** `tests/fixtures/**`, `tests/support/**`,
+  `strategies/**`, `*_strategies.rs`
 - **section:** `Cargo.toml` (every member manifest — the gate builds a
   section map per `*/Cargo.toml` in the diff)
 - **report:** `docs/spec/**`, `docs/adr/**`, `docs/plan/**`,
@@ -118,7 +119,8 @@ The policy as shipped (the txt file is authoritative; this is its rendering):
 
 Beyond the upstream kit baseline this policy adds: `.config/nextest.toml`
 and `.cargo/**` promoted to `hard`; `build.rs` `hard`; test fixtures,
-helpers and proptest strategies `conditional`; `[features]` moved into the
+helpers and proptest strategies `conditional` (agent-writable since
+2026-10-02, still R1 at the diff gate); `release-digests.txt` `hard`; `[features]` moved into the
 failing section set so membership and feature edits are owner-only;
 `docs/reviews/**` and `docs/operations.md` as `report`.
 
@@ -186,13 +188,15 @@ Verdicts are FAIL or REPORT:
   changed without `Cargo.lock`: FAIL — the pair must move together.
 - **R6** — exec-bit flips or non-executable new files under `scripts/*.sh`
   or `.githooks/*`: FAIL — gate weakening by chmod. Same scope as I4.
-- **R7** — snapshot self-acceptance machinery in non-protected content (the
+- **R7** — snapshot self-acceptance machinery in agent-writable content (the
   `INSTA_UPDATE` self-accept values — bare, quoted, or spaced
   (`INSTA_UPDATE="always"` all match) — and the `<insta-accept>`/
   `<insta-review>`/`<insta-test-accept>` command spellings, including forms
-  with `cargo +<toolchain>` or `cargo --config` inserted): FAIL. `hard`/`conditional` policy files are
-  exempt — they legitimately define the patterns — but `report`-mode paths
-  like `docs/plan/**` are scanned like any other agent-writable file.
+  with `cargo +<toolchain>` or `cargo --config` inserted): FAIL. Only `hard`
+  policy files are exempt — they legitimately define the patterns and agents
+  cannot write them. `conditional` paths (agent-writable since 2026-10-02) and
+  `report`-mode paths like `docs/plan/**` are scanned like any other
+  agent-writable file, and the owner override never downgrades R7.
 - **R8** — release-only test gates: a `cfg`/`cfg_attr`/`cfg!` form of
   `not(test)` introduced in a `.rs` diff — including the trailing-comma
   `not(test,)`, every `cfg!` delimiter pair (`()`, `[]`, `{}`), and

@@ -14,12 +14,15 @@
 # becomes a loud OVERRIDE report instead of a FAIL — the approved path for
 # dependency additions (Cargo.lock is hard) and other owner-applied
 # protected edits. Agents must never set it. R2/R3/R7/R8 are source-integrity
-# rules, not protected-path rules: they FAIL regardless (R7 only fires on
-# non-protected paths, so the override could never apply anyway).
-# R7 skips files classified hard/conditional in protected-paths.txt: the
-# configs, gate scripts, and docs that define the policy necessarily quote
-# the patterns, and those files are already gated by R1/owner review.
-# Report-mode (agent-writable) paths stay scanned.
+# rules, not protected-path rules: they FAIL regardless — R7 fires on every
+# path except hard policy files (conditional paths included), and the owner
+# override never downgrades it.
+# R7 skips only files classified hard in protected-paths.txt: the configs,
+# gate scripts, and docs that define the policy necessarily quote the
+# patterns, and agents cannot write them. Conditional paths are
+# agent-writable since 2026-10-02 (test helpers and generators define no
+# policy), so they are scanned like report-mode paths — R7 is a content
+# rule the owner label cannot muffle.
 # R6 mirrors I4: exec-bit policy covers scripts/*.sh and .githooks/* only,
 # not every file under scripts/.
 # R2/R8 run the comment-stripped, literal-blanked engine
@@ -491,10 +494,10 @@ for line in diff_text.split("\n"):
     is_cargo = bool(cur) and cur.rsplit("/", 1)[-1] == "Cargo.toml"
     text = line[1:]
     if sign == "+":
-        # R7: snapshot self-acceptance machinery — on unprotected and
-        # report-mode paths (hard/conditional policy files must quote the
-        # patterns; R1/owner review already gates them).
-        if cur_cls not in ("hard", "cond") and r7_hit(text):
+        # R7: snapshot self-acceptance machinery — on every path except the
+        # hard policy files that must quote the patterns (conditional paths
+        # are agent-writable and scanned).
+        if cur_cls != "hard" and r7_hit(text):
             fail("R7", "%s: snapshot self-acceptance added: %s" % (cur, text.strip()[:100]))
         if is_cargo:
             cm = cargo_maps_for(cur)
@@ -555,7 +558,7 @@ if not ci:
             fail("R6", "%s new file not executable — hook/gate scripts must stay 100755" % p)
         cls = classify_path(p)
         is_rs = p.endswith(".rs")
-        if cls in ("hard", "cond") and not is_rs:
+        if cls == "hard" and not is_rs:
             continue
         try:
             size = os.path.getsize(p)
@@ -570,7 +573,7 @@ if not ci:
                  "cannot scan" % p)
             continue
         for line in body.splitlines():
-            if cls not in ("hard", "cond") and r7_hit(line):
+            if cls != "hard" and r7_hit(line):
                 fail("R7", "%s: snapshot self-acceptance added (untracked): %s"
                      % (p, line.strip()[:100]))
         if is_rs:

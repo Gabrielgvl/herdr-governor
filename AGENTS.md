@@ -145,10 +145,13 @@ the gate scripts directly — the recipe is the contract.
   must parse, declare the pinned protocol revision, and byte-match its
   `.sha256` sidecar — `just schema-check` fails on absence or drift, so
   regenerating the fixture means regenerating the pin.
-- **Test helpers and strategies are conditional-protected.** Once they
-  exist, `tests/fixtures/**`, `tests/support/**`, `strategies/**` and
-  `*_strategies.rs` (in any member) become protected paths — weakened
-  assertion helpers and narrowed generators are known cheats. The
+- **Test helpers and strategies are conditional-protected.** Agents may
+  edit `tests/fixtures/**`, `tests/support/**`, `strategies/**` and
+  `*_strategies.rs` (in any member), but once a path exists every change
+  FAILs the diff gate (R1) until the owner-approved label clears it —
+  weakened assertion helpers and narrowed generators are known cheats,
+  so each such change must be called out in the PR (owner policy
+  2026-10-02: review at merge, not a write-time deny). The
   `just test-inventory` ratchet fails on any test that ran at BASE and is
   missing, filtered or ignored at HEAD; `just mutants-diff` runs the full
   `governor-core` mutation suite on test-only diffs — a same-name no-op
@@ -185,7 +188,8 @@ the gate scripts directly — the recipe is the contract.
 - Unit tests next to the code (`#[cfg(test)]`); integration tests under each
   member's `tests/`. Helpers live in `tests/support/`, fixtures in
   `tests/fixtures/`, proptest strategies in `strategies/` or
-  `*_strategies.rs` — all conditional-protected.
+  `*_strategies.rs` — all conditional-protected (agent-writable, R1 at
+  the diff gate).
 - Core logic: drive lifecycle, delivery and recovery with constructed values
   and property tests. Time is an input parameter, so tests use fake
   sequences — no `sleep()`, no wall clock.
