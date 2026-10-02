@@ -271,6 +271,20 @@ fn f9_a_submitted_follow_up_lifts_its_journal_barrier() {
         None,
         "an unresolved linked entry keeps the barrier (F9)"
     );
+    // A submitted entry of another Run never lifts this Run's barrier, even
+    // when it names the same effect id: the lift is scoped to the Run.
+    let foreign = [
+        OutboxMessage {
+            run: RunId("run-other".into()),
+            ..linked(OutboxState::Submitted)
+        },
+        message(2, "k2"),
+    ];
+    assert_eq!(
+        next_dispatchable_follow_up(&run(), &foreign, core::slice::from_ref(&unconfirmed), &[]),
+        None,
+        "only this Run's own submitted entry lifts its barrier (F9)"
+    );
     // An unconfirmed effect no submitted entry links stays today's barrier.
     let unlinked = [
         dispatched(1, "k1", OutboxState::Submitted),
