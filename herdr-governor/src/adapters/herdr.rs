@@ -16,6 +16,7 @@
 pub mod codec;
 pub mod conn;
 pub mod ops;
+pub mod probe;
 pub mod types;
 
 pub use codec::{HerdrError, MAX_FRAME_BYTES};
