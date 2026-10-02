@@ -193,6 +193,30 @@ fn enqueue_refuses_non_queued() {
 }
 
 #[test]
+fn enqueue_refuses_effect_or_expiry() {
+    let (_dir, mut store) = seeded();
+    // `effect` and `expiry_reason` are not `queued` vocabulary (the
+    // Appendix B CHECK): a queued row carrying either is malformed before
+    // the transaction opens, not a constraint failure inside it.
+    let mut with_effect = message(1, OutboxState::Queued);
+    with_effect.effect = Some(effect_id(1));
+    let mut with_expiry = message(2, OutboxState::Queued);
+    with_expiry.expiry_reason = Some(ExpiryReason::RunSettled);
+    for message in [with_effect, with_expiry] {
+        let err = store
+            .apply(
+                &changes(vec![StateChange::WriteFollowUp(FollowUpWrite::Enqueue(
+                    message,
+                ))]),
+                NOW,
+            )
+            .unwrap_err();
+        assert!(matches!(err, ApplyError::MalformedWrite { .. }), "{err}");
+    }
+    assert_eq!(count(&store, "outbox"), 0, "refused before the transaction");
+}
+
+#[test]
 fn dispatch_requires_queued() {
     let (_dir, mut store) = seeded();
     dispatched(&mut store, 1);

@@ -42,12 +42,14 @@ use super::rows::mailbox::MailboxRow;
 use super::rows::{Params, ts_encode};
 
 /// Refuses a transition the vocabulary forbids before any transaction
-/// opens: an outbox enqueue that is not `queued` or an outbox resolution to
-/// a state that is not `submitted`/`unconfirmed` (F17/F9 — the only edges),
-/// or a planned effect that is not `planned`. A journal write needs no
-/// check: [`governor_core::lifecycle::EffectWrite`] makes a `failed` without
-/// a certainty, a `planned` write and a receipt on a failure unrepresentable
-/// (OQ-11/OQ-13 — the shape is the core's decision, never the store's).
+/// opens: an outbox enqueue that is not `queued`, a `queued` row carrying
+/// an `effect` or `expiry_reason` (Appendix B gives it neither), an outbox
+/// resolution to a state that is not `submitted`/`unconfirmed` (F17/F9 —
+/// the only edges), or a planned effect that is not `planned`. A journal
+/// write needs no check: [`governor_core::lifecycle::EffectWrite`] makes a
+/// `failed` without a certainty, a `planned` write and a receipt on a
+/// failure unrepresentable (OQ-11/OQ-13 — the shape is the core's
+/// decision, never the store's).
 pub(super) fn check_well_formed(transition: &Transition) -> Result<(), ApplyError> {
     for change in &transition.state_changes {
         let (key, reason) = match change {
@@ -57,6 +59,14 @@ pub(super) fn check_well_formed(transition: &Transition) -> Result<(), ApplyErro
                 (
                     follow_up::entry_key(&message.run, message.seq),
                     "a follow-up enqueues queued",
+                )
+            }
+            StateChange::WriteFollowUp(FollowUpWrite::Enqueue(message))
+                if message.effect.is_some() || message.expiry_reason.is_some() =>
+            {
+                (
+                    follow_up::entry_key(&message.run, message.seq),
+                    "a queued follow-up carries no effect or expiry reason",
                 )
             }
             StateChange::WriteFollowUp(FollowUpWrite::Resolve { run, seq, state })

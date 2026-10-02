@@ -12,7 +12,7 @@ use std::time::Duration;
 use governor_core::routing::{Judgment, Question, request_size_outcome};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use reqwest::redirect;
-use rustix::fs::{Mode, OFlags};
+use rustix::fs::{FileType, Mode, OFlags};
 use rustix::io::Errno;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt as _;
@@ -40,18 +40,30 @@ impl fmt::Debug for ApiKey {
 
 impl ApiKey {
     /// Read the credential file: it must exist, not be a symlink (the
-    /// open is `O_NOFOLLOW`, so a linked path refuses as `ELOOP`), be
-    /// mode `0600` exactly, be owned by the effective uid, and hold one
-    /// non-empty header-safe token (surrounding whitespace and a
-    /// trailing newline are trimmed). Any other state is
-    /// `CredentialUnavailable` — no request is ever sent with a key the
-    /// adapter could not vouch for.
+    /// open is `O_NOFOLLOW`, so a linked path refuses as `ELOOP`), be a
+    /// regular file, be mode `0600` exactly, be owned by the effective
+    /// uid, and hold one non-empty header-safe token (surrounding
+    /// whitespace and a trailing newline are trimmed). Any other state
+    /// is `CredentialUnavailable` — no request is ever sent with a key
+    /// the adapter could not vouch for.
     pub async fn read_0600(path: &Path) -> Result<Self, JevError> {
-        let fd = rustix::fs::open(
-            path,
-            OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-            Mode::empty(),
-        )
+        // The open runs on the blocking pool: an `open` that can wait
+        // (a FIFO without `O_NONBLOCK`, a slow mount) must never pin an
+        // executor thread. `O_NONBLOCK` makes the FIFO leg return at
+        // once; the `fstat` verdict on the returned descriptor then
+        // refuses it by type — the handle vouched is the handle read.
+        let owned = path.to_path_buf();
+        let fd = tokio::task::spawn_blocking(move || {
+            rustix::fs::open(
+                owned,
+                OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+                Mode::empty(),
+            )
+        })
+        .await
+        .map_err(|_join| JevError::CredentialUnavailable {
+            reason: "unreadable",
+        })?
         .map_err(|errno| JevError::CredentialUnavailable {
             reason: if errno == Errno::NOENT {
                 "missing"
@@ -64,10 +76,10 @@ impl ApiKey {
         Self::from_file(File::from_std(std::fs::File::from(fd))).await
     }
 
-    /// The verdict and the bytes come from one open handle: the mode and
-    /// owner are `fstat`ed on `file` and the token read from the same
-    /// descriptor, so no path swap between the two can substitute a
-    /// looser file.
+    /// The verdict and the bytes come from one open handle: the type,
+    /// mode and owner are `fstat`ed on `file` and the token read from
+    /// the same descriptor, so no path swap between the two can
+    /// substitute a looser file.
     pub(super) async fn from_file(mut file: File) -> Result<Self, JevError> {
         let meta = file
             .metadata()
@@ -252,11 +264,13 @@ fn install_crypto_provider() {
 }
 
 /// The credential verdict as a pure function so the seam test needs no
-/// filesystem: the opened file must be mode `0600` (`mode` is the raw
-/// `st_mode`; only the permission bits are judged — the `S_IFREG` check
-/// stays a follow-up) and owned by the effective uid.
+/// filesystem: the opened file must be a regular file (a FIFO, device or
+/// directory at the credential path is refused by type and never read),
+/// mode `0600` exactly and owned by the effective uid.
 pub(super) fn vouch(mode: u32, uid: u32, euid: u32) -> Result<(), &'static str> {
-    if mode & 0o777 != 0o600 {
+    if FileType::from_raw_mode(mode) != FileType::RegularFile {
+        Err("not_regular_file")
+    } else if mode & 0o777 != 0o600 {
         Err("mode_not_0600")
     } else if uid != euid {
         Err("foreign_owner")
