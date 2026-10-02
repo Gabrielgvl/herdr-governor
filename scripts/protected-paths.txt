@@ -2,7 +2,8 @@
 # agent-gate.sh, check-protected-diff.sh, check-lint-integrity.sh, docs/guardrails.md.
 # Format: <mode><TAB><pattern>[<TAB>!]   patterns are repo-relative globs (** = subtree).
 #   hard        always protected: gate denies writes; diff gate fails on change
-#   conditional protected once the path exists
+#   conditional agent-writable; diff gate fails on change once the path exists
+#               (owner-approved label clears; owner policy 2026-10-02)
 #   section     diff gate applies Cargo.toml section rules R4/R4b/R5
 #   report      agent-writable: changes listed, not blocked
 #   !           required: must exist and be non-empty (integrity rule I1)
@@ -36,7 +37,7 @@ hard	build.rs
 hard	.github/**
 hard	.config/nextest.toml	!
 hard	.cargo/**
-conditional	release-digests.txt
+hard	release-digests.txt
 conditional	tests/fixtures/**
 conditional	tests/support/**
 conditional	strategies/**

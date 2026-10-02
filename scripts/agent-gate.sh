@@ -57,16 +57,16 @@ try:
     pol = PP.load_policy(policy_path)
 except OSError:
     sys.exit(0)
-hard, cond = pol["hard"], pol["conditional"]
+# `conditional` paths are agent-writable (owner policy 2026-10-02): the diff
+# gate still FAILs R1 on any change to them, cleared only by the head-bound
+# owner-approved label, so review happens at merge, not by a write-time deny.
+hard = pol["hard"]
 
 p = PP.norm(path) if path else ""
 
 for pat in hard:
     if PP.path_matches(p, pat):
         emit("protected path: %s requires owner review" % pat)
-for pat in cond:
-    if PP.path_matches(p, pat) and os.path.exists(p):
-        emit("protected path (exists): %s requires owner review" % pat)
 
 # `cargo insta` tolerates cargo's global flags (`+<toolchain>`, `--config`,
 # `-Z`, `--verbose`, ...) between `cargo` and `insta` — same command.
@@ -105,9 +105,6 @@ def protected_token(tok):
         return None
     for pat in hard:
         if PP.mentions(t, pat):
-            return pat
-    for pat in cond:
-        if PP.mentions(t, pat) and os.path.exists(t):
             return pat
     return None
 

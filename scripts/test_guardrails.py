@@ -342,22 +342,28 @@ class AgentGateTests(unittest.TestCase):
                   "/r/docs/reviews/r.md", "/r/docs/operations.md"):
             self.assertEqual(gate_path(p).returncode, 0, p)
 
-    def test_conditional_requires_existence(self):
-        # conditional paths deny only once the file exists on disk
+    def test_conditional_is_agent_writable(self):
+        # owner policy 2026-10-02: conditional paths are agent-writable
+        # whether or not they exist (the diff gate still FAILs R1 on a
+        # change); release-digests.txt moved to hard and always denies
         for rel in ("tests/fixtures/x.json", "tests/support/h.rs",
-                    "strategies/g.rs", "gen_strategies.rs",
-                    "release-digests.txt"):
+                    "strategies/g.rs", "gen_strategies.rs"):
             with self.subTest(path=rel):
                 with tempfile.TemporaryDirectory() as d:
                     p = Path(d) / rel
                     proc = run("agent-gate.sh", stdin=json.dumps(
                         {"tool_input": {"file_path": str(p)}}), cwd=d)
-                    self.assertEqual(proc.returncode, 0)
+                    self.assertEqual(proc.returncode, 0, rel)
                     p.parent.mkdir(parents=True, exist_ok=True)
                     p.write_text("x")
                     proc = run("agent-gate.sh", stdin=json.dumps(
                         {"tool_input": {"file_path": str(p)}}), cwd=d)
-                    self.assertEqual(proc.returncode, 2, rel)
+                    self.assertEqual(proc.returncode, 0, rel)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "release-digests.txt"
+            proc = run("agent-gate.sh", stdin=json.dumps(
+                {"tool_input": {"file_path": str(p)}}), cwd=d)
+            self.assertEqual(proc.returncode, 2, "release-digests.txt is hard")
 
     def test_insta_commands_deny(self):
         for c in (
@@ -551,8 +557,8 @@ class MatcherParityTests(unittest.TestCase):
                          else "// parity\n" if rel.endswith(".rs")
                          else "# parity\n" if rel.endswith(".gitattributes")
                          else "parity\n")
-        # an untracked conditional path: the hook still denies (it exists
-        # on disk) while the diff gate reports instead of failing
+        # an untracked conditional path: the hook allows it (conditional is
+        # agent-writable) and the diff gate reports instead of failing
         repo.write("tests/support/new_helper.rs", "fn h() {}\n")
 
         proc = run("check-protected-diff.sh", cwd=repo.dir)
@@ -573,8 +579,13 @@ class MatcherParityTests(unittest.TestCase):
             with self.subTest(path=rel):
                 rc = gate_rc(rel)
                 rows = hits(rel)
-                if cls in ("hard", "conditional"):
+                if cls == "hard":
                     self.assertEqual(rc, 2, rel)
+                    self.assertTrue(
+                        any(l.startswith("FAIL R1") for l in rows), rows)
+                elif cls == "conditional":
+                    # agent-writable, but the diff gate still fails it
+                    self.assertEqual(rc, 0, rel)
                     self.assertTrue(
                         any(l.startswith("FAIL R1") for l in rows), rows)
                 elif cls == "section":
@@ -594,7 +605,7 @@ class MatcherParityTests(unittest.TestCase):
                     self.assertEqual(rows, [])
 
         with self.subTest(path="tests/support/new_helper.rs"):
-            self.assertEqual(gate_rc("tests/support/new_helper.rs"), 2)
+            self.assertEqual(gate_rc("tests/support/new_helper.rs"), 0)
             rows = hits("tests/support/new_helper.rs")
             self.assertTrue(
                 any(l.startswith("REPORT R1") for l in rows), rows)

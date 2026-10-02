@@ -98,7 +98,7 @@ covers every member's `*/tests/fixtures/**`.
 |---|---|
 | `hard` | Always protected; edits go through the owner. |
 | `section` | Protected per TOML section — `Cargo.toml` manifests only. Changes inside `[lints*]`, `[package]`, `[workspace*]`, `[profile.*]`, `[patch.*]`, `[replace]`, `[bin]`, `[lib]`, `[test]`, `[bench]`, `[example]`, `[features]` fail; changes to dependency sections, `[target.*]`, `[badges]`, `[package.metadata.*]` are always listed in the report — and dependency changes still need owner approval because `Cargo.lock` is hard-protected (see *Adding a dependency*). |
-| `conditional` | Protected once the path exists. |
+| `conditional` | Agent-writable; once the path exists, any change fails the diff gate (R1) until the owner-approved label clears it (owner policy 2026-10-02 — review at merge, not a write-time deny). |
 | `report` | Agent-writable; changes are listed in the gate report, not blocked. |
 
 The policy as shipped (the txt file is authoritative; this is its rendering):
@@ -108,9 +108,10 @@ The policy as shipped (the txt file is authoritative; this is its rendering):
   `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `.gitignore`, `.gitattributes`,
   `**/.gitattributes`, `Cargo.lock`, `build.rs`, `.claude/**`, `.codex/**`,
   `.devin/**`, `.pi/**`, `.githooks/**`, `scripts/**`, `.github/**`,
-  `docs/guardrails.md`, `.config/nextest.toml`, `.cargo/**`
-- **conditional:** `release-digests.txt`, `tests/fixtures/**`,
-  `tests/support/**`, `strategies/**`, `*_strategies.rs`
+  `docs/guardrails.md`, `.config/nextest.toml`, `.cargo/**`,
+  `release-digests.txt`
+- **conditional:** `tests/fixtures/**`, `tests/support/**`,
+  `strategies/**`, `*_strategies.rs`
 - **section:** `Cargo.toml` (every member manifest — the gate builds a
   section map per `*/Cargo.toml` in the diff)
 - **report:** `docs/spec/**`, `docs/adr/**`, `docs/plan/**`,
@@ -118,7 +119,8 @@ The policy as shipped (the txt file is authoritative; this is its rendering):
 
 Beyond the upstream kit baseline this policy adds: `.config/nextest.toml`
 and `.cargo/**` promoted to `hard`; `build.rs` `hard`; test fixtures,
-helpers and proptest strategies `conditional`; `[features]` moved into the
+helpers and proptest strategies `conditional` (agent-writable since
+2026-10-02, still R1 at the diff gate); `release-digests.txt` `hard`; `[features]` moved into the
 failing section set so membership and feature edits are owner-only;
 `docs/reviews/**` and `docs/operations.md` as `report`.
 
