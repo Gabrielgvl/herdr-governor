@@ -49,8 +49,9 @@ docs/adr/              @Gabrielgvl
 docs/reviews/          @Gabrielgvl
 docs/guardrails.md     @Gabrielgvl
 
-# Test fixtures, helpers and proptest strategies (conditional — protected once
-# they exist; the bare names cover every member's dirs)
+# Test fixtures, helpers and proptest strategies (conditional — agent-writable,
+# but a change to an existing one FAILs R1 until owner-approved; the bare
+# names cover every member's dirs)
 **/tests/fixtures/     @Gabrielgvl
 **/tests/support/      @Gabrielgvl
 **/strategies/         @Gabrielgvl

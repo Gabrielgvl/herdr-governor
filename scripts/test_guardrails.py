@@ -1343,7 +1343,7 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         self.assertIn("dangling.rs", proc.stdout)
         self.assertIn("symlink", proc.stdout)
 
-    @case("snapshot-self-accept", "control", "policy files legitimately quote the forbidden patterns — R1 gates them, R7 stays silent")
+    @case("snapshot-self-accept", "control", "hard policy files legitimately quote the forbidden patterns — R1 gates them, R7 stays silent")
     def test_r7_exempts_protected_policy_files(self):
         self.repo.write(
             "docs/guardrails.md",
@@ -1370,6 +1370,16 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0, proc.stdout)
         self.assertIn("FAIL R7", proc.stdout)
         self.assertNotIn("OVERRIDE", proc.stdout)
+
+    @case("snapshot-self-accept", "cheat", "insta machinery seeded into an agent-writable conditional test helper")
+    def test_r7_scans_conditional_paths(self):
+        # conditional paths are agent-writable (2026-10-02), so R7 scans
+        # them; only hard policy files stay exempt
+        self.repo.write(CORE + "/tests/support/util.rs",
+                        "// cargo insta accept\npub fn h() {}\n")
+        proc = self.check()
+        self.assertIn("FAIL R7", proc.stdout)
+        self.assertIn("tests/support/util.rs", proc.stdout)
 
     @case("snapshot-self-accept", "cheat", "insta machinery seeded into report-mode paths")
     def test_r7_scans_report_mode_paths(self):
