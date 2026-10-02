@@ -12,9 +12,10 @@
 //! - `acknowledged` ← `dispatching` (the result commit).
 //!
 //! `unconfirmed` has no exit but `failed` — never a re-dispatch. A
-//! `Judgments` receipt also writes `judgment_sets`/`judgments`
-//! (`INSERT OR IGNORE` — idempotent redelivery), `requested_at` being the
-//! row's `dispatched_at`. No match is a [`ConflictKind::Effect`] conflict.
+//! `Judgments` receipt also writes `judgment_sets`/`judgments` (dedup on
+//! `set_id` resp. `(set_id, question)` — idempotent redelivery),
+//! `requested_at` being the row's `dispatched_at`. No match is a
+//! [`ConflictKind::Effect`] conflict.
 
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
@@ -26,7 +27,7 @@ use crate::store::error::{ApplyError, ConflictKind};
 use crate::store::rows::effect::result_json;
 use crate::store::rows::judgment::{JudgmentRow, JudgmentSetRow};
 use crate::store::rows::ts_decode;
-use crate::store::transitions::{crash_checkpoint, execute, insert, stamp};
+use crate::store::transitions::{crash_checkpoint, execute, insert_dedup, stamp};
 
 const DISPATCH: &str = "UPDATE effects SET state = ?1, dispatched_at = ?2 \
      WHERE effect_key = ?3 AND state = ?4";
@@ -128,10 +129,10 @@ fn write_judgments(
 ) -> Result<(), ApplyError> {
     let answered_at = (record.set.outcome == JudgmentOutcome::Answered).then_some(now);
     let set = JudgmentSetRow::from_core(&record.set, requested_at, answered_at)?;
-    insert(tx, "INSERT OR IGNORE", "judgment_sets", &set.params(), "")?;
+    insert_dedup(tx, "judgment_sets", &set.params(), &["set_id"])?;
     for judgment in &record.judgments {
         let row = JudgmentRow::from_core(&record.set.id, judgment)?;
-        insert(tx, "INSERT OR IGNORE", "judgments", &row.params(), "")?;
+        insert_dedup(tx, "judgments", &row.params(), &["set_id", "question"])?;
     }
     Ok(())
 }

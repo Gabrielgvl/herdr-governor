@@ -2,8 +2,11 @@
 //! "Settle" and every other Run write: the full record `WHERE run_id = ?
 //! AND version = expected`, plus `AND settlement IS NULL` when the record
 //! settles (F20 first-commit-wins). The stored `version` is the record's
-//! own — the core already bumped it. `created_at` never moves. No match
-//! is a [`ConflictKind::RunVersion`] conflict.
+//! own — the core already bumped it. `created_at` never moves, and neither
+//! do `owner_caller_id`/`owner_generation`: ownership is the other CAS
+//! domain and `ChangeOwner` its only writer, so a record computed before a
+//! handover cannot undo it (F4/F20). No match is a
+//! [`ConflictKind::RunVersion`] conflict.
 
 use rusqlite::Transaction;
 use rusqlite::types::Value as SqlValue;
@@ -25,7 +28,12 @@ pub(super) fn apply(
     let owner = resolve_caller(tx, &record.owner)?;
     let set = without(
         RunRow::from_core(record, owner, now)?.params(),
-        &["run_id", "created_at"],
+        &[
+            "run_id",
+            "created_at",
+            "owner_caller_id",
+            "owner_generation",
+        ],
     );
     let expected = u64_to_col(change.expected_version, "runs", "version")?;
     let guard = if record.settlement.is_some() {

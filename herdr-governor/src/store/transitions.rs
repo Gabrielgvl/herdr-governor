@@ -2,10 +2,12 @@
 //! one child module per Appendix-B transaction family, dispatched by
 //! `store::apply` inside a single `BEGIN IMMEDIATE … COMMIT`. Order inside
 //! the transaction is the transition's own: `state_changes`, then `events`
-//! (`INSERT OR IGNORE mailbox` — the F18 dedup no-op), then `effects`
-//! (`INSERT OR IGNORE effects`, `planned`, `payload_digest` verbatim —
-//! the N1 replan dedup). A conditional write that matches no row returns a
-//! typed [`ApplyError`]; the caller's transaction then rolls back whole.
+//! (`mailbox` — the F18 dedup no-op), then `effects` (`planned`,
+//! `payload_digest` verbatim — the N1 replan dedup). The dedup inserts
+//! skip their row only when its idempotency key is already stored
+//! ([`insert_dedup`]); every other constraint, and a conditional write
+//! that matches no row, returns a typed [`ApplyError`] and the caller's
+//! transaction rolls back whole.
 //!
 //! Every statement is followed by [`crash_checkpoint`] — the one deliberate
 //! test-only production seam (P4.S3): env-gated, a no-op in production.
@@ -100,11 +102,11 @@ pub(super) fn apply_in(
     }
     for event in &transition.events {
         let row = MailboxRow::from_core(event, now, None)?;
-        insert(tx, "INSERT OR IGNORE", "mailbox", &row.params(), "")?;
+        insert_dedup(tx, "mailbox", &row.params(), &["dedup_key"])?;
     }
     for effect in &transition.effects {
         let row = EffectRow::from_core(effect, now, None)?;
-        insert(tx, "INSERT OR IGNORE", "effects", &row.params(), "")?;
+        insert_dedup(tx, "effects", &row.params(), &["effect_key"])?;
     }
     Ok(())
 }
@@ -131,8 +133,8 @@ pub(super) fn execute(
     Ok(changed)
 }
 
-/// `<verb> INTO <table> (cols) VALUES (?…) <tail>` for a row's params.
-fn insert_sql(verb: &str, table: &str, params: &Params, tail: &str) -> String {
+/// The `(col, col)` column list and `?1, ?2` slots a row's params bind.
+fn columns_slots(params: &Params) -> (String, String) {
     let columns = params
         .iter()
         .map(|(column, _)| *column)
@@ -143,6 +145,12 @@ fn insert_sql(verb: &str, table: &str, params: &Params, tail: &str) -> String {
         .map(|i| format!("?{i}"))
         .collect::<Vec<_>>()
         .join(", ");
+    (columns, slots)
+}
+
+/// `<verb> INTO <table> (cols) VALUES (?…) <tail>` for a row's params.
+fn insert_sql(verb: &str, table: &str, params: &Params, tail: &str) -> String {
+    let (columns, slots) = columns_slots(params);
     format!("{verb} INTO {table} ({columns}) VALUES ({slots}) {tail}")
 }
 
@@ -156,6 +164,23 @@ pub(super) fn insert(
 ) -> Result<usize, ApplyError> {
     let sql = insert_sql(verb, table, params, tail);
     execute(tx, &sql, params_from_iter(params.iter().map(|(_, v)| v)))
+}
+
+/// `INSERT … ON CONFLICT(<keys>) DO NOTHING` — the idempotent insert: a
+/// row whose idempotency key is already stored is a silent no-op (SQLite
+/// checks the upsert target's index first, so an exact replay never trips
+/// the primary key), while every other violation — a primary key colliding
+/// under a different key, CHECK, NOT NULL, FOREIGN KEY — still aborts the
+/// transaction as a typed [`ApplyError`]. `keys` must name a PRIMARY KEY or
+/// UNIQUE constraint exactly; SQLite refuses the statement otherwise.
+pub(super) fn insert_dedup(
+    tx: &Transaction<'_>,
+    table: &str,
+    params: &Params,
+    keys: &[&str],
+) -> Result<usize, ApplyError> {
+    let tail = format!("ON CONFLICT({}) DO NOTHING", keys.join(", "));
+    insert(tx, "INSERT", table, params, &tail)
 }
 
 /// A plain `INSERT` whose primary-key / UNIQUE collision is a typed

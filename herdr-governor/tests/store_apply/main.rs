@@ -6,6 +6,8 @@
 //! through the typed read API plus `SELECT` counts.
 
 #[cfg(test)]
+mod dedup;
+#[cfg(test)]
 mod effects;
 #[cfg(test)]
 pub mod support;
@@ -225,6 +227,44 @@ mod tests {
                 "{second}"
             );
         }
+    }
+
+    #[test]
+    fn stale_update_run_keeps_the_committed_owner() {
+        // F4/F20 — ownership and lifecycle are orthogonal CAS domains: an
+        // UpdateRun computed before a handover still matches `version`, but
+        // it must never write owner_caller_id/owner_generation back — those
+        // columns have exactly one writer, ChangeOwner.
+        let (_dir, mut store) = seeded();
+        store.apply(&changes(vec![binding(2)]), NOW).unwrap();
+        let handover = changes(vec![StateChange::ChangeOwner(OwnerChange {
+            run: RunId("r-1".into()),
+            expected_owner: caller(1),
+            owner: caller(2),
+        })]);
+        store.apply(&handover, LATER).unwrap();
+        // The stale record: the Run as read at version 0 under caller 1,
+        // carried into the update its version bump and state move.
+        let mut stale = run("r-1", "l-1");
+        stale.version = 1;
+        stale.state = State::Starting;
+        let mut expected = stale.clone();
+        expected.owner = caller(2);
+        expected.owner_generation = 1;
+        store
+            .apply(
+                &changes(vec![StateChange::UpdateRun(RunUpdate {
+                    expected_version: 0,
+                    record: stale,
+                })]),
+                LATER,
+            )
+            .unwrap();
+        let stored = store.run(&RunId("r-1".into())).unwrap().unwrap();
+        assert_eq!(
+            stored, expected,
+            "the update lands its lifecycle fields; the committed handover stands"
+        );
     }
 
     #[test]

@@ -182,43 +182,8 @@ mod tests {
     #[test]
     fn judgments_receipt_writes_both_tables() {
         let (_dir, mut store) = seeded();
-        let mut probabilities = BTreeMap::new();
-        probabilities.insert("yes".to_owned(), Probability(0.75));
-        let record = JudgmentRecord {
-            set: JudgmentSet {
-                id: JudgmentSetId("js-1".into()),
-                purpose: JudgmentPurpose::Acceptance,
-                launch: None,
-                run: Some(RunId("r-1".into())),
-                versions: None,
-                task_digest: Digest([0xab; 32]),
-                handoff_digest: None,
-                evidence_digest: None,
-                model: "m".into(),
-                question_version: QuestionVersion("q1".into()),
-                policy_version: ConfigVersion("cfg-1".into()),
-                outcome: JudgmentOutcome::Answered,
-            },
-            judgments: vec![Judgment {
-                question: Question::HandoffMeetsItem { item: 0 },
-                probabilities,
-                answer: "yes".into(),
-                threshold: Some(0.6),
-            }],
-        };
-        store
-            .apply(
-                &changes(vec![write(KEY, EffectState::Dispatching, None)]),
-                NOW,
-            )
-            .unwrap();
-        let commit = changes(vec![StateChange::WriteEffect(EffectWrite {
-            key: EffectKey(KEY.into()),
-            state: EffectState::Acknowledged,
-            certainty: None,
-            receipt: Some(EffectReceipt::Judgments(record.clone())),
-        })]);
-        store.apply(&commit, LATER).unwrap();
+        let record = record();
+        dispatch_and_commit(KEY, EffectReceipt::Judgments(record.clone()), &mut store);
         let stored = store
             .judgment_record(&JudgmentSetId("js-1".into()))
             .unwrap()
@@ -242,11 +207,93 @@ mod tests {
         );
         // Redelivery: the row write loses (the effect is acknowledged), so
         // nothing re-inserts.
-        let err = store.apply(&commit, LATER).unwrap_err();
+        let again = changes(vec![StateChange::WriteEffect(EffectWrite {
+            key: EffectKey(KEY.into()),
+            state: EffectState::Acknowledged,
+            certainty: None,
+            receipt: Some(EffectReceipt::Judgments(record)),
+        })]);
+        let err = store.apply(&again, LATER).unwrap_err();
         assert_effect_conflict(&err);
         assert_eq!(
             (count(&store, "judgment_sets"), count(&store, "judgments")),
             (1, 1)
+        );
+    }
+
+    /// The receipt payload the `judgments` result commit persists.
+    fn record() -> JudgmentRecord {
+        let mut probabilities = BTreeMap::new();
+        probabilities.insert("yes".to_owned(), Probability(0.75));
+        JudgmentRecord {
+            set: JudgmentSet {
+                id: JudgmentSetId("js-1".into()),
+                purpose: JudgmentPurpose::Acceptance,
+                launch: None,
+                run: Some(RunId("r-1".into())),
+                versions: None,
+                task_digest: Digest([0xab; 32]),
+                handoff_digest: None,
+                evidence_digest: None,
+                model: "m".into(),
+                question_version: QuestionVersion("q1".into()),
+                policy_version: ConfigVersion("cfg-1".into()),
+                outcome: JudgmentOutcome::Answered,
+            },
+            judgments: vec![Judgment {
+                question: Question::HandoffMeetsItem { item: 0 },
+                probabilities,
+                answer: "yes".into(),
+                threshold: Some(0.6),
+            }],
+        }
+    }
+
+    /// `dispatching` ← `planned`, then the `acknowledged` result commit
+    /// carrying `receipt`.
+    fn dispatch_and_commit(key: &str, receipt: EffectReceipt, store: &mut Store) {
+        store
+            .apply(
+                &changes(vec![write(key, EffectState::Dispatching, None)]),
+                NOW,
+            )
+            .unwrap();
+        let commit = changes(vec![StateChange::WriteEffect(EffectWrite {
+            key: EffectKey(key.into()),
+            state: EffectState::Acknowledged,
+            certainty: None,
+            receipt: Some(receipt),
+        })]);
+        store.apply(&commit, LATER).unwrap();
+    }
+
+    #[test]
+    fn judgments_replay_under_a_second_effect_dedups() {
+        // Idempotent redelivery: a second effect committing the same
+        // receipt re-inserts neither the set nor its rows — the dedup
+        // keys are `judgment_sets.set_id` and `judgments.(set_id, question)`.
+        let (_dir, mut store) = seeded();
+        dispatch_and_commit(KEY, EffectReceipt::Judgments(record()), &mut store);
+        let second = "run:r-1:nudge:1";
+        store
+            .apply(
+                &transition(vec![], vec![], vec![effect(second, None, Some("r-1"))]),
+                NOW,
+            )
+            .unwrap();
+        dispatch_and_commit(second, EffectReceipt::Judgments(record()), &mut store);
+        assert_eq!(
+            (count(&store, "judgment_sets"), count(&store, "judgments")),
+            (1, 1),
+            "the replayed receipt committed without duplicating its rows"
+        );
+        assert_eq!(
+            store
+                .judgment_record(&JudgmentSetId("js-1".into()))
+                .unwrap()
+                .unwrap(),
+            record(),
+            "the stored record is verbatim"
         );
     }
 
