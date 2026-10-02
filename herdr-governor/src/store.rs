@@ -10,7 +10,11 @@
 use std::fmt;
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
+
+use governor_core::config::Qualification;
+use governor_core::identity::Timestamp;
+use governor_core::lifecycle::Transition;
 
 mod error;
 mod migrate;
@@ -20,7 +24,8 @@ mod rows;
 mod tests_migrate;
 mod transitions;
 
-pub use error::StoreError;
+pub use error::{ApplyError, ConflictKind, StoreError};
+pub use transitions::crash_checkpoint_count;
 
 /// `PRAGMA busy_timeout` in milliseconds — the coordinator is the single
 /// writer, but the mcp read path may share the file (Appendix-B header).
@@ -28,9 +33,10 @@ const BUSY_TIMEOUT_MS: i64 = 5000;
 
 /// The SQLite store: the single writer for every lifecycle table.
 ///
-/// Sibling store modules (`rows`, `reads`, `transitions`) reach the
-/// connection through `conn()`; the only public surface so far is `open` —
-/// `apply` lands with P4.S3, the read API with P4.S2.
+/// Sibling store modules (`rows`, `reads`) reach the connection through
+/// `conn()`; the public surface is `open`, [`Store::apply`] and the typed
+/// read queries. Only `apply` (and the F26 `record_qualification`) ever
+/// opens a write transaction, and only `transitions` holds write SQL.
 pub struct Store {
     /// The open connection; reached through `conn()`.
     conn: Connection,
@@ -71,6 +77,52 @@ impl Store {
         require_wal(&conn)?;
         migrate::migrate(&mut conn)?;
         Ok(Self { conn })
+    }
+}
+
+/// The `apply` region (P4.S3) — the single lifecycle writer.
+impl Store {
+    /// Commits `transition` as exactly one `BEGIN IMMEDIATE … COMMIT`:
+    /// `state_changes` in order, then `events`, then `effects`. A
+    /// conditional write that matches no row, a constraint, or an
+    /// unencodable value abandons the whole transaction — nothing of it is
+    /// visible afterwards. `now` stamps the store-owned time columns; the
+    /// core's own times ride verbatim.
+    ///
+    /// # Errors
+    /// [`ApplyError::Conflict`] when a compare-and-swap write lost (re-read
+    /// and recompute, F20); [`ApplyError::PhaseConflict`] on an illegal
+    /// Launch phase step; [`ApplyError::Constraint`] when SQLite rejected a
+    /// write; [`ApplyError::MalformedWrite`] for a journal write the
+    /// vocabulary forbids; [`ApplyError::Encode`] for a value with no
+    /// persisted shape; [`ApplyError::Sqlite`] otherwise.
+    pub fn apply(&mut self, transition: &Transition, now: Timestamp) -> Result<(), ApplyError> {
+        transitions::check_well_formed(transition)?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transitions::apply_in(&tx, transition, now)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// F26 — records (or replaces) one qualification verdict in its own
+    /// transaction; the `qualify` driver (Phase 6) is the caller.
+    ///
+    /// # Errors
+    /// [`ApplyError::Encode`] for an unencodable value, [`ApplyError::Sqlite`]
+    /// or [`ApplyError::Constraint`] from the engine.
+    pub fn record_qualification(
+        &mut self,
+        qualification: &Qualification,
+        now: Timestamp,
+    ) -> Result<(), ApplyError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transitions::record_qualification(&tx, qualification, now)?;
+        tx.commit()?;
+        Ok(())
     }
 }
 
