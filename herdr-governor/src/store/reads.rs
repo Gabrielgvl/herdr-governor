@@ -196,7 +196,7 @@ impl Store {
         )
     }
 
-    /// The `planned` effects eligible for dispatch — see [`READY_EFFECTS`].
+    /// The `planned` effects eligible for dispatch — see `READY_EFFECTS`.
     pub fn ready_effects(&self) -> Result<Vec<Effect>, StoreError> {
         self.all(
             READY_EFFECTS,
@@ -254,7 +254,7 @@ impl Store {
     }
 
     /// Up to `limit` unacked mailbox events addressed to `caller`, after
-    /// `cursor` — see [`MAILBOX_UNACKED`]. An unknown caller has no events.
+    /// `cursor` — see `MAILBOX_UNACKED`. An unknown caller has no events.
     pub fn mailbox_unacked(
         &self,
         caller: &CallerKey,
