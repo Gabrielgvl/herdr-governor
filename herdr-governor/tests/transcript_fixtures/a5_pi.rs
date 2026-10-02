@@ -6,8 +6,8 @@ use std::os::unix::fs::PermissionsExt as _;
 
 use tempfile::tempdir;
 
-use super::super::{Cursor, TranscriptError, read_window, resolve};
 use super::{no_roots, pointer, privileged_runner, samples, stage};
+use herdr_governor::adapters::transcript::{Cursor, TranscriptError, read_window, resolve};
 
 #[tokio::test]
 async fn a5_pi_partial_utf8() {

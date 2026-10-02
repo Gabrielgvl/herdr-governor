@@ -9,87 +9,16 @@ use super::super::codec::{
     error_to_typed, typed,
 };
 use super::super::ops::AgentPrompted;
-use super::super::types::{AgentStatus, Observed, SessionKind, SessionSnapshot};
+use super::super::types::{Observed, SessionKind, SessionSnapshot};
 use super::epoch;
 
-const TRACE: &str =
-    include_str!("../../../../../tests/fixtures/contract/a2-tools-daemon-trace.jsonl");
-const A46: &str = include_str!("../../../../../tests/fixtures/contract/a46-identity-evidence.json");
-
-/// Every `tx`/`rx` wire frame recorded in the tools-daemon trace.
-fn trace_frames() -> Vec<(String, String)> {
-    let mut frames = Vec::new();
-    for line in TRACE.lines() {
-        let rec: Value = serde_json::from_str(line).expect("trace record");
-        for key in ["tx", "rx"] {
-            if let Some(frame) = rec.get(key).and_then(Value::as_str) {
-                frames.push((key.to_owned(), frame.trim_end_matches('\n').to_owned()));
-            }
-        }
-    }
-    assert!(frames.len() > 20, "fixture supplies frames");
-    frames
-}
-
-/// a2 trace + protocol-22 envelopes: outbound frames carry
-/// `{id, method, params}`; inbound frames decode as exactly one of
-/// result / error / event; the tools-daemon's `{"type":…}` framing is not
-/// a valid protocol-22 envelope (no `id`) and must be malformed.
+/// The literal encode/decode round-trip: an encoded request's member set
+/// is exactly `{id, method, params}` plus the line terminator, and a result
+/// line decodes and re-encodes losslessly. The a2-trace classification
+/// moved to `tests/herdr_fixtures.rs` (run-time fixture read) and its
+/// public-client decode leg is `contract_fake_herdr_fixture_replay`.
 #[test]
-fn codec_roundtrips_fixture_envelopes() {
-    let mut requests = 0;
-    let mut handshake = 0;
-    let mut probe = 0;
-    let mut results = 0;
-    let mut errors = 0;
-    let mut malformed = 0;
-    for (dir, frame) in trace_frames() {
-        // The trace deliberately records non-parseable probes: the
-        // over-limit frames and their `{\n` truncated heads.
-        let raw: Value = if let Ok(raw) = serde_json::from_str(&frame) {
-            raw
-        } else {
-            probe += 1;
-            continue;
-        };
-        if dir == "tx" {
-            // The trace records the session handshake too —
-            // {"type":"hello"} carries no request id. Request frames are
-            // {id, method, params}; the trace also sends deliberately
-            // malformed requests (e.g. params:[]) to probe the server's
-            // invalid_request path — they count as malformed, not valid.
-            if raw.get("method").is_some_and(Value::is_string) {
-                assert!(
-                    raw.get("id").is_some_and(Value::is_string),
-                    "tx id: {frame}"
-                );
-                if raw.get("params").is_some_and(Value::is_object) {
-                    requests += 1;
-                } else {
-                    malformed += 1;
-                }
-            } else {
-                assert!(
-                    raw.get("type").is_some_and(Value::is_string),
-                    "handshake: {frame}"
-                );
-                handshake += 1;
-            }
-            continue;
-        }
-        match decode_frame(frame.as_bytes()) {
-            Ok(Frame::Result { .. }) => results += 1,
-            Ok(Frame::Error { .. }) => errors += 1,
-            Ok(Frame::Event { .. }) => panic!("rx event frame outside a subscription: {frame}"),
-            Err(HerdrError::Malformed { .. }) => malformed += 1,
-            Err(other) => panic!("unexpected error class for {frame}: {other:?}"),
-        }
-    }
-    assert!(
-        results > 5 && errors >= 2 && malformed > 5 && requests > 5 && handshake > 0 && probe > 0,
-        "{requests}/{handshake}/{probe}/{results}/{errors}/{malformed}"
-    );
-
+fn codec_encode_decode_literals() {
     // Encode → parse → the member set is exactly the request envelope.
     let enc = encode_request("gov:7", "pane.get", &json!({"pane_id": "w1:p1"})).expect("encode");
     let sent: Value = serde_json::from_slice(&enc).expect("encoded json");
@@ -278,48 +207,6 @@ fn malformed_lines_are_typed() {
             "{line:?}"
         );
     }
-}
-
-/// The a46 capture's real snapshot decodes — every `required` member the
-/// fixture schema pins — and `agent_rows` carries the occupant fields the
-/// identity functions consume (no harness names asserted: structure only).
-#[test]
-fn snapshot_decodes_a46_capture() {
-    let fixture: Value = serde_json::from_str(A46).expect("a46 fixture");
-    let snapshot: SessionSnapshot =
-        serde_json::from_value(fixture["captures"]["initial-shell"]["snapshot"].clone())
-            .expect("snapshot decodes");
-    assert_eq!(snapshot.protocol, 22);
-    assert_eq!(snapshot.panes[0].pane_id, "w1:p1");
-    assert_eq!(snapshot.panes[0].terminal_id, "term_65c9180ad9c2f1");
-    assert!(snapshot.agents.is_empty());
-    assert!(snapshot.agent_rows().is_empty(), "no agents → no rows");
-
-    // `first-native-ready` carries an agent row with no `agent_session`
-    // (evidence: the session arrives after readiness) — the row must not
-    // invent one.
-    let ready: SessionSnapshot =
-        serde_json::from_value(fixture["captures"]["first-native-ready"]["snapshot"].clone())
-            .expect("ready snapshot decodes");
-    let rows = ready.agent_rows();
-    assert_eq!(rows.len(), 1);
-    let row = &rows[0];
-    assert_eq!(row.pane_id, "w1:p1");
-    assert_eq!(row.terminal_id, "term_65c9180ad9c2f1");
-    assert!(row.agent.is_some(), "kind present");
-    assert!(row.name.is_some(), "name present on agent surface");
-    assert!(
-        row.native_session.is_none(),
-        "session absent before discovery"
-    );
-    assert_eq!(row.status, Some(AgentStatus::Idle));
-
-    // `warmup-killed` is the first capture carrying a session — a
-    // `kind:"path"` native handle.
-    let warmed: SessionSnapshot =
-        serde_json::from_value(fixture["captures"]["warmup-killed"]["snapshot"].clone())
-            .expect("warmed snapshot decodes");
-    assert!(warmed.agent_rows()[0].native_session.is_some());
 }
 
 #[test]

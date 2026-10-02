@@ -7,8 +7,10 @@ use std::path::PathBuf;
 
 use tempfile::tempdir;
 
-use super::super::{Cursor, EventKind, TranscriptError, TranscriptRoots, read_window, resolve};
 use super::{pointer, privileged_runner, samples, stage};
+use herdr_governor::adapters::transcript::{
+    Cursor, EventKind, TranscriptError, TranscriptRoots, read_window, resolve,
+};
 
 const UUID: &str = "00000000-0000-4000-8000-000000000001";
 

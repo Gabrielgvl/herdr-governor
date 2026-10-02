@@ -6,8 +6,10 @@ use std::path::PathBuf;
 
 use tempfile::tempdir;
 
-use super::super::{Cursor, TranscriptError, TranscriptRoots, read_window, resolve};
 use super::{pointer, privileged_runner, samples, stage};
+use herdr_governor::adapters::transcript::{
+    Cursor, TranscriptError, TranscriptRoots, read_window, resolve,
+};
 
 /// Roots pointing at `dirs` as the document search space.
 fn doc_roots(dirs: Vec<PathBuf>) -> TranscriptRoots {

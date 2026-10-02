@@ -5,8 +5,10 @@ use std::os::unix::fs::symlink;
 
 use tempfile::tempdir;
 
-use super::super::{Cursor, TranscriptError, TranscriptRoots, read_window, resolve};
 use super::{no_roots, pointer, samples, stage};
+use herdr_governor::adapters::transcript::{
+    Cursor, TranscriptError, TranscriptRoots, read_window, resolve,
+};
 
 #[tokio::test]
 async fn a5_cursor_rewrites() {
