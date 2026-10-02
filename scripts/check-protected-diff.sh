@@ -14,8 +14,9 @@
 # becomes a loud OVERRIDE report instead of a FAIL — the approved path for
 # dependency additions (Cargo.lock is hard) and other owner-applied
 # protected edits. Agents must never set it. R2/R3/R7/R8 are source-integrity
-# rules, not protected-path rules: they FAIL regardless (R7 only fires on
-# non-protected paths, so the override could never apply anyway).
+# rules, not protected-path rules: they FAIL regardless — R7 fires on every
+# path except hard policy files (conditional paths included), and the owner
+# override never downgrades it.
 # R7 skips only files classified hard in protected-paths.txt: the configs,
 # gate scripts, and docs that define the policy necessarily quote the
 # patterns, and agents cannot write them. Conditional paths are

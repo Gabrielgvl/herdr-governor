@@ -188,13 +188,15 @@ Verdicts are FAIL or REPORT:
   changed without `Cargo.lock`: FAIL — the pair must move together.
 - **R6** — exec-bit flips or non-executable new files under `scripts/*.sh`
   or `.githooks/*`: FAIL — gate weakening by chmod. Same scope as I4.
-- **R7** — snapshot self-acceptance machinery in non-protected content (the
+- **R7** — snapshot self-acceptance machinery in agent-writable content (the
   `INSTA_UPDATE` self-accept values — bare, quoted, or spaced
   (`INSTA_UPDATE="always"` all match) — and the `<insta-accept>`/
   `<insta-review>`/`<insta-test-accept>` command spellings, including forms
-  with `cargo +<toolchain>` or `cargo --config` inserted): FAIL. `hard`/`conditional` policy files are
-  exempt — they legitimately define the patterns — but `report`-mode paths
-  like `docs/plan/**` are scanned like any other agent-writable file.
+  with `cargo +<toolchain>` or `cargo --config` inserted): FAIL. Only `hard`
+  policy files are exempt — they legitimately define the patterns and agents
+  cannot write them. `conditional` paths (agent-writable since 2026-10-02) and
+  `report`-mode paths like `docs/plan/**` are scanned like any other
+  agent-writable file, and the owner override never downgrades R7.
 - **R8** — release-only test gates: a `cfg`/`cfg_attr`/`cfg!` form of
   `not(test)` introduced in a `.rs` diff — including the trailing-comma
   `not(test,)`, every `cfg!` delimiter pair (`()`, `[]`, `{}`), and
