@@ -1,21 +1,24 @@
 //! F22 — the total transition function: the rules table, versioned
 //! stamps, restart, and the journal write behind `effect_result`.
 
+use alloc::format;
 use alloc::vec::Vec;
 
 use crate::delivery::MailboxEventKind;
-use crate::identity::{ChildStatus, Digest, NativeSession, Observation, PaneId, Timestamp};
+use crate::identity::{
+    ChildStatus, Digest, EffectKey, NativeSession, Observation, PaneId, Timestamp,
+};
 use crate::lifecycle::{
-    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectState, Event,
-    JudgmentVerdict, PromptCertainty, Settlement, State, StateChange, TRANSITION_RULES,
-    UnresolvedReason, transition,
+    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResolution,
+    EffectResult, EffectState, EffectWrite, Event, FailureCause, JudgmentVerdict, PromptCertainty,
+    Settlement, State, StateChange, TRANSITION_RULES, UnresolvedReason, transition,
 };
 use crate::routing::{JudgmentOutcome, Question};
 
 use super::builders::{
-    EMPTY_READ, NOW, decision, effect_writes, event_kinds, is_quiet, journal_effect, noul,
-    obs_unique, review_record, run_in, run_result, settlement_of, stamped, test_policy, transact,
-    updated_records, updated_run,
+    EMPTY_READ, NOW, certainty_of, decision, effect_writes, event_kinds, is_quiet, journal_effect,
+    noul, obs_unique, review_record, run_in, run_result, settlement_of, stamped, test_policy,
+    transact, updated_records, updated_run,
 };
 #[test]
 fn f22_total_transition_table() {
@@ -354,7 +357,7 @@ fn f22_failed_results_journal_their_certainty() {
                 | StateChange::ReserveRun(_)
                 | StateChange::UpdateRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)
@@ -362,8 +365,57 @@ fn f22_failed_results_journal_their_certainty() {
                 | StateChange::AckEvent(_) => None,
             })
             .expect("one journal write per result");
-        assert_eq!(write.certainty, certainty);
+        assert_eq!(certainty_of(write), certainty);
     }
+}
+
+#[test]
+fn f22_result_write_copies_the_resolution() {
+    // the journal write carries the event's resolution verbatim — the
+    // failure cause included — so the daemon's OQ-11 cause is never
+    // dropped between the event and the row.
+    let run = run_in(State::Active);
+    let resolution = EffectResolution::Failed {
+        certainty: EffectCertainty::Unknown,
+        cause: Some(FailureCause("timeout".into())),
+    };
+    let t = transact(
+        &run,
+        &stamped(
+            &run,
+            Event::EffectResult(EffectResult {
+                key: EffectKey(format!("run:{}:nudge:0", run.id.0)),
+                kind: EffectKind::Prompt,
+                resolution: resolution.clone(),
+            }),
+        ),
+    );
+    let writes: Vec<&EffectWrite> = t
+        .state_changes
+        .iter()
+        .filter_map(|c| match c {
+            StateChange::WriteEffect(w) => Some(w),
+            StateChange::BindCaller(_)
+            | StateChange::RecordLaunch(_)
+            | StateChange::ReserveRun(_)
+            | StateChange::UpdateRun(_)
+            | StateChange::ChangeOwner(_)
+            | StateChange::WriteFollowUp(_)
+            | StateChange::ExpireFollowUps { .. }
+            | StateChange::RecordRecovery(_)
+            | StateChange::SetCooldown(_)
+            | StateChange::FreezeHandoff(_)
+            | StateChange::AckEvent(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        writes,
+        Vec::from([&EffectWrite::Result {
+            key: EffectKey(format!("run:{}:nudge:0", run.id.0)),
+            resolution,
+        }]),
+        "one result write, the resolution copied unchanged"
+    );
 }
 
 #[test]

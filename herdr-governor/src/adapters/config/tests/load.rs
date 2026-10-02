@@ -307,6 +307,20 @@ async fn f27_zero_duration_reported() {
 }
 
 #[tokio::test]
+async fn f27_duration_too_long_reported() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = GOLDEN.replace("cooldown_secs = 3600", "cooldown_secs = 315_360_001");
+    let errors = load_invalid(&dir, &doc).await;
+    assert_eq!(
+        errors,
+        Vec::from([ConfigError::DurationTooLong {
+            field: "policy.cooldown".into(),
+        }]),
+        "a bound one second past MAX_POLICY_WINDOW reports DurationTooLong through the core"
+    );
+}
+
+#[tokio::test]
 async fn f27_reports_every_error() {
     let dir = tempfile::tempdir().expect("tempdir");
     let doc = GOLDEN

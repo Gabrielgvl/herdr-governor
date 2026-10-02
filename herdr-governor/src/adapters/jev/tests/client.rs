@@ -5,10 +5,12 @@
 //! integration crate now.
 
 use std::os::unix::fs::PermissionsExt as _;
+use std::time::Duration;
 
 use governor_core::routing::JudgmentOutcome;
+use rustix::fs::Mode;
 
-use super::super::client::{ApiKey, Client};
+use super::super::client::{ApiKey, Client, vouch};
 use super::super::error::JevError;
 use super::{FAKE_KEY, credential_file, fake_key};
 
@@ -40,6 +42,114 @@ async fn error_unresolvable_key() {
         assert_eq!(err.component(), "api_key");
     }
     assert!(ApiKey::read_0600(&path).await.is_err(), "empty file");
+}
+
+/// A symlinked credential is refused at open: `O_NOFOLLOW` turns the
+/// final link component into `ELOOP` even when the target is itself a
+/// perfectly vouched 0600 file, so the refusal is about the path, never
+/// about what the target would have been.
+#[tokio::test]
+async fn symlinked_credential_is_refused() {
+    let (dir, real) = credential_file(FAKE_KEY, 0o600);
+    let link = dir.path().join("linked");
+    std::os::unix::fs::symlink(&real, &link).expect("symlink");
+    let err = ApiKey::read_0600(&link).await.expect_err("symlink");
+    assert!(
+        matches!(err, JevError::CredentialUnavailable { reason: "symlink" }),
+        "{err}"
+    );
+}
+
+/// A credential owned by a different uid is refused on the same open
+/// handle that vouches the mode. Building one needs privilege (a
+/// `chown`), so the leg skips with a reason when the test runs
+/// unprivileged.
+#[tokio::test]
+async fn foreign_owned_credential_is_refused() {
+    let (_dir, path) = credential_file(FAKE_KEY, 0o600);
+    let euid = rustix::process::geteuid().as_raw();
+    let foreign = if euid == 0 { 65534 } else { 0 };
+    if rustix::fs::chown(&path, Some(rustix::process::Uid::from_raw(foreign)), None).is_err() {
+        eprintln!("foreign-owner leg skipped: cannot chown unprivileged (euid {euid})");
+        return;
+    }
+    let err = ApiKey::read_0600(&path).await.expect_err("foreign owner");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "foreign_owner"
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// A FIFO at the credential path is refused promptly — `O_NONBLOCK`
+/// returns the open at once (it never waits on a writer) and the
+/// `fstat` verdict refuses the type. The default `current_thread`
+/// runtime makes the timeout an executor-liveness probe as well: an
+/// inline blocking `open` would freeze the runtime so the timeout could
+/// never fire, and nextest would kill the test as a hang.
+#[tokio::test]
+async fn fifo_credential_is_refused_promptly() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fifo = dir.path().join("credentials");
+    rustix::fs::mkfifoat(rustix::fs::CWD, fifo.as_path(), Mode::RUSR | Mode::WUSR).expect("mkfifo");
+    let err = tokio::time::timeout(Duration::from_secs(5), ApiKey::read_0600(&fifo))
+        .await
+        .expect("a FIFO open never waits for a writer")
+        .expect_err("a FIFO is not a credential file");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "not_regular_file"
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// A directory at the credential path opens fine (`O_RDONLY` succeeds on
+/// a directory) — the refusal is by type, `fstat`ed on the opened handle
+/// before any read.
+#[tokio::test]
+async fn directory_credential_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let creds = dir.path().join("credentials");
+    std::fs::create_dir_all(&creds).expect("mkdir");
+    std::fs::set_permissions(&creds, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+    let err = ApiKey::read_0600(&creds)
+        .await
+        .expect_err("a directory is not a credential file");
+    assert!(
+        matches!(
+            err,
+            JevError::CredentialUnavailable {
+                reason: "not_regular_file"
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// The pure verdict: a regular file, mode `0600`, owned by the effective
+/// uid passes; every other state names the requirement it failed — the
+/// `S_IFMT` leg refuses a FIFO, device or directory before the permission
+/// bits are even judged.
+#[test]
+fn vouch_requires_mode_and_owner() {
+    assert_eq!(vouch(0o100_600, 1000, 1000), Ok(()));
+    for mode in [0o010_600, 0o020_600, 0o040_600, 0o140_600] {
+        assert_eq!(vouch(mode, 1000, 1000), Err("not_regular_file"), "{mode:o}");
+    }
+    for mode in [0o100_644, 0o100_640, 0o100_700] {
+        assert_eq!(vouch(mode, 1000, 1000), Err("mode_not_0600"), "{mode:o}");
+    }
+    assert_eq!(vouch(0o100_600, 0, 1000), Err("foreign_owner"));
+    assert_eq!(vouch(0o100_600, 1000, 0), Err("foreign_owner"));
+    assert_eq!(vouch(0o100_644, 0, 1000), Err("mode_not_0600"));
 }
 
 /// The mode verdict and the bytes come from the opened handle, not from

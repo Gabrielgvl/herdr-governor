@@ -24,7 +24,7 @@ mod tests {
         RelayInstanceId, RunId, TabId, TerminalId, Timestamp,
     };
     use governor_core::lifecycle::{
-        EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectWrite, Event,
+        EffectKind, EffectReceipt, EffectResolution, EffectResult, EffectState, EffectWrite, Event,
         PromptCertainty, Run, State, StateChange, Transition, VersionTriple, Versioned,
         launch_plan, reserved_run, transition,
     };
@@ -102,18 +102,19 @@ provider = "vendor-b"
         }
     }
 
-    fn write(key: &EffectKey, state: EffectState, receipt: Option<EffectReceipt>) -> Transition {
-        only(vec![StateChange::WriteEffect(EffectWrite {
+    /// The dispatch commit (`planned → dispatching`) — the Phase-5 dispatcher's write.
+    fn dispatching(key: &EffectKey) -> Transition {
+        only(vec![StateChange::WriteEffect(EffectWrite::Dispatch {
             key: key.clone(),
-            state,
-            certainty: None,
-            receipt,
         })])
     }
 
-    /// The dispatch commit (`planned → dispatching`) — the Phase-5 dispatcher's write.
-    fn dispatching(key: &EffectKey) -> Transition {
-        write(key, EffectState::Dispatching, None)
+    /// The acknowledged result commit carrying `receipt`.
+    fn acknowledged(key: &EffectKey, receipt: Option<EffectReceipt>) -> Transition {
+        only(vec![StateChange::WriteEffect(EffectWrite::Result {
+            key: key.clone(),
+            resolution: EffectResolution::Acknowledged { receipt },
+        })])
     }
 
     fn concat(mut a: Transition, b: Transition) -> Transition {
@@ -127,8 +128,7 @@ provider = "vendor-b"
         Event::EffectResult(EffectResult {
             key: key.clone(),
             kind,
-            outcome: EffectOutcome::Acknowledged,
-            receipt,
+            resolution: EffectResolution::Acknowledged { receipt },
         })
     }
 
@@ -313,7 +313,7 @@ provider = "vendor-b"
             judgments: judged.judgments,
         };
         let receipt = Some(EffectReceipt::Judgments(record.clone()));
-        let commit = write(&eval_key, EffectState::Acknowledged, receipt);
+        let commit = acknowledged(&eval_key, receipt);
         store.apply(&commit, NOW).unwrap();
         assert_eq!(effect_state(store, &eval_key), EffectState::Acknowledged);
         store

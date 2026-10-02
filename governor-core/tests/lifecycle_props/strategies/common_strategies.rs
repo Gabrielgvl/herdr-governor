@@ -10,7 +10,7 @@ use std::time::Duration;
 use governor_core::acceptance::FrozenHandoff;
 use governor_core::config::{Policy, Tier};
 use governor_core::identity::{Digest, Timestamp};
-use governor_core::lifecycle::{Effect, Run, StateChange, Transition};
+use governor_core::lifecycle::{Effect, EffectWrite, Run, StateChange, Transition};
 use governor_core::routing::Decision;
 use proptest::prelude::Strategy;
 use proptest::sample::select;
@@ -50,11 +50,21 @@ impl Sim {
                     self.run.clone_from(&update.record);
                 }
                 StateChange::WriteEffect(write) => {
-                    // an UPDATE against an unjournaled key matches no row
-                    if let Some(row) = self.journal.iter_mut().find(|row| row.key == write.key) {
-                        row.state = write.state;
-                        row.certainty = write.certainty;
-                        row.receipt.clone_from(&write.receipt);
+                    // an UPDATE against an unjournaled key matches no row;
+                    // each kind writes the columns its store UPDATE names
+                    if let Some(row) = self.journal.iter_mut().find(|row| &row.key == write.key()) {
+                        row.state = write.state();
+                        match write {
+                            EffectWrite::Dispatch { .. } => {}
+                            EffectWrite::Result { resolution, .. } => {
+                                row.certainty = resolution.certainty();
+                                row.receipt = resolution.receipt().cloned();
+                            }
+                            EffectWrite::Terminal { certainty, .. } => {
+                                row.certainty = Some(*certainty);
+                                row.receipt = None;
+                            }
+                        }
                     }
                 }
                 StateChange::FreezeHandoff(handoff) => self.handoffs.push(handoff.clone()),
@@ -62,7 +72,7 @@ impl Sim {
                 | StateChange::RecordLaunch(_)
                 | StateChange::ReserveRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)

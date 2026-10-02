@@ -18,11 +18,12 @@ use herdr_governor::store::Store;
 use rusqlite::types::Value;
 use tempfile::TempDir;
 
-/// The 16 canned scenarios with their declared statement-boundary count
-/// `N` — the 12 named Appendix-B transactions, then the four composed
-/// launch scenarios. `matrix.rs` asserts each against `store_probe count`
-/// so the table cannot rot when a writer changes its statement list.
-pub const SCENARIOS: [(&str, usize); 16] = [
+/// The 18 canned scenarios with their declared statement-boundary count
+/// `N` — the 12 named Appendix-B transactions, the two P4.1 follow-up
+/// edges, then the four composed launch scenarios. `matrix.rs` asserts
+/// each against `store_probe count` so the table cannot rot when a writer
+/// changes its statement list.
+pub const SCENARIOS: [(&str, usize); 18] = [
     ("bind_caller", 2),
     ("admit_launch", 2),
     ("route", 2),
@@ -30,6 +31,8 @@ pub const SCENARIOS: [(&str, usize); 16] = [
     ("dispatch_effect", 1),
     ("effect_result", 2),
     ("enqueue_follow_up", 1),
+    ("dispatch_follow_up", 2),
+    ("resolve_follow_up", 2),
     ("settle", 7),
     ("handover", 1),
     ("recovery_dispatch", 3),

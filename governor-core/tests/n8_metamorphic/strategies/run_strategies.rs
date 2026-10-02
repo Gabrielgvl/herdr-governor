@@ -11,9 +11,9 @@ use governor_core::identity::{
     NativeSession, Observation, RunId, Timestamp,
 };
 use governor_core::lifecycle::{
-    DeadlineKind, Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult,
-    EffectState, EffectTarget, Event, JudgmentVerdict, PromptCertainty, Run, Settlement, State,
-    UnresolvedReason, VersionTriple, Versioned,
+    DeadlineKind, Effect, EffectCertainty, EffectKind, EffectReceipt, EffectResolution,
+    EffectResult, EffectState, EffectTarget, Event, FailureCause, JudgmentVerdict, PromptCertainty,
+    Run, Settlement, State, UnresolvedReason, VersionTriple, Versioned,
 };
 use governor_core::routing::{
     Judgment, JudgmentOutcome, JudgmentPurpose, JudgmentRecord, JudgmentSet, PlacementPlan,
@@ -318,24 +318,32 @@ pub(crate) fn event(
         2 => Just(Observation::Absent),
         1 => Just(Observation::Invalid),
     ];
+    // the receipt rides only an acknowledgement; a failure's cause is
+    // opaque text the renaming must leave alone
+    let arb_cause = || opt_of(Just(FailureCause("timeout".into())));
     let effect_result = (
         select(keys).prop_map(EffectKey),
         pick(&EFFECT_KINDS),
         prop_oneof![
-            4 => Just(EffectOutcome::Acknowledged),
-            2 => Just(EffectOutcome::PreInteractiveFailed),
-            1 => Just(EffectOutcome::Failed { certainty: EffectCertainty::Absent }),
-            1 => Just(EffectOutcome::Failed { certainty: EffectCertainty::Unknown }),
-            2 => Just(EffectOutcome::Unconfirmed),
+            4 => receipt(run, config)
+                .prop_map(|receipt| EffectResolution::Acknowledged { receipt }),
+            2 => arb_cause().prop_map(|cause| EffectResolution::PreInteractiveFailed { cause }),
+            1 => arb_cause().prop_map(|cause| EffectResolution::Failed {
+                certainty: EffectCertainty::Absent,
+                cause,
+            }),
+            1 => arb_cause().prop_map(|cause| EffectResolution::Failed {
+                certainty: EffectCertainty::Unknown,
+                cause,
+            }),
+            2 => Just(EffectResolution::Unconfirmed),
         ],
-        receipt(run, config),
     )
-        .prop_map(|(key, kind, outcome, receipt)| {
+        .prop_map(|(key, kind, resolution)| {
             Event::EffectResult(EffectResult {
                 key,
                 kind,
-                outcome,
-                receipt,
+                resolution,
             })
         });
     (

@@ -230,7 +230,7 @@ pub const fn follow_up_body_needs_file(body_len: usize) -> bool {
 /// F4/F17 — `message {runId, messageKey, text}` admission, on values only.
 ///
 /// Returns `(seq, row)`: the seq to report and, for a new message, the
-/// `queued` row to persist via `StateChange::RecordFollowUp`. A repeated
+/// `queued` row to persist via `FollowUpWrite::Enqueue`. A repeated
 /// `messageKey` with the same body digest returns `(existing seq, None)` —
 /// the idempotent hit writes nothing. Checks run in gate order: `NOT_OWNER`
 /// (F4 — only the current owner may message), then `RUN_SETTLED` (F17 —
@@ -312,6 +312,49 @@ pub fn follow_up_effect(
         receipt: None,
         dispatched_at: None,
     }
+}
+
+/// F17/Appendix B — one conditional `outbox` write: the three edges the
+/// store performs as insert-once plus forward-only compare-and-swap
+/// `UPDATE`s. Each variant names the state it leaves, so a write that finds
+/// the row elsewhere matches nothing and the transition rolls back (a
+/// `FollowUp` conflict). The legal edges are
+/// [`OutboxMessage::into_dispatching`], [`OutboxMessage::resolve_dispatch`]
+/// and [`OutboxMessage::resolve_unconfirmed`]; the daemon derives a `Resolve`
+/// from them. Expiry is `StateChange::ExpireFollowUps`.
+///
+/// Ordering contract: `outbox.effect_id` is an immediate FOREIGN KEY, so a
+/// `Dispatch` names a prompt effect that is already journaled (planned in an
+/// earlier transaction), and it rides the transaction of that effect's own
+/// `EffectWrite` dispatch commit — the two rows move together or not at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowUpWrite {
+    /// Appendix B "Enqueue a follow-up": the whole `queued` row, inserted
+    /// once (`state` must be `Queued`; the store refuses anything else as
+    /// malformed).
+    Enqueue(OutboxMessage),
+    /// `queued` → `dispatching`, linking the prompt effect (F9's
+    /// `effect_id`). The effect must already be journaled — see the
+    /// ordering contract above.
+    Dispatch {
+        /// The Run the entry belongs to.
+        run: RunId,
+        /// The entry's `seq`.
+        seq: u64,
+        /// The already-journaled prompt effect dispatching it.
+        effect: EffectId,
+    },
+    /// `dispatching` → `submitted` | `unconfirmed` on the effect's result,
+    /// or `unconfirmed` → `submitted` on transcript evidence (F9). `state`
+    /// is one of those two; the store refuses any other as malformed.
+    Resolve {
+        /// The Run the entry belongs to.
+        run: RunId,
+        /// The entry's `seq`.
+        seq: u64,
+        /// The state the entry lands in: `Submitted` or `Unconfirmed`.
+        state: OutboxState,
+    },
 }
 
 /// F17 — a published body file is retained while its message is live

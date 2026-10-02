@@ -5,8 +5,8 @@
 
 use governor_core::identity::Timestamp;
 use governor_core::lifecycle::{
-    DeadlineKind, EffectKind, EffectState, Event, Run, State, StateChange, Transition,
-    periodic_review, transition,
+    DeadlineKind, EffectKind, EffectResolution, EffectState, EffectWrite, Event, Run, State,
+    StateChange, Transition, periodic_review, transition,
 };
 use proptest::prelude::{ProptestConfig, prop_assert, prop_assert_eq, proptest};
 
@@ -26,7 +26,7 @@ fn updated_records(transition: &Transition) -> Vec<&Run> {
             | StateChange::ReserveRun(_)
             | StateChange::ChangeOwner(_)
             | StateChange::WriteEffect(_)
-            | StateChange::RecordFollowUp(_)
+            | StateChange::WriteFollowUp(_)
             | StateChange::ExpireFollowUps { .. }
             | StateChange::RecordRecovery(_)
             | StateChange::SetCooldown(_)
@@ -295,15 +295,17 @@ proptest! {
             match change {
                 StateChange::WriteEffect(write) => {
                     prop_assert_eq!(
-                        write.state,
-                        EffectState::Unconfirmed,
-                        "restart rewrites only to unconfirmed"
+                        write,
+                        &EffectWrite::Result {
+                            key: write.key().clone(),
+                            resolution: EffectResolution::Unconfirmed,
+                        },
+                        "restart rewrites only to unconfirmed, as a result commit"
                     );
-                    prop_assert_eq!(write.certainty, None, "unconfirmed records no certainty");
                     prop_assert!(
                         journal
                             .iter()
-                            .any(|row| row.key == write.key
+                            .any(|row| &row.key == write.key()
                                 && row.state == EffectState::Dispatching),
                         "restart rewrites only dispatching rows"
                     );
@@ -339,7 +341,7 @@ proptest! {
                 | StateChange::RecordLaunch(_)
                 | StateChange::ReserveRun(_)
                 | StateChange::ChangeOwner(_)
-                | StateChange::RecordFollowUp(_)
+                | StateChange::WriteFollowUp(_)
                 | StateChange::ExpireFollowUps { .. }
                 | StateChange::RecordRecovery(_)
                 | StateChange::SetCooldown(_)

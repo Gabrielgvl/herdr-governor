@@ -340,6 +340,7 @@ dependencies = [
  "governor-core",
  "reqwest",
  "rusqlite",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

@@ -12,36 +12,15 @@ use crate::delivery::MailboxEventKind;
 use crate::identity::{ChildIdentity, EffectKey, Timestamp};
 use crate::lifecycle::supervision::review_result;
 use crate::lifecycle::{
-    Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
-    EffectTarget, EffectWrite, PromptCertainty, Run, Settlement, State, StateChange, Transition,
-    edited, effect_key, mailbox_event, nothing, op_digest, planned_effect, settle, write_run,
+    Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResolution,
+    EffectResult, EffectTarget, EffectWrite, PromptCertainty, Run, Settlement, State, StateChange,
+    Transition, edited, effect_key, mailbox_event, nothing, op_digest, planned_effect, settle,
+    write_run,
 };
 use crate::routing::{Decision, JudgmentOutcome, PlacementPlan};
 
 use super::handoff::judging_write;
 use super::{repair_dispatch_in_window, repair_dispatch_pending};
-
-/// F8 — how a resolution journals.
-fn journal_state(outcome: EffectOutcome) -> EffectState {
-    match outcome {
-        EffectOutcome::Acknowledged => EffectState::Acknowledged,
-        // pre-interactive failures provably never ran → failed/absent (F15)
-        EffectOutcome::PreInteractiveFailed
-        | EffectOutcome::Failed {
-            certainty: EffectCertainty::Absent | EffectCertainty::Unknown,
-        } => EffectState::Failed,
-        EffectOutcome::Unconfirmed => EffectState::Unconfirmed,
-    }
-}
-
-/// F8 — the certainty a result commit records (required on `failed`).
-fn result_certainty(outcome: EffectOutcome) -> Option<EffectCertainty> {
-    match outcome {
-        EffectOutcome::PreInteractiveFailed => Some(EffectCertainty::Absent),
-        EffectOutcome::Failed { certainty } => Some(certainty),
-        EffectOutcome::Acknowledged | EffectOutcome::Unconfirmed => None,
-    }
-}
 
 pub(super) fn on_effect_result(
     run: &Run,
@@ -55,7 +34,7 @@ pub(super) fn on_effect_result(
     // is the conditional write's compare-and-swap guard, never a staleness
     // test here. A stale one journals its set with outcome `stale` and
     // does nothing else.
-    let stale = match &result.receipt {
+    let stale = match result.resolution.receipt() {
         Some(EffectReceipt::Judgments(record)) => match record.set.versions {
             Some(versions) => {
                 versions.work_generation != run.work_generation
@@ -70,29 +49,31 @@ pub(super) fn on_effect_result(
         )
         | None => false,
     };
-    let receipt = if stale {
-        match &result.receipt {
-            Some(EffectReceipt::Judgments(record)) => {
-                let mut marked = record.clone();
-                marked.set.outcome = JudgmentOutcome::Stale;
-                Some(EffectReceipt::Judgments(marked))
+    // The write copies the event's resolution unchanged; a stale set is
+    // the one edit — its outcome is marked `stale` before journaling.
+    let resolution = match (stale, result.resolution.receipt()) {
+        (true, Some(EffectReceipt::Judgments(record))) => {
+            let mut marked = record.clone();
+            marked.set.outcome = JudgmentOutcome::Stale;
+            EffectResolution::Acknowledged {
+                receipt: Some(EffectReceipt::Judgments(marked)),
             }
+        }
+        (
+            _,
             Some(
-                EffectReceipt::AgentStarted { .. }
+                EffectReceipt::Judgments(_)
+                | EffectReceipt::AgentStarted { .. }
                 | EffectReceipt::TabCreated { .. }
                 | EffectReceipt::PaneCreated { .. },
             )
-            | None => result.receipt.clone(),
-        }
-    } else {
-        result.receipt.clone()
+            | None,
+        ) => result.resolution.clone(),
     };
     let mut transition = Transition {
-        state_changes: Vec::from([StateChange::WriteEffect(EffectWrite {
+        state_changes: Vec::from([StateChange::WriteEffect(EffectWrite::Result {
             key: result.key.clone(),
-            state: journal_state(result.outcome),
-            certainty: result_certainty(result.outcome),
-            receipt,
+            resolution,
         })]),
         events: Vec::new(),
         effects: Vec::new(),
@@ -132,7 +113,7 @@ fn launch_result(
     journal: &[Effect],
 ) -> Transition {
     match result.kind {
-        EffectKind::TabCreate => match result.outcome {
+        EffectKind::TabCreate => match result.resolution.outcome() {
             // a new tab's initial pane hosts the child — never split (H#102)
             EffectOutcome::Acknowledged => {
                 plan_agent_start(run, PlacementPlan::NewTab, 0, decision)
@@ -143,7 +124,7 @@ fn launch_result(
             }
             | EffectOutcome::Unconfirmed => nothing(),
         },
-        EffectKind::PaneSplit => match result.outcome {
+        EffectKind::PaneSplit => match result.resolution.outcome() {
             EffectOutcome::Acknowledged => {
                 let plan = journal
                     .iter()
@@ -217,8 +198,8 @@ fn agent_start_result(
     decision: Option<&Decision>,
     journal: &[Effect],
 ) -> Transition {
-    match result.outcome {
-        EffectOutcome::Acknowledged => match &result.receipt {
+    match result.resolution.outcome() {
+        EffectOutcome::Acknowledged => match result.resolution.receipt() {
             Some(EffectReceipt::AgentStarted { identity }) => {
                 started(run, result, identity, decision)
             }
@@ -319,7 +300,7 @@ fn prompt_result(run: &Run, result: &EffectResult) -> Transition {
     if result.kind != EffectKind::Prompt || result.key != effect_key(run, "prompt:task") {
         return nothing();
     }
-    match result.outcome {
+    match result.resolution.outcome() {
         EffectOutcome::Acknowledged => {
             let record = edited(run, |next| {
                 next.state = State::Active;
@@ -385,7 +366,7 @@ fn repair_result(
             .iter()
             .find(|e| e.key == result.key)
             .is_some_and(|e| repair_dispatch_in_window(run, e));
-        if in_window && result_certainty(result.outcome) != Some(EffectCertainty::Absent) {
+        if in_window && result.resolution.certainty() != Some(EffectCertainty::Absent) {
             let record = edited(run, |next| {
                 next.state = State::Active;
                 next.work_generation = next.work_generation.saturating_add(1);

@@ -149,6 +149,92 @@ pub enum EffectOutcome {
     Unconfirmed,
 }
 
+/// OQ-11 — the dispatcher's failure cause, persisted verbatim as
+/// `result_json {"error": …}` on a `failed` row; never a typed receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureCause(pub String);
+
+/// F8 — how an in-flight effect resolved together with what that resolution
+/// may carry: a receipt only ever rides an acknowledgement, a cause only
+/// ever rides a failure. The pairings a result cannot take are
+/// unrepresentable here, at the daemon boundary — the store refuses none
+/// and the core drops none (OQ-11, OQ-13).
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the acknowledged receipt rides unboxed, as it does in EffectReceipt and Event — the lanes match on the payload directly"
+)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum EffectResolution {
+    /// The mutation ran to completion; the receipt carries what it produced.
+    Acknowledged {
+        /// What it produced.
+        receipt: Option<EffectReceipt>,
+    },
+    /// A typed pre-interactive failure (the busy-pane class): provably never
+    /// ran — journals `failed`/`absent` (F15).
+    PreInteractiveFailed {
+        /// The dispatcher's cause, when it named one.
+        cause: Option<FailureCause>,
+    },
+    /// The effect failed; `certainty` says whether the mutation provably
+    /// never ran (`absent`) or might have (`unknown`).
+    Failed {
+        /// The F8/F20 certainty of the failure.
+        certainty: EffectCertainty,
+        /// The dispatcher's cause, when it named one.
+        cause: Option<FailureCause>,
+    },
+    /// `dispatching` without a receipt across a restart — never dispatched
+    /// again (F8).
+    Unconfirmed,
+}
+
+impl EffectResolution {
+    /// The `Copy` summary every lane matches on.
+    #[must_use]
+    pub fn outcome(&self) -> EffectOutcome {
+        match self {
+            Self::Acknowledged { .. } => EffectOutcome::Acknowledged,
+            Self::PreInteractiveFailed { .. } => EffectOutcome::PreInteractiveFailed,
+            Self::Failed { certainty, .. } => EffectOutcome::Failed {
+                certainty: *certainty,
+            },
+            Self::Unconfirmed => EffectOutcome::Unconfirmed,
+        }
+    }
+
+    /// The receipt an acknowledgement produced; nothing else carries one.
+    #[must_use]
+    pub fn receipt(&self) -> Option<&EffectReceipt> {
+        match self {
+            Self::Acknowledged { receipt } => receipt.as_ref(),
+            Self::PreInteractiveFailed { .. } | Self::Failed { .. } | Self::Unconfirmed => None,
+        }
+    }
+
+    /// F8 — the certainty a result commit records (required on `failed`):
+    /// `absent` for a pre-interactive failure, the failure's own otherwise,
+    /// none for an acknowledgement or an unconfirmed dispatch.
+    #[must_use]
+    pub fn certainty(&self) -> Option<EffectCertainty> {
+        match self {
+            Self::PreInteractiveFailed { .. } => Some(EffectCertainty::Absent),
+            Self::Failed { certainty, .. } => Some(*certainty),
+            Self::Acknowledged { .. } | Self::Unconfirmed => None,
+        }
+    }
+
+    /// F8 — the journal state this resolution commits.
+    pub(crate) fn journal_state(&self) -> EffectState {
+        match self {
+            Self::Acknowledged { .. } => EffectState::Acknowledged,
+            // pre-interactive failures provably never ran → failed/absent (F15)
+            Self::PreInteractiveFailed { .. } | Self::Failed { .. } => EffectState::Failed,
+            Self::Unconfirmed => EffectState::Unconfirmed,
+        }
+    }
+}
+
 /// F8 — an effect's resolution, delivered to the transition as an
 /// `effect_result` event: which journaled effect, how it resolved and what it
 /// produced.
@@ -158,10 +244,8 @@ pub struct EffectResult {
     pub key: EffectKey,
     /// Its kind (the dispatch context the lane needs).
     pub kind: EffectKind,
-    /// How it resolved.
-    pub outcome: EffectOutcome,
-    /// What it produced, when `outcome` is `Acknowledged`.
-    pub receipt: Option<EffectReceipt>,
+    /// How it resolved, with the receipt or cause that resolution carries.
+    pub resolution: EffectResolution,
 }
 
 /// F8/Appendix B `effects.target_json` — the captured target identity an
@@ -223,21 +307,60 @@ pub struct Effect {
     pub dispatched_at: Option<Timestamp>,
 }
 
-/// F8 — one journal-row write a transition requests: the effect's state,
-/// certainty and result. The dispatch commit is `planned` → `dispatching`; the
-/// result commit writes `acknowledged`/`failed` (+`certainty`) or
-/// `unconfirmed` with its receipt.
+/// F8 — one journal-row write a transition requests, one kind per
+/// conditional UPDATE the store owns: the dispatch commit (`planned` →
+/// `dispatching`), the result commit (`dispatching` → the resolution's
+/// state, copied verbatim from the event — a `Judgments` receipt also writes
+/// the `judgment_sets`/`judgments` rows, Appendix B "Effect result"), and
+/// the OQ-13 terminal write that closes a stranded `planned`/`dispatching`/
+/// `unconfirmed` row `failed` with the certainty the core chose.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the result write copies the event's resolution verbatim, receipt included; boxing would distort the shared vocabulary"
+)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct EffectWrite {
+pub enum EffectWrite {
+    /// `planned` → `dispatching`, `dispatched_at` stamped.
+    Dispatch {
+        /// `effect_key` — which effect this write updates.
+        key: EffectKey,
+    },
+    /// `dispatching` → `acknowledged`/`failed`/`unconfirmed` with the
+    /// resolution's certainty and payload.
+    Result {
+        /// `effect_key` — which effect this write updates.
+        key: EffectKey,
+        /// The event's resolution, unchanged.
+        resolution: EffectResolution,
+    },
+    /// `planned`/`dispatching`/`unconfirmed` → `failed` (OQ-13): no
+    /// receipt, no cause.
+    Terminal {
+        /// `effect_key` — which effect this write updates.
+        key: EffectKey,
+        /// The certainty the core chose for the stranded row.
+        certainty: EffectCertainty,
+    },
+}
+
+impl EffectWrite {
     /// `effect_key` — which effect this write updates.
-    pub key: EffectKey,
-    /// The state to commit.
-    pub state: EffectState,
-    /// The certainty to record (required when `state` is `failed`).
-    pub certainty: Option<EffectCertainty>,
-    /// The result to record — a `Judgments` receipt also writes the
-    /// `judgment_sets`/`judgments` rows (Appendix B "Effect result").
-    pub receipt: Option<EffectReceipt>,
+    #[must_use]
+    pub fn key(&self) -> &EffectKey {
+        match self {
+            Self::Dispatch { key } | Self::Result { key, .. } | Self::Terminal { key, .. } => key,
+        }
+    }
+
+    /// The state the write commits.
+    #[must_use]
+    pub fn state(&self) -> EffectState {
+        match self {
+            Self::Dispatch { .. } => EffectState::Dispatching,
+            Self::Result { resolution, .. } => resolution.journal_state(),
+            Self::Terminal { .. } => EffectState::Failed,
+        }
+    }
 }
 
 /// F8/OQ-15 — the plan-time operation digest a `planned` row's

@@ -375,6 +375,8 @@ mod tests {
 }
 
 #[cfg(test)]
+mod launch_row_terminal_tests;
+#[cfg(test)]
 mod launch_row_tests;
 #[cfg(test)]
 mod req_tests;

@@ -246,3 +246,53 @@ fn f9_empty_or_foreign_queues_dispatch_nothing() {
         "another Run's outbox is not this Run's queue"
     );
 }
+
+#[test]
+fn f9_a_submitted_follow_up_lifts_its_journal_barrier() {
+    // The journal still says `unconfirmed` (the F8 wire fact), but the
+    // outbox entry it dispatched was resolved `submitted` by transcript
+    // evidence: the outbox row is the barrier's source of truth (F9/F17).
+    let unconfirmed = child_prompt_effect(EffectState::Unconfirmed);
+    let linked = |state: OutboxState| OutboxMessage {
+        effect: Some(unconfirmed.id.clone()),
+        ..dispatched(1, "k1", state)
+    };
+    let lifted = [linked(OutboxState::Submitted), message(2, "k2")];
+    assert_eq!(
+        next_dispatchable_follow_up(&run(), &lifted, core::slice::from_ref(&unconfirmed), &[])
+            .map(|m| m.seq),
+        Some(2),
+        "a submitted follow-up lifts the barrier its unconfirmed prompt effect held (F9)"
+    );
+    // The linked entry still `unconfirmed` keeps the barrier.
+    let held = [linked(OutboxState::Unconfirmed), message(2, "k2")];
+    assert_eq!(
+        next_dispatchable_follow_up(&run(), &held, core::slice::from_ref(&unconfirmed), &[]),
+        None,
+        "an unresolved linked entry keeps the barrier (F9)"
+    );
+    // A submitted entry of another Run never lifts this Run's barrier, even
+    // when it names the same effect id: the lift is scoped to the Run.
+    let foreign = [
+        OutboxMessage {
+            run: RunId("run-other".into()),
+            ..linked(OutboxState::Submitted)
+        },
+        message(2, "k2"),
+    ];
+    assert_eq!(
+        next_dispatchable_follow_up(&run(), &foreign, core::slice::from_ref(&unconfirmed), &[]),
+        None,
+        "only this Run's own submitted entry lifts its barrier (F9)"
+    );
+    // An unconfirmed effect no submitted entry links stays today's barrier.
+    let unlinked = [
+        dispatched(1, "k1", OutboxState::Submitted),
+        message(2, "k2"),
+    ];
+    assert_eq!(
+        next_dispatchable_follow_up(&run(), &unlinked, &[unconfirmed], &[]),
+        None,
+        "only the entry linked by effect_id lifts its own barrier (F9)"
+    );
+}

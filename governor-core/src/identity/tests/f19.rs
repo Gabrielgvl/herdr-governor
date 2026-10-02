@@ -136,7 +136,7 @@ fn f19_adoption_never_reopens_a_settled_run() {
                     | StateChange::RecordLaunch(_)
                     | StateChange::ReserveRun(_)
                     | StateChange::WriteEffect(_)
-                    | StateChange::RecordFollowUp(_)
+                    | StateChange::WriteFollowUp(_)
                     | StateChange::ExpireFollowUps { .. }
                     | StateChange::RecordRecovery(_)
                     | StateChange::SetCooldown(_)

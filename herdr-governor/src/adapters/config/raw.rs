@@ -1,8 +1,9 @@
 //! `raw` — the serde DTOs `catalog.toml` decodes into, before the mapped
 //! `Config` meets `Config::validate` (the F27 authority — the adapter adds
 //! no value rules of its own). Field names here are the file's spellings:
-//! durations are bare seconds (`*_secs` — TOML has no duration type) and
-//! rates are unit-interval floats. Every table is `deny_unknown_fields`: a
+//! durations are bare seconds (`*_secs` — TOML has no duration type),
+//! each capped at `MAX_POLICY_WINDOW` (10 years) by `Config::validate`,
+//! and rates are unit-interval floats. Every table is `deny_unknown_fields`: a
 //! misspelled or stale key is a decode error, never a silently-dropped
 //! setting — F27 fails closed. The file declares no `version`:
 //! `ConfigVersion` is the sha256 of its bytes (OQ-7), stamped by the
@@ -94,21 +95,27 @@ struct RawPolicy {
     /// F13 step 5 — the exploration rate.
     #[serde(default = "default_exploration_rate")]
     exploration_rate: f64,
-    /// F21 — pending-obligation lifetime, seconds.
+    /// F21 — pending-obligation lifetime, seconds; at most
+    /// `MAX_POLICY_WINDOW` (10 years).
     #[serde(default = "default_recovery_expiry_secs")]
     recovery_expiry_secs: u64,
-    /// F21 — provider cooldown length, seconds; no core default exists.
+    /// F21 — provider cooldown length, seconds; no core default exists;
+    /// at most `MAX_POLICY_WINDOW` (10 years).
     cooldown_secs: u64,
-    /// F22 — `max_age_deadline` window, seconds.
+    /// F22 — `max_age_deadline` window, seconds; at most
+    /// `MAX_POLICY_WINDOW` (10 years).
     #[serde(default = "default_max_age_secs")]
     max_age_secs: u64,
-    /// F24 — repair window after a first rejection, seconds.
+    /// F24 — repair window after a first rejection, seconds; at most
+    /// `MAX_POLICY_WINDOW` (10 years).
     #[serde(default = "default_repair_window_secs")]
     repair_window_secs: u64,
-    /// F24 — the Jev-unavailable bound after freezing, seconds.
+    /// F24 — the Jev-unavailable bound after freezing, seconds; at most
+    /// `MAX_POLICY_WINDOW` (10 years).
     #[serde(default = "default_judgment_window_secs")]
     judgment_window_secs: u64,
-    /// F25 — idle window, seconds.
+    /// F25 — idle window, seconds; at most `MAX_POLICY_WINDOW`
+    /// (10 years).
     #[serde(default = "default_idle_window_secs")]
     idle_window_secs: u64,
 }

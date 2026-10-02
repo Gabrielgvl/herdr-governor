@@ -22,6 +22,12 @@ lint:
 test:
     cargo nextest run --locked --status-level fail --final-status-level fail
 
+# Update Cargo.lock for an owner-approved manifest edit (owner ruling
+# 2026-10-02). Offline and workspace-only: resolves new or changed
+# dependencies without upgrading anything else.
+lock:
+    cargo update --workspace --offline
+
 deny:
     cargo deny check
 

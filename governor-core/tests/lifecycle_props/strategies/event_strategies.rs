@@ -12,8 +12,8 @@ use governor_core::identity::{
     Digest, EffectKey, JudgmentSetId, NativeSession, Observation, PaneId, RunId, TabId, Timestamp,
 };
 use governor_core::lifecycle::{
-    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, Event,
-    JudgmentVerdict, VersionTriple,
+    DeadlineKind, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResolution,
+    EffectResult, Event, FailureCause, JudgmentVerdict, VersionTriple,
 };
 use governor_core::routing::{
     Judgment, JudgmentOutcome, JudgmentPurpose, JudgmentRecord, JudgmentSet, Probability, Question,
@@ -160,6 +160,34 @@ pub fn arb_outcome() -> impl Strategy<Value = EffectOutcome> {
     ]
 }
 
+/// The dispatcher's OQ-11 failure cause, or none.
+fn arb_cause() -> impl Strategy<Value = Option<FailureCause>> {
+    option::of(
+        pick(&["timeout", "agent_pane_busy", "server gone"]).prop_map(|c| FailureCause(text(c))),
+    )
+}
+
+/// A typed resolution whose acknowledgement carries `receipt` — the only
+/// place a receipt can ride, so `(outcome, receipt)` independence is gone
+/// by construction (F13); failures carry an optional cause.
+fn resolved<R>(arb_receipt: R) -> impl Strategy<Value = EffectResolution>
+where
+    R: Strategy<Value = Option<EffectReceipt>>,
+{
+    prop_oneof![
+        3 => arb_receipt.prop_map(|receipt| EffectResolution::Acknowledged { receipt }),
+        1 => arb_cause().prop_map(|cause| EffectResolution::PreInteractiveFailed { cause }),
+        1 => (arb_certainty(), arb_cause())
+            .prop_map(|(certainty, cause)| EffectResolution::Failed { certainty, cause }),
+        1 => Just(EffectResolution::Unconfirmed),
+    ]
+}
+
+/// An arbitrary resolution over the whole receipt space.
+pub fn arb_resolution() -> impl Strategy<Value = EffectResolution> {
+    resolved(arb_receipt())
+}
+
 fn arb_receipt() -> impl Strategy<Value = Option<EffectReceipt>> {
     prop_oneof![
         2 => Just(None),
@@ -227,15 +255,13 @@ fn arb_effect_result() -> impl Strategy<Value = EffectResult> {
                 EffectKind::PaneSplit,
                 EffectKind::AgentStart,
             ]),
-            arb_outcome(),
-            arb_receipt(),
+            arb_resolution(),
         ),
         // prompt results — the `prompting` → `active` and repair lanes
         3 => (
             pick(PROMPT_SUFFIXES),
             Just(EffectKind::Prompt),
-            arb_outcome(),
-            Just(None),
+            resolved(Just(None)),
         ),
         // arbitrary results over the whole space
         4 => (
@@ -248,15 +274,13 @@ fn arb_effect_result() -> impl Strategy<Value = EffectResult> {
                 EffectKind::Prompt,
                 EffectKind::Close,
             ]),
-            arb_outcome(),
-            arb_receipt(),
+            arb_resolution(),
         ),
     ]
-    .prop_map(|(suffix, kind, outcome, receipt)| EffectResult {
+    .prop_map(|(suffix, kind, resolution)| EffectResult {
         key: run_key(suffix),
         kind,
-        outcome,
-        receipt,
+        resolution,
     })
 }
 

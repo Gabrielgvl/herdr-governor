@@ -14,8 +14,8 @@ mod serial;
 
 pub use followup::{
     ExpiryReason, FOLLOWUP_FILE_MAX_BYTES, FOLLOWUP_FILE_RETENTION, FOLLOWUP_INLINE_MAX_BYTES,
-    MessageBody, OutboxMessage, OutboxState, enqueue_follow_up, follow_up_body_needs_file,
-    follow_up_body_too_large, follow_up_effect, follow_up_file_retained,
+    FollowUpWrite, MessageBody, OutboxMessage, OutboxState, enqueue_follow_up,
+    follow_up_body_needs_file, follow_up_body_too_large, follow_up_effect, follow_up_file_retained,
 };
 pub use mailbox::{
     HINT_MIN_INTERVAL, MailboxEvent, MailboxEventKind, MailboxSubject, hint_effect, hint_eligible,

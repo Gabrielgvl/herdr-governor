@@ -144,6 +144,10 @@ fn f21_pending_expires_at_or_past_expires_at() {
     );
 }
 
+// `Config::validate` bounds every policy window to MAX_POLICY_WINDOW (10
+// years), so no duration that entered through config reaches this path —
+// the test builds unvalidated values directly to pin `Timestamp::after`'s
+// backstop: saturate rather than wrap a deadline into the past.
 #[test]
 fn f21_expiry_arithmetic_saturates() {
     let obligation = RecoveryObligation::pending(

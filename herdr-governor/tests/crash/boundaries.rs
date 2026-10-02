@@ -85,6 +85,26 @@ mod tests {
         after_commit
     );
 
+    // dispatch_follow_up: 2 statement boundaries
+    boundary!(crash_dispatch_follow_up_0, "dispatch_follow_up", 0);
+    boundary!(crash_dispatch_follow_up_1, "dispatch_follow_up", 1);
+    boundary!(crash_dispatch_follow_up_2, "dispatch_follow_up", 2);
+    boundary!(
+        crash_dispatch_follow_up_after_commit,
+        "dispatch_follow_up",
+        after_commit
+    );
+
+    // resolve_follow_up: 2 statement boundaries
+    boundary!(crash_resolve_follow_up_0, "resolve_follow_up", 0);
+    boundary!(crash_resolve_follow_up_1, "resolve_follow_up", 1);
+    boundary!(crash_resolve_follow_up_2, "resolve_follow_up", 2);
+    boundary!(
+        crash_resolve_follow_up_after_commit,
+        "resolve_follow_up",
+        after_commit
+    );
+
     // settle: 7 statement boundaries
     boundary!(crash_settle_0, "settle", 0);
     boundary!(crash_settle_1, "settle", 1);

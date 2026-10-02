@@ -65,7 +65,7 @@ pub(super) fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
         | StateChange::UpdateRun(_)
         | StateChange::ChangeOwner(_)
         | StateChange::WriteEffect(_)
-        | StateChange::RecordFollowUp(_)
+        | StateChange::WriteFollowUp(_)
         | StateChange::ExpireFollowUps { .. }
         | StateChange::SetCooldown(_)
         | StateChange::FreezeHandoff(_)
@@ -84,7 +84,7 @@ pub(super) fn f20_provider_limited_settlement_records_recovery_and_cooldown() {
         | StateChange::UpdateRun(_)
         | StateChange::ChangeOwner(_)
         | StateChange::WriteEffect(_)
-        | StateChange::RecordFollowUp(_)
+        | StateChange::WriteFollowUp(_)
         | StateChange::ExpireFollowUps { .. }
         | StateChange::RecordRecovery(_)
         | StateChange::FreezeHandoff(_)

@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 use crate::acceptance::FrozenHandoff;
-use crate::delivery::{ExpiryReason, MailboxEvent, OutboxMessage};
+use crate::delivery::{ExpiryReason, FollowUpWrite, MailboxEvent};
 use crate::identity::{CallerBinding, EventId, RunId};
 use crate::recovery::{Cooldown, RecoveryObligation};
 use crate::task::Launch;
@@ -37,9 +37,9 @@ pub enum StateChange {
     ChangeOwner(OwnerChange),
     /// F8 — a journal-row write: the dispatch commit or the result commit.
     WriteEffect(EffectWrite),
-    /// F17 — write an outbox row (enqueue, dispatch bookkeeping,
-    /// resolution).
-    RecordFollowUp(OutboxMessage),
+    /// F17 — one conditional outbox write: the insert-once enqueue, or a
+    /// forward-only edge (dispatch bookkeeping, resolution).
+    WriteFollowUp(FollowUpWrite),
     /// F20 — expire the Run's still-`queued` follow-ups in the settle
     /// transaction; dispatched ones are untouched (they stay visible in their
     /// last state).

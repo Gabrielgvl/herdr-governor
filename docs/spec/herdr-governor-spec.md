@@ -178,14 +178,15 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
 ### 6.3 Effects (the one protocol for every external mutation)
 
 - **F8 Effect journal.** Every Herdr mutation (tab create, pane split, agent start, prompt, close) and the launch-time Jev evaluation gets an `effects` row with a unique `effect_key`. The row records the operation, subject, captured target identity, payload digest and state.
-  - **Dispatch:** commit `planned` → `dispatching`, invoke, then commit `acknowledged` or `failed` with its certainty.
+  - **Dispatch:** commit `planned` → `dispatching`, invoke, then commit the result: `acknowledged` with its receipt, `failed` with its certainty and the failure cause (`result_json {"error": …}`), or `unconfirmed`. The result commit only ever follows `dispatching`.
   - **Restart:**
     - `dispatching` without a receipt becomes `unconfirmed` and is never dispatched again;
     - `planned` may be dispatched.
+  - **Terminal (OQ-13):** when an `evaluating` Launch finishes `abstained`, its own `jev_evaluate` effect, if still `planned`, `dispatching` or `unconfirmed`, is closed `failed` in the same transaction with the certainty the core chooses (`absent` for `planned`, otherwise `unknown`). No other finish closes any other effect.
   - **What a snapshot proves:** it can establish identity or liveness. It never establishes that a prompt was, or was not, submitted.
   - **Transactions:** no SQLite transaction ever spans Herdr or Jev I/O.
 - **F9 Per-target serialization.** All prompts to one captured identity (Task, follow-ups, nudges, hints) are dispatched one at a time, in order.
-  - An `unconfirmed` prompt is an ordering barrier for that target. Transcript evidence can resolve it: the parser finds the envelope's delivery ID. Otherwise the Run's settlement ends it.
+  - An `unconfirmed` prompt is an ordering barrier for that target. Transcript evidence can resolve it: the parser finds the envelope's delivery ID. Otherwise the Run's settlement ends it. A follow-up resolved `submitted` this way lifts the barrier its journaled prompt effect would otherwise hold; the effect row keeps its `unconfirmed` wire fact.
 - **F10 Fresh verification.** Before every prompt and every close, including closing a settled Run's pane:
   - the daemon takes a fresh snapshot, and the target must be `unique` with the full captured identity;
   - the target must be in a state that is safe to write to (F17);
@@ -247,7 +248,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - **Keys:** `messageKey` is unique within the Run. The same body digest returns the existing sequence number; a different digest returns `MESSAGE_KEY_CONFLICT`.
   - **After settlement:** refused `RUN_SETTLED`, with nothing enqueued.
   - **Large bodies:** a body over 16 KiB, up to 1 MiB, is first published as an immutable 0600 file (write, fsync, rename, verify size and digest). A failed publication enqueues nothing (H#62–64).
-  - **States:** `queued` → `dispatching` → `submitted` or `unconfirmed`.
+  - **States:** `queued` → `dispatching` → `submitted` or `unconfirmed`; `unconfirmed` → `submitted` once transcript evidence resolves it (F9). Each edge is a conditional write on the state it leaves.
   - **When it's sent:** at the first safe moment. Immediately if the operating point has a qualified `mid_turn_input` capability; otherwise when Herdr reports the child idle or done. Never while the child is `blocked` (H#17).
   - **Expiry:** only a message that was never dispatched can become `expired`, with a reason. A message in `dispatching`, `submitted` or `unconfirmed` stays visible in that state.
   - **File retention:** files referenced by live or possibly consumed messages are kept until 7 days after the child's identity is observed absent (H#64).
@@ -297,7 +298,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - it claims the predecessor's obligation if one exists; a second recovery of the same predecessor is refused `RECOVERY_EXISTS`;
     - a `provider_limited` predecessor must be observed `absent` first, and any other predecessor must be observed idle, done or absent — while the observation gate is unmet the request is refused `RECOVERY_PREDECESSOR_ACTIVE`, retryable once the gate is met.
 - **F22 Transitions.** Appendix C defines them as a total function: every state against every event, where the events are observation classes, child status, handoff, judgment, deadline, cancel, provider limit and restart. The core implements it as exhaustive `match` expressions without wildcard arms, so the compiler enforces totality under the kit's `wildcard_enum_match_arm = deny`.
-  - **Deadlines:** stored as absolute times. They are not reset by repeated observations or restarts, and they are not suspended when paid review pauses. Every Run has `max_age_deadline` (default 24 h, set per policy).
+  - **Deadlines:** stored as absolute times. They are not reset by repeated observations or restarts, and they are not suspended when paid review pauses. Every Run has `max_age_deadline` (default 24 h, set per policy). Every policy window (`idle`, `repair`, `judgment`, `max_age`, `recovery_expiry`, `cooldown`) is bounded by `MAX_POLICY_WINDOW` (10 years) at config validation, so an armed deadline always has an RFC3339 spelling.
   - **Liveness assumption:** the daemon runs eventually and storage is writable.
 - **F23 Supervision.** Evidence is:
   - the transcript window from the parser (bounded, and the parser reads at most a configured ceiling), otherwise `agent.read`;
@@ -460,7 +461,7 @@ Appendix B holds the executable DDL, including constraints, triggers and the `ou
 
 ### Starting dependency set (`Cargo.lock` is a hard path; approved once)
 
-- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `rmcp` (server; the daemon's unix-socket endpoint and the relay's stdio transport), `schemars`, `thiserror`, `tracing`, `tracing-subscriber`, `uuid` (v7), `sha2`.
+- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `rmcp` (server; the daemon's unix-socket endpoint and the relay's stdio transport), `schemars`, `thiserror`, `tracing`, `tracing-subscriber`, `uuid` (v7), `sha2`, `rustix` (fs, process).
 - **Dev:** `proptest`, `tempfile`.
 - No CLI-parsing crate.
 
@@ -692,7 +693,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 
 - **Identity:** cooperative between processes of the same user, and documented as such. Ownership is enforced on every operation (F4).
 - **Transport:** the stdio relay only (ADR-0004) — no network listener and no bearer token. The daemon's unix socket is 0600. The relay reads only `HERDR_*` and its cwd, never logs environment values, holds no upstream session state, reconnects to the socket per request, and exits on stdin EOF or SIGINT/SIGTERM. Every forwarded request carries the relay-attached caller envelope `{paneId, projectRoot, relayInstanceId}`, and the daemon binds each new `relayInstanceId` to one resolved caller, refusing later drift `CALLER_IDENTITY_MISMATCH` (F1).
-- **Files:** the state directory is 0700; files and the database are 0600. Handoffs are read without following symlinks, with bounded size. Follow-up files are immutable.
+- **Files:** the state directory is 0700; files and the database are 0600. Handoffs are read without following symlinks, with bounded size. Follow-up files are immutable. The Jev credential file is opened `O_NOFOLLOW` and vouched on the open handle — mode `0600`, owned by the process's effective uid.
 - **Provenance:** the envelope's header values are generated and each is a single line (H#25–27).
 - **Redaction:** environment-like keys are removed from evidence before it reaches Jev. Bodies never appear in argv, logs or errors (H#67, H#104).
 - **Subprocesses:** `git` only, as argv arrays, never through a shell.
@@ -804,6 +805,12 @@ The DoD is stated in each phase in §10. It must hold on a merged `main` commit,
 
 **Decided by the owner (2026-09-30):**
 - **Caller transport:** the native per-session stdio relay (ADR-0004). Each caller harness's own MCP spawns `herdr-governor relay` once per session; the stateless relay derives the F1 caller identity (`paneId` from `HERDR_PANE_ID`, `projectRoot` from its cwd's git root) and forwards to the daemon's 0600 unix socket; registration is global per harness through the herdr-tools profile layer; N4 allows one relay per caller session at or under 8 MB RSS.
+
+**Decided by the owner (2026-10-02):**
+- **Bounded policy windows:** `Config::validate` refuses every policy window above `MAX_POLICY_WINDOW` (10 years), replacing the explicit-"never" deadline idea, so an armed deadline always has an RFC3339 spelling (F22); `max_age_deadline` stays a hard `Timestamp` and `Timestamp::after`'s saturation becomes an unreachable backstop for validated configs.
+- **Typed effect writes:** `EffectWrite` is `Dispatch` / `Result{resolution}` / `Terminal{certainty}`, and `EffectResolution` (`Acknowledged{receipt}`, `PreInteractiveFailed{cause}`, `Failed{certainty, cause}`, `Unconfirmed`) is typed on the `effect_result` event and copied into the write unchanged, so a receipt on a failure or a `failed` without a certainty is unrepresentable rather than refused by the store; the cause on `Failed`/`PreInteractiveFailed` is the OQ-11 `result_json {"error": …}`, and `Terminal` is the OQ-13 write for the abandoned evaluation only (F8).
+- **Follow-up split:** `StateChange::WriteFollowUp(FollowUpWrite::{Enqueue, Dispatch, Resolve})` replaces the whole-row follow-up write — an insert-once enqueue plus one forward-only conditional `UPDATE` per F17/F9 edge, each in the transaction of its prompt effect's journal write. The outbox row is the source of truth for a follow-up's F9 barrier: a journaled `unconfirmed` prompt effect whose linked entry is `submitted` no longer bars the queue, while the effect row keeps its wire fact.
+- **Credential hardening:** the Jev credential file is opened `O_NOFOLLOW` and must be owned by the effective uid; `rustix` (fs, process) is an approved direct `herdr-governor` dependency (§9, §13).
 
 ## 20. Approval
 
@@ -1118,8 +1125,10 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 | Route | the launch decision, config version and phase `routed`, plus the reserved run with `max_age_deadline` |
 | Plan an effect | the effect (`planned`) |
 | Dispatch an effect | the effect goes `planned` → `dispatching` |
-| Effect result | the effect result, plus the dependent run fields (identity, `prompt_certainty`, state) and version+1; a generation-stale Jev receipt journals its set `stale` and applies nothing |
+| Effect result | the effect result, plus the dependent run fields (identity, `prompt_certainty`, state) and version+1; a generation-stale Jev receipt journals its set `stale` and applies nothing; a failed result records its cause in `result_json` |
 | Enqueue a follow-up | the outbox row, after the file is published and verified |
+| Dispatch a follow-up | outbox `queued` → `dispatching` with `effect_id`, in the same transaction as that prompt effect's dispatch commit |
+| Resolve a follow-up | outbox `dispatching` → `submitted` or `unconfirmed` with the effect's result commit; `unconfirmed` → `submitted` on transcript evidence (F9) |
 | Settle | runs (conditional on version and unsettled) plus the terminal mailbox event, the queued follow-ups expired, and the recovery and cooldown when the settlement is `provider_limited` |
 | Handover or adopt | `runs.owner_caller_id` and `owner_generation+1`, conditional on the expected owner |
 | Recovery dispatch | recovery `pending` → `dispatched`, plus the successor Launch admission |

@@ -7,8 +7,8 @@
 use governor_core::config::{Catalog, Config, OperatingPoint, OperatingPointId, Qualification};
 use governor_core::identity::{AgentKind, ChildIdentity};
 use governor_core::lifecycle::{
-    Effect, EffectReceipt, EffectResult, EffectTarget, EffectWrite, Event, Run, RunUpdate,
-    StateChange, Transition, Versioned,
+    Effect, EffectReceipt, EffectResolution, EffectResult, EffectTarget, EffectWrite, Event, Run,
+    RunUpdate, StateChange, Transition, Versioned,
 };
 use governor_core::routing::{Candidate, Decision};
 use governor_core::task::Launch;
@@ -137,13 +137,14 @@ impl Rename {
                 record: self.run(&update.record),
             }),
             StateChange::ChangeOwner(owner) => StateChange::ChangeOwner(owner.clone()),
-            StateChange::WriteEffect(write) => StateChange::WriteEffect(EffectWrite {
-                key: write.key.clone(),
-                state: write.state,
-                certainty: write.certainty,
-                receipt: write.receipt.as_ref().map(|r| self.receipt(r)),
+            StateChange::WriteEffect(write) => StateChange::WriteEffect(match write {
+                EffectWrite::Result { key, resolution } => EffectWrite::Result {
+                    key: key.clone(),
+                    resolution: self.resolution(resolution),
+                },
+                EffectWrite::Dispatch { .. } | EffectWrite::Terminal { .. } => write.clone(),
             }),
-            StateChange::RecordFollowUp(message) => StateChange::RecordFollowUp(message.clone()),
+            StateChange::WriteFollowUp(write) => StateChange::WriteFollowUp(write.clone()),
             StateChange::ExpireFollowUps { run, reason } => StateChange::ExpireFollowUps {
                 run: run.clone(),
                 reason: *reason,
@@ -196,9 +197,20 @@ impl Rename {
         }
     }
 
+    fn resolution(&self, resolution: &EffectResolution) -> EffectResolution {
+        match resolution {
+            EffectResolution::Acknowledged { receipt } => EffectResolution::Acknowledged {
+                receipt: receipt.as_ref().map(|r| self.receipt(r)),
+            },
+            EffectResolution::PreInteractiveFailed { .. }
+            | EffectResolution::Failed { .. }
+            | EffectResolution::Unconfirmed => resolution.clone(),
+        }
+    }
+
     fn result(&self, result: &EffectResult) -> EffectResult {
         EffectResult {
-            receipt: result.receipt.as_ref().map(|r| self.receipt(r)),
+            resolution: self.resolution(&result.resolution),
             ..result.clone()
         }
     }

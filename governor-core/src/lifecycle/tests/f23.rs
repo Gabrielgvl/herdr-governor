@@ -8,8 +8,8 @@ use alloc::vec::Vec;
 use crate::delivery::MailboxEventKind;
 use crate::identity::Timestamp;
 use crate::lifecycle::{
-    DeadlineKind, EffectKind, EffectOutcome, EffectReceipt, EffectState, EffectTarget, Event,
-    Settlement, State, StateChange, periodic_review,
+    DeadlineKind, EffectKind, EffectOutcome, EffectReceipt, EffectResolution, EffectState,
+    EffectTarget, EffectWrite, Event, Settlement, State, StateChange, periodic_review,
 };
 use crate::routing::{JudgmentOutcome, Probability, Question, noul_yes};
 
@@ -244,15 +244,20 @@ fn f23_stale_judgment_set_journals_stale_and_applies_nothing() {
     // and the journaled set is marked stale.
     let receipt_is_stale = t.state_changes.iter().any(|c| match c {
         StateChange::WriteEffect(w) => matches!(
-            &w.receipt,
-            Some(EffectReceipt::Judgments(r)) if r.set.outcome == JudgmentOutcome::Stale
+            w,
+            EffectWrite::Result {
+                resolution: EffectResolution::Acknowledged {
+                    receipt: Some(EffectReceipt::Judgments(r)),
+                },
+                ..
+            } if r.set.outcome == JudgmentOutcome::Stale
         ),
         StateChange::BindCaller(_)
         | StateChange::RecordLaunch(_)
         | StateChange::ReserveRun(_)
         | StateChange::UpdateRun(_)
         | StateChange::ChangeOwner(_)
-        | StateChange::RecordFollowUp(_)
+        | StateChange::WriteFollowUp(_)
         | StateChange::ExpireFollowUps { .. }
         | StateChange::RecordRecovery(_)
         | StateChange::SetCooldown(_)

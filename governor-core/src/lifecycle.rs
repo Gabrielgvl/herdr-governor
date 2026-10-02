@@ -24,8 +24,8 @@ mod transition;
 
 pub use change::{StateChange, Transition};
 pub use effect::{
-    Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState,
-    EffectTarget, EffectWrite, op_digest,
+    Effect, EffectCertainty, EffectKind, EffectOutcome, EffectReceipt, EffectResolution,
+    EffectResult, EffectState, EffectTarget, EffectWrite, FailureCause, op_digest,
 };
 pub use event::{Event, JudgmentVerdict, VersionTriple, Versioned};
 pub use launch::{launch_plan, reserved_run};

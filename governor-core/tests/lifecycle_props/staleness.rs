@@ -5,7 +5,8 @@
 //! Every other stamped result keeps the full triple.
 
 use governor_core::lifecycle::{
-    EffectKind, EffectReceipt, EffectResult, Event, StateChange, Versioned, transition,
+    EffectKind, EffectReceipt, EffectResolution, EffectResult, EffectWrite, Event, StateChange,
+    Versioned, transition,
 };
 use governor_core::routing::JudgmentOutcome;
 use proptest::option;
@@ -41,7 +42,7 @@ proptest! {
             arb::TripleField::EvidenceGeneration,
         ]),
         delta in 1_u64..=8,
-        (suffix, jev_outcome, judgments, _result_spec) in arb_jev_result(),
+        (suffix, _jev_outcome, judgments, _result_spec) in arb_jev_result(),
         journal in arb_journal(),
         handoffs in arb_handoffs(),
         decision in option::of(arb_decision()),
@@ -68,17 +69,20 @@ proptest! {
         );
 
         // the receipt stamp: a generation-moved Jev result journals
-        // `stale` and applies nothing else.
+        // `stale` and applies nothing else. A `Judgments` receipt rides
+        // only an acknowledgement — the typed resolution leaves no other
+        // place for the stamp (OQ-11/F13).
         let stale_versions = arb::stamp(&run, arb::StampSpec::Perturbed(field, delta));
         let stale_result = EffectResult {
             key: arb::run_key(suffix),
             kind: EffectKind::JevEvaluate,
-            outcome: jev_outcome,
-            receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
-                &run.id,
-                Some(stale_versions),
-                judgments,
-            ))),
+            resolution: EffectResolution::Acknowledged {
+                receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
+                    &run.id,
+                    Some(stale_versions),
+                    judgments,
+                ))),
+            },
         };
         let current = Versioned {
             requested_against: arb::triple_of(&run),
@@ -95,8 +99,11 @@ proptest! {
         let Some(StateChange::WriteEffect(write)) = applied.state_changes.first() else {
             panic!("a stale Jev result still journals its row");
         };
-        prop_assert_eq!(&write.key, &stale_result.key, "the journal row is the result's");
-        match &write.receipt {
+        prop_assert_eq!(write.key(), &stale_result.key, "the journal row is the result's");
+        let EffectWrite::Result { resolution, .. } = write else {
+            panic!("a result journals as a result commit");
+        };
+        match resolution.receipt() {
             Some(EffectReceipt::Judgments(marked)) => {
                 prop_assert_eq!(
                     marked.set.outcome,
@@ -134,7 +141,7 @@ proptest! {
             |event| matches!(event, Event::Judgment(..) | Event::ProviderLimited),
         ),
         delta in 1_u64..=u64::MAX,
-        (suffix, jev_outcome, judgments, _result_spec) in arb_jev_result(),
+        (suffix, _jev_outcome, judgments, _result_spec) in arb_jev_result(),
         journal in arb_journal(),
         handoffs in arb_handoffs(),
         decision in option::of(arb_decision()),
@@ -169,19 +176,22 @@ proptest! {
         let result = EffectResult {
             key: arb::run_key(suffix),
             kind: EffectKind::JevEvaluate,
-            outcome: jev_outcome,
-            receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
-                &run.id,
-                Some(moved),
-                judgments.clone(),
-            ))),
+            resolution: EffectResolution::Acknowledged {
+                receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
+                    &run.id,
+                    Some(moved),
+                    judgments.clone(),
+                ))),
+            },
         };
         let reference = EffectResult {
-            receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
-                &run.id,
-                Some(arb::triple_of(&run)),
-                judgments,
-            ))),
+            resolution: EffectResolution::Acknowledged {
+                receipt: Some(EffectReceipt::Judgments(arb::judgment_record(
+                    &run.id,
+                    Some(arb::triple_of(&run)),
+                    judgments,
+                ))),
+            },
             ..result.clone()
         };
         let wrap = |value| Versioned {
@@ -219,7 +229,10 @@ proptest! {
         let Some(StateChange::WriteEffect(write)) = applied.state_changes.first() else {
             panic!("a Jev result still journals its row");
         };
-        match &write.receipt {
+        let EffectWrite::Result { resolution, .. } = write else {
+            panic!("a result journals as a result commit");
+        };
+        match resolution.receipt() {
             Some(EffectReceipt::Judgments(marked)) => {
                 prop_assert_eq!(
                     marked.set.outcome,
