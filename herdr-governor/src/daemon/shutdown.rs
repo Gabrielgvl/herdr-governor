@@ -47,10 +47,12 @@ pub(super) fn spawn_signals(tx: &mpsc::Sender<Msg>) -> Vec<JoinHandle<()>> {
 }
 
 /// §4.14 steps 3–5: the coordinator already set the shutdown `watch`
-/// (step 1) and served out (step 2's in-flight bound — A1 runs no
-/// effects), so: abort the accept/tick/signal tasks, remove the socket
-/// file, release the lock last. `sock` is removed best-effort — an
-/// `ENOENT` (a racing `rm`) is fine, every other error surfaces.
+/// (step 1 — `mcp::serve`'s accept task reads it and has stopped
+/// admitting; in-flight connections answered `DAEMON_UNAVAILABLE` off
+/// the dropped mailbox) and served out (step 2's in-flight bound — A1
+/// runs no effects), so: abort the accept/tick/signal tasks, remove the
+/// socket file, release the lock last. `sock` is removed best-effort —
+/// an `ENOENT` (a racing `rm`) is fine, every other error surfaces.
 pub(super) async fn teardown(
     sock: &Path,
     tasks: Vec<JoinHandle<()>>,

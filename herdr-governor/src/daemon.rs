@@ -9,8 +9,9 @@
 //! Module layout: `api` (the M1 tool-value contract), `settings`/`seam`
 //! (argv + the fault seam), `paths`/`lock` (state dir + single instance),
 //! `clock`/`ids` (one epoch read + all entropy), `log` (the safe tracing
-//! surface), `startup`/`serve`/`shutdown` (bring-up, listeners, teardown)
-//! and `coordinator` (the store owner).
+//! surface), `startup`/`serve`/`shutdown` (bring-up, the reconcile tick,
+//! teardown — the MCP listener is `mcp::serve`) and `coordinator` (the
+//! store owner).
 
 pub mod api;
 pub mod ids;
@@ -36,6 +37,10 @@ use tokio::sync::{mpsc, oneshot};
 
 pub use seam::{Boundary, SeamAction, SeamConfig, SeamError};
 pub use settings::Settings;
+
+/// `mcp::serve`'s connection tasks post `Msg::Tool` here — the mailbox
+/// itself stays `mod coordinator`-private.
+pub(crate) use coordinator::Msg;
 
 use settings::{parse_check_config_args, parse_daemon_args};
 
@@ -237,8 +242,8 @@ pub async fn run(
     let listener = startup::bind(&paths)?;
     log::bound(&paths.sock());
 
-    let (tx, rx) = mpsc::channel::<coordinator::Msg>(coordinator::MSG_CAPACITY);
-    let accept = serve::spawn(listener);
+    let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
+    let accept = crate::mcp::serve::spawn(listener, tx.clone(), coordinator.shutdown_receiver());
     let tick = serve::spawn_tick(&resolved, daemon.herdr_op_timeout, tx.clone());
     let mut tasks = shutdown::spawn_signals(&tx);
     tasks.extend([accept, tick]);

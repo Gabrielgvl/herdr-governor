@@ -32,19 +32,24 @@ pub(super) const MSG_CAPACITY: usize = 256;
 
 /// The coordinator's mailbox. `#[non_exhaustive]`: B1/B3 add
 /// `EffectResult`, `DispatchCommit` and `Observation` without touching
-/// these arms.
+/// these arms. M2's connection task (`mcp::serve`) constructs `Tool`
+/// from outside `daemon` through the `daemon::Msg` re-export.
 #[derive(Debug)]
 #[non_exhaustive]
-pub(super) enum Msg {
-    /// A tool call that reached the listener — A1 answers everything
-    /// `DAEMON_UNAVAILABLE`: the transport exists, the tool surface
-    /// lands with M2/A2.
-    #[expect(
-        dead_code,
-        reason = "constructed by M2's connection task, which posts Tool to this mailbox"
-    )]
+#[expect(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is the honest ceiling — `pub` would satisfy this lint but trip `unreachable_pub` through the private module"
+)]
+pub(crate) enum Msg {
+    /// A tool call that reached the listener — M2's connection task
+    /// posts it; A1 answers everything `DAEMON_UNAVAILABLE`: the
+    /// transport exists, the tool surface lands with A2.
     Tool {
         /// The validated request.
+        #[expect(
+            dead_code,
+            reason = "read by P5.A2's Msg::Tool handler; A1's placeholder arm answers without inspecting it"
+        )]
         request: ToolRequest,
         /// The reply slot the connection task waits on.
         reply: oneshot::Sender<ToolResponse>,
@@ -60,9 +65,13 @@ pub(super) enum Msg {
     Signal(Signal),
 }
 
-/// Which signal arrived.
+/// Which signal arrived. Rides `Msg`'s visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Signal {
+#[expect(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is the honest ceiling — `pub` would satisfy this lint but trip `unreachable_pub` through the private module"
+)]
+pub(crate) enum Signal {
     /// `SIGHUP` — re-read `catalog.toml`; valid swaps in, invalid retains.
     Reload,
     /// `SIGTERM`/`SIGINT` — the §4.14 orderly stop.
@@ -225,9 +234,9 @@ impl Coordinator {
         self.seam.clone()
     }
 
-    /// A receiver for the shutdown `watch` — B1's runner takes one per
+    /// A receiver for the shutdown `watch` — M2's accept task takes one
+    /// for §4.14 step-1 admission stop; B1's runner takes one per
     /// dispatch (§4.14's pre-wire gate).
-    #[expect(dead_code, reason = "carried through for P5.B1's §4.14 step-4 gate")]
     pub(super) fn shutdown_receiver(&self) -> watch::Receiver<bool> {
         self.shutdown_watch.subscribe()
     }
