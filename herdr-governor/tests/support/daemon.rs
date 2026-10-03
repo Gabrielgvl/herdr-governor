@@ -1,172 +1,43 @@
 //! `daemon` — the `TestDaemon` half of the e2e harness (P5.T1): the
 //! governor daemon started either in-process (`daemon::run` on the
 //! test's own runtime, with an optional `SeamConfig` — the [r2]
-//! signature) or as a real `herdr-governor daemon` child (the seam
-//! arrives as `GOV_DAEMON_SEAM`, the crash-matrix env hook), plus the
-//! `Catalog`/`fixture` builder that writes a valid short-window
-//! `catalog.toml` + `0600` credential under a state tempdir. Every wait
+//! signature) or as a real `herdr-governor daemon` child — awaited for
+//! its bound socket (`spawn_child`), or returned live for tests
+//! asserting the bring-up refusal itself (`spawn_raw`). `fixture`
+//! builds the `Catalog` + `DaemonDirs` world under a state tempdir;
+//! `probe` is the read-back half: bounded waits, the lock probe, the
+//! signal/stderr legs, the store and `check-config` reads. Every wait
 //! is a bounded poll — never a `sleep` — and `shutdown` is the graceful
 //! stop (the oneshot in-process, `SIGTERM` for a child).
 
-use std::io::Read as _;
-use std::os::unix::fs::PermissionsExt as _;
+pub mod fixture;
+pub mod probe;
+
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
 use std::thread::JoinHandle as ThreadJoin;
 use std::time::{Duration, Instant};
 
 use herdr_governor::daemon::{self, Boundary, SeamAction, SeamConfig, Settings};
-use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-/// The shipped binary — `spawn_child` runs the same argv the operator's
-/// install runs.
-const BIN: &str = env!("CARGO_BIN_EXE_herdr-governor");
+pub use fixture::{Catalog, DaemonDirs, fixture, write_fixture};
+pub use probe::{
+    await_for, bindings, check_config_version, never, probe, signal, socket_incarnation, stderr_of,
+};
+
+/// The shipped binary — `spawn_*` runs the same argv the operator's
+/// install runs; the env-matrix spawn in `defaults` uses it too.
+pub const BIN: &str = env!("CARGO_BIN_EXE_herdr-governor");
+
 /// Every wait's bound — the socket appears in milliseconds; this is the
 /// broken-bring-up backstop.
-const DEADLINE: Duration = Duration::from_secs(10);
+pub const DEADLINE: Duration = Duration::from_secs(10);
 
-/// The `catalog.toml` content for a test daemon: a valid `[policy]` +
-/// `[catalog]` + `[daemon]` file where every window defaults to the
-/// shortest useful value (`reconcile_secs` 1 — the tests' fast tick).
-/// `herdr_socket` and `jev_base_url` name the fakes.
-#[derive(Debug)]
-pub struct Catalog {
-    /// `[daemon].herdr_socket` — the fake Herdr socket.
-    pub herdr_socket: PathBuf,
-    /// `[daemon].jev_base_url` — the fake Jev base.
-    pub jev_base_url: String,
-    /// `[daemon].jev_model`.
-    pub jev_model: String,
-    /// `[daemon].reconcile_secs`.
-    pub reconcile_secs: u64,
-    /// `[policy].tiers` — the choice questions' label set.
-    pub tiers: Vec<String>,
-    /// The `[catalog]` member, verbatim TOML — `operating_points = []`
-    /// when the test has no operating points.
-    pub points_toml: String,
-    /// Extra `[daemon]` keys, verbatim TOML lines (`retire_*`,
-    /// `transcript_dir`, timeouts).
-    pub daemon_extra: String,
-}
-
-impl Catalog {
-    /// The minimal valid catalog: no operating points, one `fast` tier,
-    /// a 1-second reconcile tick.
-    #[must_use]
-    pub fn new(herdr_socket: &Path, jev_base_url: &str) -> Self {
-        Self {
-            herdr_socket: herdr_socket.to_path_buf(),
-            jev_base_url: jev_base_url.to_owned(),
-            jev_model: "jev-fake".to_owned(),
-            reconcile_secs: 1,
-            tiers: vec!["fast".to_owned()],
-            points_toml: "operating_points = []".to_owned(),
-            daemon_extra: String::new(),
-        }
-    }
-
-    /// The `catalog.toml` body.
-    #[must_use]
-    pub fn toml(&self) -> String {
-        let tiers = self
-            .tiers
-            .iter()
-            .map(|tier| format!("\"{tier}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "[policy]\ntiers = [{tiers}]\nprovider_limit_threshold = 0.6\n\
-             cooldown_secs = 60\n\n[catalog]\n{points}\n\n[daemon]\n\
-             herdr_socket = \"{sock}\"\njev_base_url = \"{jev}\"\n\
-             jev_model = \"{model}\"\nreconcile_secs = {reconcile}\n{extra}",
-            points = self.points_toml,
-            sock = self.herdr_socket.display(),
-            jev = self.jev_base_url,
-            model = self.jev_model,
-            reconcile = self.reconcile_secs,
-            extra = self.daemon_extra,
-        )
-    }
-}
-
-/// The state + config dirs plus the `Settings` pointing at them; the
-/// `TempDir` is owned here so the fixture cleans itself up — keep this
-/// value alive as long as the daemon it built.
-#[derive(Debug)]
-pub struct DaemonDirs {
-    root: TempDir,
-    state: PathBuf,
-    config: PathBuf,
-}
-
-impl DaemonDirs {
-    /// The state/config tempdir root — also the natural throwaway
-    /// `projectRoot` for a caller envelope.
-    #[must_use]
-    pub fn root(&self) -> &Path {
-        self.root.path()
-    }
-
-    /// `Settings` for `TestDaemon::*` — the argv overrides stay `None`
-    /// (the catalog carries every window).
-    #[must_use]
-    pub fn settings(&self) -> Settings {
-        Settings {
-            state_dir: self.state.clone(),
-            config_dir: self.config.clone(),
-            herdr_socket: None,
-            reconcile_secs: None,
-        }
-    }
-
-    /// `<state>` — the dir `daemon::run` fills.
-    #[must_use]
-    pub fn state_dir(&self) -> &Path {
-        &self.state
-    }
-
-    /// `<config>` — where the catalog + credentials live.
-    #[must_use]
-    pub fn config_dir(&self) -> &Path {
-        &self.config
-    }
-
-    /// `<state>/governor.sock` — the MCP socket once bound.
-    #[must_use]
-    pub fn socket_path(&self) -> PathBuf {
-        self.state.join("governor.sock")
-    }
-
-    /// `<state>/governor.db` — the store tests seed through a second
-    /// `Store::open` (the reconcile suite's pattern).
-    #[must_use]
-    pub fn store_path(&self) -> PathBuf {
-        self.state.join("governor.db")
-    }
-}
-
-/// Write `root/{state,config}`: `catalog.toml` from `catalog` and the
-/// `0600` credential `daemon::run` requires.
-#[must_use]
-pub fn fixture(catalog: &Catalog) -> DaemonDirs {
-    let root = tempfile::tempdir().expect("tempdir");
-    let state = root.path().join("state");
-    let config = root.path().join("config");
-    std::fs::create_dir_all(&state).expect("state dir");
-    std::fs::create_dir_all(&config).expect("config dir");
-    std::fs::write(config.join("catalog.toml"), catalog.toml()).expect("catalog");
-    let credentials = config.join("credentials");
-    std::fs::write(&credentials, "test-token\n").expect("credentials");
-    std::fs::set_permissions(&credentials, std::fs::Permissions::from_mode(0o600))
-        .expect("credentials mode");
-    DaemonDirs {
-        root,
-        state,
-        config,
-    }
-}
+/// The seam pause `pause_at_dispatch` arms — long enough for a test to
+/// interpose, far inside any `shutdown_grace_secs = 1` fixture.
+const SEAM_PAUSE_MS: u64 = 400;
 
 /// Which bring-up produced the daemon.
 #[derive(Debug)]
@@ -232,34 +103,14 @@ impl TestDaemon {
     /// `herdr-governor daemon` as a real child process — the binary the
     /// operator's argv runs, stderr piped for the seam markers. `seam`
     /// (when armed) rides as `GOV_DAEMON_SEAM` in the child's env only;
-    /// the inherited value is scrubbed either way.
+    /// the inherited value is scrubbed either way. Returns once the
+    /// governor socket is bound — a child that exits first is a
+    /// bring-up failure reported on its own stderr.
     pub async fn spawn_child(settings: &Settings, seam: Option<SeamConfig>) -> Self {
-        let mut command = Command::new(BIN);
-        command
-            .arg("daemon")
-            .arg("--state-dir")
-            .arg(&settings.state_dir)
-            .arg("--config-dir")
-            .arg(&settings.config_dir)
-            .env_remove("GOV_DAEMON_SEAM")
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        if let Some(herdr_socket) = &settings.herdr_socket {
-            command.arg("--herdr-socket").arg(herdr_socket);
-        }
-        if let Some(secs) = settings.reconcile_secs {
-            command.arg("--reconcile-secs").arg(secs.to_string());
-        }
-        if let Some(armed) = &seam {
-            command.env("GOV_DAEMON_SEAM", seam_spec(armed));
-        }
-        let mut child = command.spawn().expect("daemon child spawns");
-        let mut pipe = child.stderr.take().expect("stderr piped");
-        let stderr = std::thread::spawn(move || {
-            let mut text = String::new();
-            pipe.read_to_string(&mut text).ok();
-            text
-        });
+        let mut child = command(settings, seam)
+            .spawn()
+            .expect("daemon child spawns");
+        let stderr = stderr_of(&mut child);
         let sock = socket_path(&settings.state_dir);
         let deadline = deadline();
         while Instant::now() < deadline {
@@ -282,6 +133,24 @@ impl TestDaemon {
             "the daemon child's socket never bound at {} within {DEADLINE:?}",
             sock.display()
         );
+    }
+
+    /// `herdr-governor daemon` spawned and returned live — no bind
+    /// wait: the bring-up-refusal tests (`exit 2` on a bad catalog,
+    /// `exit 3` on a held lock) assert the child's own exit. `wait`
+    /// reaps it, `signal` drives it, `Drop` kills a still-running one.
+    /// The argv/env are `spawn_child`'s, seam included.
+    #[must_use]
+    pub fn spawn_raw(settings: &Settings, seam: Option<SeamConfig>) -> Self {
+        let mut child = command(settings, seam)
+            .spawn()
+            .expect("daemon child spawns");
+        let stderr = stderr_of(&mut child);
+        Self::new(
+            Kind::Child { child, stderr },
+            &settings.state_dir,
+            &settings.config_dir,
+        )
     }
 
     /// `<state>/governor.sock` — the MCP socket both clients dial.
@@ -308,6 +177,18 @@ impl TestDaemon {
         self.state_dir.join("governor.db")
     }
 
+    /// Whether the daemon is still running — `try_wait` on the child,
+    /// `is_finished` on the in-process task. The lock-held refusal
+    /// tests assert the holder survives a second daemon's exit.
+    #[must_use]
+    pub fn alive(&mut self) -> bool {
+        match &mut self.kind {
+            Some(Kind::Child { child, .. }) => child.try_wait().expect("child try_wait").is_none(),
+            Some(Kind::InProcess { join, .. }) => !join.is_finished(),
+            None => false,
+        }
+    }
+
     /// Send a signal to the child daemon (`"-TERM"`, `"-KILL"`, `"-ABRT"`
     /// spellings like the startup suite's `kill` calls). In-process
     /// daemons are tasks — a kill test spawns a child.
@@ -315,17 +196,14 @@ impl TestDaemon {
         let Some(Kind::Child { child, .. }) = &self.kind else {
             panic!("signal() is for child daemons");
         };
-        let status = Command::new("kill")
-            .args([sig, &child.id().to_string()])
-            .status()
-            .expect("kill runs");
-        assert!(status.success(), "kill {sig} {}", child.id());
+        signal(child, sig);
     }
 
     /// Consume the child and wait for it to exit on its own — after a
-    /// `signal`, or a seam's `Abort`. Returns the status plus the drained
-    /// stderr (the `seam hit` marker's home). In-process daemons exit
-    /// only through `shutdown`.
+    /// `signal`, a seam's `Abort`, or the bring-up refusal `spawn_raw`
+    /// leaves running. Returns the status plus the drained stderr (the
+    /// `seam hit` marker's home). In-process daemons exit only through
+    /// `shutdown`.
     pub async fn wait(mut self) -> (ExitStatus, String) {
         let Some(Kind::Child { mut child, stderr }) = self.kind.take() else {
             panic!("wait() is for child daemons — use shutdown() in-process");
@@ -398,6 +276,44 @@ impl Drop for TestDaemon {
             }
             None => {}
         }
+    }
+}
+
+/// The `daemon` argv/env both child bring-ups share: dirs from
+/// `settings`, the optional `--herdr-socket`/`--reconcile-secs`
+/// overrides, the `GOV_DAEMON_SEAM` arm (or a scrubbed env), stdout
+/// null and stderr piped for the seam markers.
+fn command(settings: &Settings, seam: Option<SeamConfig>) -> Command {
+    let mut command = Command::new(BIN);
+    command
+        .arg("daemon")
+        .arg("--state-dir")
+        .arg(&settings.state_dir)
+        .arg("--config-dir")
+        .arg(&settings.config_dir)
+        .env_remove("GOV_DAEMON_SEAM")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    if let Some(herdr_socket) = &settings.herdr_socket {
+        command.arg("--herdr-socket").arg(herdr_socket);
+    }
+    if let Some(secs) = settings.reconcile_secs {
+        command.arg("--reconcile-secs").arg(secs.to_string());
+    }
+    if let Some(armed) = seam {
+        command.env("GOV_DAEMON_SEAM", seam_spec(&armed));
+    }
+    command
+}
+
+/// A `dispatch_committed` pause seam on `suffix` — the deterministic
+/// window between the durable commit and the wire op (§4.4).
+#[must_use]
+pub fn pause_at_dispatch(suffix: &str) -> SeamConfig {
+    SeamConfig {
+        suffix: suffix.to_owned(),
+        boundary: Boundary::DispatchCommitted,
+        action: SeamAction::Pause(Duration::from_millis(SEAM_PAUSE_MS)),
     }
 }
 

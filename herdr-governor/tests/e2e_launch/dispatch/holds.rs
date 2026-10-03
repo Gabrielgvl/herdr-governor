@@ -9,17 +9,15 @@ use super::*;
 /// releases the same row — a hold, not a failure.
 #[tokio::test]
 async fn f10_blocked_child_is_never_prompted() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (state, config) = fixture(tmp.path());
     let (mut topology, terminal) = agent_topology("gov-r-blk", Some("sess-blk"));
     topology.panes[0].agent.as_mut().expect("occupant").status = "blocked".to_owned();
     let fake = FakeHerdr::start(topology);
     let inc = socket_incarnation(fake.socket_path());
+    let (dirs, settings) = world(&fake, TICK_SECS);
 
-    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS), None);
-    wait_bound(&state).await;
+    let daemon = TestDaemon::start_in_process(&settings, None).await;
 
-    let mut store = open_store(&state);
+    let mut store = open_store(&dirs);
     bind_caller(&mut store);
     let run = active_run_on("r-blk", "w1:p1", &terminal, Some("sess-blk"), &inc);
     seed_run(&mut store, &run);
@@ -38,14 +36,14 @@ async fn f10_blocked_child_is_never_prompted() {
 
     // Across several ticks the nudge must never dispatch: `blocked` at the
     // fresh verify (and, once observed, at `prompt_dispatchable` too).
-    wait_for("the blocked observation to land", || {
+    await_for("the blocked observation to land", || {
         read_run(&store, "r-blk").child_status.is_some()
     })
     .await;
     never(
         "agent.prompt on a blocked child",
         Duration::from_secs(3),
-        || saw_wire(&fake, "agent.prompt"),
+        || fake.saw("agent.prompt"),
     )
     .await;
     assert_eq!(
@@ -55,12 +53,12 @@ async fn f10_blocked_child_is_never_prompted() {
 
     // Unblock: the same row dispatches and acknowledges.
     fake.set_agent_status("w1:p1", "working");
-    wait_for("the released nudge to commit", || {
+    await_for("the released nudge to commit", || {
         read_effect(&store, "run:r-blk:nudge:1").state == EffectState::Acknowledged
     })
     .await;
-    assert!(saw_wire(&fake, "agent.prompt"));
-    stop(handle, shutdown).await;
+    assert!(fake.saw("agent.prompt"));
+    daemon.shutdown().await;
 }
 
 /// F10 — the captured identity no longer proves (the occupant's session
@@ -69,17 +67,15 @@ async fn f10_blocked_child_is_never_prompted() {
 /// whatever terminal state settle eventually writes.
 #[tokio::test]
 async fn f10_absent_identity_never_dispatches() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (state, config) = fixture(tmp.path());
     // The scripted occupant's session is NOT the captured one.
     let (topology, terminal) = agent_topology("gov-r-gone", Some("sess-other"));
     let fake = FakeHerdr::start(topology);
     let inc = socket_incarnation(fake.socket_path());
+    let (dirs, settings) = world(&fake, TICK_SECS);
 
-    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS), None);
-    wait_bound(&state).await;
+    let daemon = TestDaemon::start_in_process(&settings, None).await;
 
-    let mut store = open_store(&state);
+    let mut store = open_store(&dirs);
     bind_caller(&mut store);
     let run = active_run_on("r-gone", "w1:p1", &terminal, Some("sess-captured"), &inc);
     seed_run(&mut store, &run);
@@ -99,7 +95,7 @@ async fn f10_absent_identity_never_dispatches() {
     never(
         "agent.prompt on an unproven identity",
         Duration::from_secs(3),
-        || saw_wire(&fake, "agent.prompt"),
+        || fake.saw("agent.prompt"),
     )
     .await;
     assert!(
@@ -108,5 +104,5 @@ async fn f10_absent_identity_never_dispatches() {
             .is_none(),
         "the wire never saw it"
     );
-    stop(handle, shutdown).await;
+    daemon.shutdown().await;
 }

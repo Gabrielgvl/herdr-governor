@@ -10,13 +10,17 @@
 use std::fs;
 
 use serde_json::json;
-use tempfile::tempdir;
 
-use crate::support::e2e::{
-    bindings, close_relay, exchange_on, fixture, git_init, occupant, occupied_topology,
-    relay_conversation, request, spawn_relay, start_daemon, status_call, stop_daemon, tool_code,
-};
+use crate::support::daemon::{Catalog, DaemonDirs, TestDaemon, bindings, fixture};
 use crate::support::fake_herdr::FakeHerdr;
+use crate::support::fake_herdr::topology::{occupant, occupied_topology};
+use crate::support::mcp_client::{RelayClient, git_init, request, status_call, tool_code};
+
+/// A fixture daemon against `fake` — the inert catalog points the
+/// daemon's Herdr client at the fake's socket.
+fn dirs_for(fake: &FakeHerdr) -> DaemonDirs {
+    fixture(&Catalog::inert(fake.socket_path(), "http://127.0.0.1:9"))
+}
 
 /// F1/S30 — the first request through a real relay binds, and the
 /// binding persists across a daemon restart. The relay runs inside a
@@ -28,23 +32,22 @@ use crate::support::fake_herdr::FakeHerdr;
 /// re-bound) after restart.
 #[tokio::test]
 async fn f1_first_request_binds_and_persists_across_restart() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
 
-    let repo = tmp.path().join("repo");
+    let repo = dirs.root().join("repo");
     fs::create_dir_all(repo.join("sub/dir")).expect("worktree subdir");
     git_init(&repo);
-    let mut relay = Some(spawn_relay(&sock, &repo.join("sub/dir"), Some("w1:p1")));
-    let first = exchange_on(&mut relay, &status_call(1)).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &repo.join("sub/dir"), Some("w1:p1"));
+    let first = relay.call(&status_call(1)).await;
     assert_eq!(
         first["result"]["isError"], false,
         "the derived root + minted id bind: {first}"
     );
 
-    stop_daemon(stop, daemon).await;
-    let bound = bindings(&state);
+    daemon.shutdown().await;
+    let bound = bindings(&dirs.store_path());
     let [(relay_id, pane_at_bind, bound_at, session)] = bound.as_slice() else {
         panic!("one relay bound on first use: {bound:?}");
     };
@@ -67,22 +70,25 @@ async fn f1_first_request_binds_and_persists_across_restart() {
     let stamped = bound_at.clone();
 
     // The daemon restarts; the same relay process keeps its minted id.
-    let (sock2, stop2, daemon2) = start_daemon(&state, &config).await;
-    assert!(sock2.exists(), "the listener re-bound on the same path");
-    let second = exchange_on(&mut relay, &status_call(2)).await;
+    let restarted = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    assert!(
+        restarted.socket_path().exists(),
+        "the listener re-bound on the same path"
+    );
+    let second = relay.call(&status_call(2)).await;
     assert_eq!(
         second["result"]["isError"], false,
         "the persisted binding verifies — not re-minted: {second}"
     );
-    stop_daemon(stop2, daemon2).await;
+    restarted.shutdown().await;
 
-    let after = bindings(&state);
+    let after = bindings(&dirs.store_path());
     assert_eq!(after.len(), 1, "no second binding was journaled");
     assert_eq!(
         after[0].2, stamped,
         "the original row is untouched — verify, never re-bind"
     );
-    let (status, stderr) = close_relay(relay.take().expect("relay")).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
@@ -97,15 +103,14 @@ async fn f1_first_request_binds_and_persists_across_restart() {
 /// journaled row still names the first occupant.
 #[tokio::test]
 async fn f1_replaced_occupant_same_pane_is_mismatch() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
-    let first = exchange_on(&mut relay, &status_call(1)).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let first = relay.call(&status_call(1)).await;
     assert_eq!(
         first["result"]["isError"], false,
         "the first request binds: {first}"
@@ -117,27 +122,27 @@ async fn f1_replaced_occupant_same_pane_is_mismatch() {
         "the replacement minted a new native session"
     );
 
-    let second = exchange_on(&mut relay, &status_call(2)).await;
+    let second = relay.call(&status_call(2)).await;
     assert_eq!(
         tool_code(&second),
         "CALLER_IDENTITY_MISMATCH",
         "a bound relay re-resolving to a new session is a mismatch"
     );
-    let third = exchange_on(&mut relay, &status_call(3)).await;
+    let third = relay.call(&status_call(3)).await;
     assert_eq!(
         tool_code(&third),
         "CALLER_IDENTITY_MISMATCH",
         "the drift keeps refusing — never a silent re-bind"
     );
 
-    stop_daemon(stop, daemon).await;
-    let bound = bindings(&state);
+    daemon.shutdown().await;
+    let bound = bindings(&dirs.store_path());
     assert_eq!(bound.len(), 1, "the refused re-resolve journaled nothing");
     assert_eq!(
         bound[0].3, "sess-1",
         "the binding still names the first occupant"
     );
-    let (status, stderr) = close_relay(relay.take().expect("relay")).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
@@ -152,19 +157,20 @@ async fn f1_replaced_occupant_same_pane_is_mismatch() {
 /// the typed code: `initialize`/`ping` have no tool-result channel.
 #[tokio::test]
 async fn f1_first_framed_request_binds_replaced_occupant_refuses() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
-    let init = exchange_on(
-        &mut relay,
-        &request(1, "initialize", &json!({"protocolVersion": "2025-06-18"})),
-    )
-    .await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let init = relay
+        .call(&request(
+            1,
+            "initialize",
+            &json!({"protocolVersion": "2025-06-18"}),
+        ))
+        .await;
     assert_eq!(
         init["result"]["protocolVersion"], "2025-06-18",
         "initialize answered — and bound the relay"
@@ -176,27 +182,27 @@ async fn f1_first_framed_request_binds_replaced_occupant_refuses() {
         "the replacement minted a new native session"
     );
 
-    let refused = exchange_on(&mut relay, &status_call(2)).await;
+    let refused = relay.call(&status_call(2)).await;
     assert_eq!(
         tool_code(&refused),
         "CALLER_IDENTITY_MISMATCH",
         "initialize's binding refuses the replaced occupant"
     );
-    let pong = exchange_on(&mut relay, &request(3, "ping", &json!({}))).await;
+    let pong = relay.call(&request(3, "ping", &json!({}))).await;
     assert_eq!(pong["error"]["code"], -32000);
     assert_eq!(
         pong["error"]["message"], "CALLER_IDENTITY_MISMATCH",
         "a non-tool refusal is a JSON-RPC error carrying the code: {pong}"
     );
 
-    stop_daemon(stop, daemon).await;
-    let bound = bindings(&state);
+    daemon.shutdown().await;
+    let bound = bindings(&dirs.store_path());
     assert_eq!(bound.len(), 1, "one binding — journaled by initialize");
     assert_eq!(
         bound[0].3, "sess-1",
         "the binding still names the first occupant"
     );
-    let (status, stderr) = close_relay(relay.take().expect("relay")).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
@@ -210,7 +216,6 @@ async fn f1_first_framed_request_binds_replaced_occupant_refuses() {
 /// refusal journals a binding.
 #[tokio::test]
 async fn f1_missing_duplicate_sessionless_refused() {
-    let tmp = tempdir().expect("tmp");
     let mut topology = occupied_topology();
     // A second row claims `w1:p1` under another terminal+session —
     // two rows, one pane: DUPLICATE. `w1:p2`'s occupant carries no
@@ -224,9 +229,9 @@ async fn f1_missing_duplicate_sessionless_refused() {
     sessionless.session = None;
     topology.panes[1].agent = Some(sessionless);
     let fake = FakeHerdr::start(topology);
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
     for (pane, code) in [
@@ -234,18 +239,21 @@ async fn f1_missing_duplicate_sessionless_refused() {
         ("w1:p1", "CALLER_IDENTITY_DUPLICATE"),
         ("w1:p2", "CALLER_IDENTITY_SESSIONLESS"),
     ] {
-        let (relay, replies) =
-            relay_conversation(&sock, &cwd, Some(pane), &[status_call(1)], 1).await;
+        let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some(pane));
+        let replies = relay.exchange_all(&[status_call(1)], 1).await;
         assert_eq!(tool_code(&replies[0]), code, "{pane} refuses as {code}");
-        let (status, stderr) = close_relay(relay).await;
+        let (status, stderr) = relay.close().await;
         assert!(
             status.success(),
             "relay exits on stdin EOF: {status} {stderr}"
         );
     }
 
-    stop_daemon(stop, daemon).await;
-    assert!(bindings(&state).is_empty(), "refusals journal no bindings");
+    daemon.shutdown().await;
+    assert!(
+        bindings(&dirs.store_path()).is_empty(),
+        "refusals journal no bindings"
+    );
 }
 
 /// F1 — an envelope that fails the daemon's realpath read refuses
@@ -258,27 +266,26 @@ async fn f1_missing_duplicate_sessionless_refused() {
 /// rule — while every refused leg journals nothing.
 #[tokio::test]
 async fn f1_invalid_project_root_refused_never_reanchored() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
 
     // The relay derives projectRoot at start — a ping proves it ran and,
     // under F1, binds the relay to the occupant it resolves — then the
     // derived root disappears: the daemon's realpath fails.
-    let project = tmp.path().join("project");
+    let project = dirs.root().join("project");
     fs::create_dir_all(&project).expect("project dir");
-    let mut relay = Some(spawn_relay(&sock, &project, Some("w1:p1")));
-    let pong = exchange_on(&mut relay, &request(1, "ping", &json!({}))).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &project, Some("w1:p1"));
+    let pong = relay.call(&request(1, "ping", &json!({}))).await;
     assert_eq!(pong["result"], json!({}), "the relay is live and derived");
     fs::remove_dir_all(&project).expect("remove the derived root");
-    let gone = exchange_on(&mut relay, &status_call(2)).await;
+    let gone = relay.call(&status_call(2)).await;
     assert_eq!(
         tool_code(&gone),
         "CALLER_IDENTITY_INVALID",
         "an unresolvable root refuses — never re-anchored"
     );
-    let (status, stderr) = close_relay(relay.take().expect("relay")).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
@@ -286,22 +293,23 @@ async fn f1_invalid_project_root_refused_never_reanchored() {
 
     // No HERDR_PANE_ID at all: `paneId:""` goes out verbatim and the
     // daemon refuses the envelope.
-    let cwd = tmp.path().join("plain");
+    let cwd = dirs.root().join("plain");
     fs::create_dir_all(&cwd).expect("plain dir");
-    let (nopane, replies) = relay_conversation(&sock, &cwd, None, &[status_call(1)], 1).await;
+    let mut nopane = RelayClient::spawn(&daemon.socket_path(), &cwd, None);
+    let replies = nopane.exchange_all(&[status_call(1)], 1).await;
     assert_eq!(
         tool_code(&replies[0]),
         "CALLER_IDENTITY_INVALID",
         "an empty paneId refuses"
     );
-    let (status2, stderr2) = close_relay(nopane).await;
+    let (status2, stderr2) = nopane.close().await;
     assert!(
         status2.success(),
         "relay exits on stdin EOF: {status2} {stderr2}"
     );
 
-    stop_daemon(stop, daemon).await;
-    let bound = bindings(&state);
+    daemon.shutdown().await;
+    let bound = bindings(&dirs.store_path());
     assert_eq!(
         bound.len(),
         1,

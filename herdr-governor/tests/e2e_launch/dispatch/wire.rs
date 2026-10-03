@@ -10,16 +10,15 @@ use super::*;
 /// restart could re-dispatch onto an already-closed pane.
 #[tokio::test]
 async fn f8_commit_precedes_the_wire() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (state, config) = fixture(tmp.path());
     let (topology, terminal) = agent_topology("gov-r-f8", Some("sess-f8"));
     let fake = FakeHerdr::start(topology);
     fake.fault("pane.close", Fault::Delay(Duration::from_millis(600)));
     let inc = socket_incarnation(fake.socket_path());
+    let (dirs, settings) = world(&fake, 3600);
 
     // Seeded before spawn: the startup `hand_out` offers it, and a 3600s
     // reconcile cadence means no observation interposes mid-flight.
-    let mut store = Store::open(&state.join("governor.db")).expect("seed store");
+    let mut store = open_store(&dirs);
     bind_caller(&mut store);
     let run = active_run_on("r-f8", "w1:p1", &terminal, Some("sess-f8"), &inc);
     seed_run(&mut store, &run);
@@ -36,13 +35,12 @@ async fn f8_commit_precedes_the_wire() {
         )
         .expect("plan close");
 
-    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, 3600), None);
-    wait_bound(&state).await;
+    let daemon = TestDaemon::start_in_process(&settings, None).await;
 
     // The wire op is in flight (the fake recorded it, the reply is still
     // delayed) and the journal already shows the commit — the mutation
     // ordering §4.4 guarantees.
-    wait_for("pane.close on the wire", || saw_wire(&fake, "pane.close")).await;
+    await_for("pane.close on the wire", || fake.saw("pane.close")).await;
     let in_flight = read_effect(&store, "run:r-f8:close");
     assert_eq!(
         in_flight.state,
@@ -51,11 +49,11 @@ async fn f8_commit_precedes_the_wire() {
     );
     assert!(in_flight.dispatched_at.is_some());
 
-    wait_for("the ack to commit", || {
+    await_for("the ack to commit", || {
         read_effect(&store, "run:r-f8:close").state == EffectState::Acknowledged
     })
     .await;
-    stop(handle, shutdown).await;
+    daemon.shutdown().await;
 }
 
 /// F20 — the cancel leg end to end: a `close` effect on the captured
@@ -63,13 +61,12 @@ async fn f8_commit_precedes_the_wire() {
 /// pane is gone from the topology and the row acknowledges.
 #[tokio::test]
 async fn f20_cancel_closes_the_pane() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (state, config) = fixture(tmp.path());
     let (topology, terminal) = agent_topology("gov-r-f20", Some("sess-f20"));
     let fake = FakeHerdr::start(topology);
     let inc = socket_incarnation(fake.socket_path());
+    let (dirs, settings) = world(&fake, 3600);
 
-    let mut store = Store::open(&state.join("governor.db")).expect("seed store");
+    let mut store = open_store(&dirs);
     bind_caller(&mut store);
     let run = active_run_on("r-f20", "w1:p1", &terminal, Some("sess-f20"), &inc);
     seed_run(&mut store, &run);
@@ -86,10 +83,9 @@ async fn f20_cancel_closes_the_pane() {
         )
         .expect("plan close");
 
-    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, 3600), None);
-    wait_bound(&state).await;
+    let daemon = TestDaemon::start_in_process(&settings, None).await;
 
-    wait_for("the close to commit", || {
+    await_for("the close to commit", || {
         read_effect(&store, "run:r-f20:close").state == EffectState::Acknowledged
     })
     .await;
@@ -111,7 +107,7 @@ async fn f20_cancel_closes_the_pane() {
             .all(|p| p.pane_id != "w1:p1"),
         "the pane is gone"
     );
-    stop(handle, shutdown).await;
+    daemon.shutdown().await;
 }
 
 /// F9/F16/F25 — the prompt renders at hand-off and lands verbatim: the
@@ -120,16 +116,14 @@ async fn f20_cancel_closes_the_pane() {
 /// asserted on the wire, and both rows acknowledge.
 #[tokio::test]
 async fn f9_prompts_render_and_land() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (state, config) = fixture(tmp.path());
     let (topology, terminal) = agent_topology("gov-r-p9", Some("sess-p9"));
     let fake = FakeHerdr::start(topology);
     let inc = socket_incarnation(fake.socket_path());
+    let (dirs, settings) = world(&fake, TICK_SECS);
 
-    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS), None);
-    wait_bound(&state).await;
+    let daemon = TestDaemon::start_in_process(&settings, None).await;
 
-    let mut store = open_store(&state);
+    let mut store = open_store(&dirs);
     bind_caller(&mut store);
     let run = active_run_on("r-p9", "w1:p1", &terminal, Some("sess-p9"), &inc);
     seed_run(&mut store, &run);
@@ -148,11 +142,11 @@ async fn f9_prompts_render_and_land() {
         .apply(&plan(vec![task_prompt]), NOW)
         .expect("plan task prompt");
 
-    wait_for("the task prompt to commit", || {
+    await_for("the task prompt to commit", || {
         read_effect(&store, "run:r-p9:prompt:task").state == EffectState::Acknowledged
     })
     .await;
-    let text = wire_prompt_text(&fake, "w1:p1");
+    let text = fake.prompt_text("w1:p1");
     assert!(
         text.contains("OBJECTIVE-MARK") && text.contains("DONE-MARK"),
         "the Task's contract fields render onto the wire: {text}"
@@ -172,7 +166,7 @@ async fn f9_prompts_render_and_land() {
     );
     store.apply(&plan(vec![nudge]), NOW).expect("plan nudge");
 
-    wait_for("the nudge to commit", || {
+    await_for("the nudge to commit", || {
         read_effect(&store, "run:r-p9:nudge:1").state == EffectState::Acknowledged
     })
     .await;
@@ -182,7 +176,7 @@ async fn f9_prompts_render_and_land() {
         .filter(|(m, _)| m == "agent.prompt")
         .count();
     assert_eq!(nudged, 2, "task prompt then nudge");
-    let nudge_text = wire_prompt_text_at(&fake, 1);
+    let nudge_text = fake.prompt_text_at(1);
     assert!(
         nudge_text.contains("still working?"),
         "the nudge body renders: {nudge_text}"
@@ -191,5 +185,5 @@ async fn f9_prompts_render_and_land() {
         nudge_text.contains("r-p9"),
         "the handoff path names the run: {nudge_text}"
     );
-    stop(handle, shutdown).await;
+    daemon.shutdown().await;
 }

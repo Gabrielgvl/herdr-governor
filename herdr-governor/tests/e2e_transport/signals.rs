@@ -11,26 +11,25 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tempfile::tempdir;
 
-use crate::support::e2e::{
-    DEADLINE, Relay, await_for, catalog, check_config_version, close_relay, exchange_on, fixture,
-    occupied_topology, probe, signal, spawn_daemon, spawn_relay, status_call, status_page,
-    stderr_of, tool_code,
+use crate::support::daemon::{
+    Catalog, DEADLINE, TestDaemon, await_for, check_config_version, fixture, probe,
 };
 use crate::support::fake_herdr::FakeHerdr;
+use crate::support::fake_herdr::topology::occupied_topology;
+use crate::support::mcp_client::{RelayClient, status_call, status_page, tool_code};
 
 /// Poll `herdr_status` through the relay until `config` satisfies
 /// `until` or the deadline passes — the reload races the status call,
 /// so convergence is the only honest wait. Returns the `config` block.
 async fn poll_config(
-    relay: &mut Option<Relay>,
-    line: &str,
+    relay: &mut RelayClient,
+    call: &Value,
     until: impl Fn(&Value) -> bool,
 ) -> Option<Value> {
     let deadline = Instant::now().checked_add(DEADLINE).expect("deadline");
     while Instant::now() < deadline {
-        let reply = exchange_on(relay, line).await;
+        let reply = relay.call(call).await;
         let config = status_page(&reply)["config"].clone();
         if until(&config) {
             return Some(config);
@@ -50,20 +49,16 @@ async fn poll_config(
 /// digest is `check-config`'s, computed on the same catalog.
 #[tokio::test]
 async fn f27_sighup_reload_adopts_or_retains_last_good() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let sock = state.join("governor.sock");
-    let catalog_path = config.join("catalog.toml");
-    let cwd = tmp.path().join("project");
+    let mut catalog = Catalog::inert(fake.socket_path(), "http://127.0.0.1:9");
+    let dirs = fixture(&catalog);
+    let catalog_path = dirs.config_dir().join("catalog.toml");
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let mut daemon = spawn_daemon(&state, &config);
-    let stderr = stderr_of(&mut daemon);
-    await_for("the listener bind", || sock.exists()).await;
-
-    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
-    let first = exchange_on(&mut relay, &status_call(1)).await;
+    let daemon = TestDaemon::spawn_child(&dirs.settings(), None).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let first = relay.call(&status_call(1)).await;
     let config0 = status_page(&first)["config"].clone();
     let v0 = config0["version"]
         .as_str()
@@ -73,13 +68,14 @@ async fn f27_sighup_reload_adopts_or_retains_last_good() {
     assert!(config0["lastError"].is_null(), "no refused reload yet");
     assert_eq!(
         v0,
-        check_config_version(&config),
+        check_config_version(dirs.config_dir()),
         "the page's digest is check-config's"
     );
 
     // A valid rewrite is adopted.
-    fs::write(&catalog_path, catalog(fake.socket_path(), 61)).expect("rewrite catalog");
-    signal(&daemon, "-HUP");
+    catalog.cooldown_secs = 61;
+    fs::write(&catalog_path, catalog.toml()).expect("rewrite catalog");
+    daemon.signal("-HUP");
     let adopted = poll_config(&mut relay, &status_call(2), |cfg| {
         cfg["version"].as_str() != Some(v0.as_str())
     })
@@ -93,14 +89,14 @@ async fn f27_sighup_reload_adopts_or_retains_last_good() {
         .to_owned();
     assert_eq!(
         v1,
-        check_config_version(&config),
+        check_config_version(dirs.config_dir()),
         "the adopted digest is the rewritten catalog's"
     );
 
     // A malformed rewrite is retained: last-good stays live and the
     // refusal surfaces as valid:false + the decode class.
     fs::write(&catalog_path, "not = [toml\n").expect("broken catalog");
-    signal(&daemon, "-HUP");
+    daemon.signal("-HUP");
     let retained = poll_config(&mut relay, &status_call(3), |cfg| cfg["valid"] == false)
         .await
         .expect("the broken catalog was retained");
@@ -108,8 +104,8 @@ async fn f27_sighup_reload_adopts_or_retains_last_good() {
     assert_eq!(retained["version"], v1, "the last-good catalog stays live");
 
     // A fixed rewrite adopts again — a retained reload wedges nothing.
-    fs::write(&catalog_path, catalog(fake.socket_path(), 61)).expect("restore catalog");
-    signal(&daemon, "-HUP");
+    fs::write(&catalog_path, catalog.toml()).expect("restore catalog");
+    daemon.signal("-HUP");
     let healed = poll_config(&mut relay, &status_call(4), |cfg| cfg["valid"] == true)
         .await
         .expect("the retained reload recovered");
@@ -118,18 +114,13 @@ async fn f27_sighup_reload_adopts_or_retains_last_good() {
         "the same catalog adopts back to its digest"
     );
 
-    signal(&daemon, "-TERM");
-    let (status, daemon_err) = tokio::task::spawn_blocking(move || {
-        let code = daemon.wait().expect("wait on daemon");
-        (code, stderr.join().expect("stderr thread"))
-    })
-    .await
-    .expect("blocking wait joins");
+    daemon.signal("-TERM");
+    let (status, daemon_err) = daemon.wait().await;
     assert!(
         status.success(),
         "SIGTERM exits cleanly: {status}\n{daemon_err}"
     );
-    let (exit, relay_err) = close_relay(relay.take().expect("relay")).await;
+    let (exit, relay_err) = relay.close().await;
     assert!(
         exit.success(),
         "relay exits on stdin EOF: {exit} {relay_err}"
@@ -145,20 +136,17 @@ async fn f27_sighup_reload_adopts_or_retains_last_good() {
 /// caller meeting the torn-down socket gets `DAEMON_UNAVAILABLE`.
 #[tokio::test]
 async fn f29_sigterm_order_no_herdr_writes_after_admission_stops() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let sock = state.join("governor.sock");
-    let cwd = tmp.path().join("project");
+    let dirs = fixture(&Catalog::inert(fake.socket_path(), "http://127.0.0.1:9"));
+    let sock = dirs.socket_path();
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let mut daemon = spawn_daemon(&state, &config);
-    let stderr = stderr_of(&mut daemon);
-    await_for("the listener bind", || sock.exists()).await;
+    let daemon = TestDaemon::spawn_child(&dirs.settings(), None).await;
 
     // Admission is live — a caller's status call is served.
-    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
-    let live = exchange_on(&mut relay, &status_call(1)).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let live = relay.call(&status_call(1)).await;
     assert_eq!(
         live["result"]["isError"], false,
         "admission served before the signal: {live}"
@@ -169,13 +157,8 @@ async fn f29_sigterm_order_no_herdr_writes_after_admission_stops() {
     await_for("the startup tick", || fake.requests().len() >= 2).await;
     let seen = fake.requests().len();
 
-    signal(&daemon, "-TERM");
-    let (status, daemon_err) = tokio::task::spawn_blocking(move || {
-        let code = daemon.wait().expect("wait on daemon");
-        (code, stderr.join().expect("stderr thread"))
-    })
-    .await
-    .expect("blocking wait joins");
+    daemon.signal("-TERM");
+    let (status, daemon_err) = daemon.wait().await;
     assert!(
         status.success(),
         "SIGTERM exits cleanly: {status}\n{daemon_err}"
@@ -195,29 +178,23 @@ async fn f29_sigterm_order_no_herdr_writes_after_admission_stops() {
     );
 
     // The lock released: a second daemon binds the same state dir.
-    let mut second = spawn_daemon(&state, &config);
-    let stderr2 = stderr_of(&mut second);
+    let second = TestDaemon::spawn_raw(&dirs.settings(), None);
     await_for("the successor's bind", || probe(&sock)).await;
-    signal(&second, "-TERM");
-    let (status2, second_err) = tokio::task::spawn_blocking(move || {
-        let code2 = second.wait().expect("wait on successor");
-        (code2, stderr2.join().expect("stderr thread"))
-    })
-    .await
-    .expect("blocking wait joins");
+    second.signal("-TERM");
+    let (status2, second_err) = second.wait().await;
     assert!(
         status2.success(),
         "the successor also exits cleanly: {status2}\n{second_err}"
     );
 
     // A caller meeting the torn-down socket gets DAEMON_UNAVAILABLE.
-    let dead = exchange_on(&mut relay, &status_call(2)).await;
+    let dead = relay.call(&status_call(2)).await;
     assert_eq!(
         tool_code(&dead),
         "DAEMON_UNAVAILABLE",
         "admission stopped — the relay maps the missing socket"
     );
-    let (exit, relay_err) = close_relay(relay.take().expect("relay")).await;
+    let (exit, relay_err) = relay.close().await;
     assert!(
         exit.success(),
         "relay exits on stdin EOF: {exit} {relay_err}"
@@ -231,20 +208,16 @@ async fn f29_sigterm_order_no_herdr_writes_after_admission_stops() {
 /// catalog" a operator would misread as a refusal.
 #[tokio::test]
 async fn f27_sighup_adopted_daemon_change_logs_adopted_not_retained() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let sock = state.join("governor.sock");
-    let catalog_path = config.join("catalog.toml");
-    let cwd = tmp.path().join("project");
+    let catalog = Catalog::inert(fake.socket_path(), "http://127.0.0.1:9");
+    let dirs = fixture(&catalog);
+    let catalog_path = dirs.config_dir().join("catalog.toml");
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let mut daemon = spawn_daemon(&state, &config);
-    let stderr = stderr_of(&mut daemon);
-    await_for("the listener bind", || sock.exists()).await;
-
-    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
-    let first = exchange_on(&mut relay, &status_call(1)).await;
+    let daemon = TestDaemon::spawn_child(&dirs.settings(), None).await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let first = relay.call(&status_call(1)).await;
     let v0 = status_page(&first)["config"]["version"]
         .as_str()
         .expect("config version")
@@ -252,11 +225,11 @@ async fn f27_sighup_adopted_daemon_change_logs_adopted_not_retained() {
 
     // Same policy/catalog, a different `[daemon]` key — an adopt whose
     // daemon settings changed (they take effect on restart).
-    let baseline = catalog(fake.socket_path(), 60);
+    let baseline = catalog.toml();
     let changed = baseline.replace("reconcile_secs = 3600", "reconcile_secs = 3601");
     assert_ne!(changed, baseline, "the rewrite moves a daemon setting");
     fs::write(&catalog_path, changed).expect("rewrite catalog");
-    signal(&daemon, "-HUP");
+    daemon.signal("-HUP");
     let adopted = poll_config(&mut relay, &status_call(2), |cfg| {
         cfg["version"].as_str() != Some(v0.as_str())
     })
@@ -265,13 +238,8 @@ async fn f27_sighup_adopted_daemon_change_logs_adopted_not_retained() {
     assert_eq!(adopted["valid"], true, "an adopted reload stays valid");
     assert!(adopted["lastError"].is_null(), "no refused attempt rides");
 
-    signal(&daemon, "-TERM");
-    let (status, daemon_err) = tokio::task::spawn_blocking(move || {
-        let code = daemon.wait().expect("wait on daemon");
-        (code, stderr.join().expect("stderr thread"))
-    })
-    .await
-    .expect("blocking wait joins");
+    daemon.signal("-TERM");
+    let (status, daemon_err) = daemon.wait().await;
     assert!(
         status.success(),
         "SIGTERM exits cleanly: {status}\n{daemon_err}"
@@ -285,7 +253,7 @@ async fn f27_sighup_adopted_daemon_change_logs_adopted_not_retained() {
         "the deferred-effect note is logged honestly: {daemon_err}"
     );
 
-    let (exit, relay_err) = close_relay(relay.take().expect("relay")).await;
+    let (exit, relay_err) = relay.close().await;
     assert!(
         exit.success(),
         "relay exits on stdin EOF: {exit} {relay_err}"

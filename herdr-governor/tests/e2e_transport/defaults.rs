@@ -8,24 +8,19 @@
 
 use std::fs;
 use std::io::{BufRead as _, BufReader, Write as _};
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use tempfile::tempdir;
 
-use crate::support::e2e::{BIN, await_for, catalog, signal, stderr_of};
+use crate::support::daemon::{BIN, Catalog, await_for, signal, stderr_of, write_fixture};
 use crate::support::fake_herdr::{FakeHerdr, Topology};
 
 /// Write the `[daemon]` fixture (`catalog.toml` + `0600` credentials) at
-/// `dir` — the same fixture `support::e2e::fixture` lays out, placed at
-/// an explicit path because this test controls the env defaults.
+/// `dir` — the same fixture `support::daemon::fixture` lays out, placed
+/// at an explicit path because this test controls the env defaults.
 fn fixture_at(dir: &Path, herdr_socket: &Path) {
-    fs::create_dir_all(dir).expect("config dir");
-    fs::write(dir.join("catalog.toml"), catalog(herdr_socket, 60)).expect("catalog");
-    let credentials = dir.join("credentials");
-    fs::write(&credentials, "test-token\n").expect("credentials");
-    fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600)).expect("chmod");
+    write_fixture(dir, &Catalog::inert(herdr_socket, "http://127.0.0.1:9"));
 }
 
 /// A flagless `BIN` child under the test's env: `HOME` set, the XDG vars

@@ -15,72 +15,29 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::Duration;
 
-    use governor_core::identity::CallerEnvelope;
     use governor_core::routing::Question;
-    use herdr_governor::adapters::herdr::SessionKind;
     use herdr_governor::adapters::jev::{
         ApiKey, Client as JevClient, JevError, JudgeParams, Kind, QuestionSpec, State as JevState,
         TaskState,
     };
     use herdr_governor::daemon::{Boundary, SeamAction, SeamConfig};
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use crate::support::daemon::{Catalog, TestDaemon, fixture};
-    use crate::support::fake_herdr::topology::{Occupant, SessionRef};
-    use crate::support::fake_herdr::{FakeHerdr, Topology};
+    use crate::support::fake_herdr::FakeHerdr;
+    use crate::support::fake_herdr::topology::occupied_topology;
     use crate::support::fake_jev::{Answer, FakeJev, Fault};
-    use crate::support::mcp_client::{McpClient, RelayClient, caller_envelope};
+    use crate::support::mcp_client::{
+        McpClient, RelayClient, caller_envelope, canonical, status_call, status_page,
+    };
 
     /// A 32-hex `relayInstanceId` for the direct client's envelope (the
     /// validator's pinned shape — the relay's own id is minted).
     const RELAY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    /// The fake Herdr world: `w1:p1` occupied by the agent every
-    /// `herdr_status` resolves to.
-    fn fake_herdr() -> FakeHerdr {
-        let mut topology = Topology::single_shell();
-        let pane = topology.panes.first_mut().expect("single_shell has a pane");
-        pane.agent = Some(Occupant {
-            name: "gov-caller".into(),
-            kind: "kind-a".into(),
-            status: "idle".into(),
-            session: Some(SessionRef {
-                kind: SessionKind::Id,
-                value: "caller-session".into(),
-            }),
-        });
-        FakeHerdr::start(topology)
-    }
-
-    /// `w1:p1`'s envelope — `project_root` is the canonical spelling
-    /// `identity::resolve` compares against.
-    fn caller(project_root: &str) -> CallerEnvelope {
-        caller_envelope("w1:p1", project_root, RELAY_A)
-    }
-
-    /// A `herdr_status` `tools/call` for `id`.
-    fn status_call(id: &str) -> Value {
-        json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "tools/call",
-            "params": {"name": "herdr_status", "arguments": {}},
-        })
-    }
-
-    /// The successful-tool-result half of a status reply: unwraps the
-    /// `content[0].text` JSON page and asserts no error flag.
-    fn status_page(reply: &Value) -> Value {
-        assert_eq!(reply["result"]["isError"], false, "reply: {reply}");
-        let text = reply["result"]["content"][0]["text"]
-            .as_str()
-            .expect("a text page");
-        serde_json::from_str(text).expect("the status page is json")
-    }
-
     #[tokio::test]
     async fn in_process_daemon_serves_status_through_both_clients() {
-        let herdr = fake_herdr();
+        let herdr = FakeHerdr::start(occupied_topology());
         let jev = FakeJev::start();
         let dirs = fixture(&Catalog::new(herdr.socket_path(), jev.base_url()));
         // A pause seam rides the in-process signature ([r2]); nothing
@@ -91,16 +48,12 @@ mod tests {
             action: SeamAction::Pause(Duration::from_millis(1)),
         };
         let daemon = TestDaemon::start_in_process(&dirs.settings(), Some(seam)).await;
-        let project_root = dirs
-            .root()
-            .canonicalize()
-            .expect("canonical root")
-            .to_str()
-            .expect("utf8 root")
-            .to_owned();
 
         // The direct v1-frame client.
-        let client = McpClient::new(&daemon.socket_path(), caller(&project_root));
+        let client = McpClient::new(
+            &daemon.socket_path(),
+            caller_envelope("w1:p1", &canonical(dirs.root()), RELAY_A),
+        );
         let direct = client
             .call_tool(json!("d1"), "herdr_status", json!({}))
             .await;
@@ -130,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn child_daemon_serves_status_and_signals_clean() {
-        let herdr = fake_herdr();
+        let herdr = FakeHerdr::start(occupied_topology());
         let jev = FakeJev::start();
         let dirs = fixture(&Catalog::new(herdr.socket_path(), jev.base_url()));
         let daemon = TestDaemon::spawn_child(&dirs.settings(), None).await;
@@ -142,15 +95,11 @@ mod tests {
             daemon.store_path().exists(),
             "the daemon's store exists under the fixture state dir"
         );
-        let project_root = dirs
-            .root()
-            .canonicalize()
-            .expect("canonical root")
-            .to_str()
-            .expect("utf8 root")
-            .to_owned();
 
-        let client = McpClient::new(&daemon.socket_path(), caller(&project_root));
+        let client = McpClient::new(
+            &daemon.socket_path(),
+            caller_envelope("w1:p1", &canonical(dirs.root()), RELAY_A),
+        );
         let reply = client.call(&status_call("c1")).await;
         let page = status_page(&reply);
         assert!(
@@ -167,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn child_daemon_shutdown_stops_gracefully() {
-        let herdr = fake_herdr();
+        let herdr = FakeHerdr::start(occupied_topology());
         let jev = FakeJev::start();
         let dirs = fixture(&Catalog::new(herdr.socket_path(), jev.base_url()));
         let daemon = TestDaemon::spawn_child(&dirs.settings(), None).await;

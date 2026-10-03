@@ -10,14 +10,19 @@
 use std::fs;
 
 use serde_json::{Value, json};
-use tempfile::tempdir;
 
-use crate::support::e2e::{
-    self, Relay, call_request, close_relay, fixture, notification, occupant, occupied_topology,
-    relay_conversation, request, spawn_relay, start_daemon, status_call, status_page, stop_daemon,
-    tool_code,
-};
+use crate::support::daemon::{Catalog, DaemonDirs, TestDaemon, bindings, fixture};
+use crate::support::fake_herdr::topology::{occupant, occupied_topology};
 use crate::support::fake_herdr::{FakeHerdr, Topology};
+use crate::support::mcp_client::{
+    RelayClient, call_request, notification, request, status_call, status_page, tool_code,
+};
+
+/// A fixture daemon against `fake` — the inert catalog points the
+/// daemon's Herdr client at the fake's socket.
+fn dirs_for(fake: &FakeHerdr) -> DaemonDirs {
+    fixture(&Catalog::inert(fake.socket_path(), "http://127.0.0.1:9"))
+}
 
 /// S30 — the real relay against the real daemon: the harness's own
 /// request vocabulary round-trips through the v1 frame both ends
@@ -29,27 +34,25 @@ use crate::support::fake_herdr::{FakeHerdr, Topology};
 /// hand).
 #[tokio::test]
 async fn s30_relay_round_trip_against_the_real_daemon() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let (relay, replies) = relay_conversation(
-        &sock,
-        &cwd,
-        Some("w1:p1"),
-        &[
-            request(1, "initialize", &json!({"protocolVersion": "2025-06-18"})),
-            notification("notifications/initialized"),
-            request(3, "tools/list", &json!({})),
-            status_call(4),
-            request(5, "ping", &json!({})),
-        ],
-        4,
-    )
-    .await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let replies = relay
+        .exchange_all(
+            &[
+                request(1, "initialize", &json!({"protocolVersion": "2025-06-18"})),
+                notification("notifications/initialized"),
+                request(3, "tools/list", &json!({})),
+                status_call(4),
+                request(5, "ping", &json!({})),
+            ],
+            4,
+        )
+        .await;
 
     let init = &replies[0];
     assert_eq!(init["id"], 1, "the request id echoes verbatim");
@@ -80,12 +83,12 @@ async fn s30_relay_round_trip_against_the_real_daemon() {
     assert_eq!(replies[3]["id"], 5);
     assert_eq!(replies[3]["result"], json!({}), "ping answers empty");
 
-    let (status, stderr) = close_relay(relay).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
     );
-    stop_daemon(stop, daemon).await;
+    daemon.shutdown().await;
 }
 
 /// S31 — the strict-schema surface through the real relay: every
@@ -95,30 +98,28 @@ async fn s30_relay_round_trip_against_the_real_daemon() {
 /// 60,000-byte result bound.
 #[tokio::test]
 async fn s31_strict_schemas_refuse_through_the_relay() {
-    let tmp = tempdir().expect("tmp");
     let fake = FakeHerdr::start(occupied_topology());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
-    let (relay, replies) = relay_conversation(
-        &sock,
-        &cwd,
-        Some("w1:p1"),
-        &[
-            call_request(10, "herdr_status", &json!({"surprise": 1})),
-            call_request(11, "herdr_status", &json!({"eventId": 7})),
-            "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/call\"}\n".to_owned(),
-            call_request(13, "bogus", &json!({})),
-            call_request(14, "herdr_launch", &json!({})),
-            request(15, "bogus/unknown", &json!({})),
-            "{\"id\":16,\"method\":\"ping\"}\n".to_owned(),
-            status_call(17),
-        ],
-        8,
-    )
-    .await;
+    let mut relay = RelayClient::spawn(&daemon.socket_path(), &cwd, Some("w1:p1"));
+    let replies = relay
+        .exchange_all(
+            &[
+                call_request(10, "herdr_status", &json!({"surprise": 1})),
+                call_request(11, "herdr_status", &json!({"eventId": 7})),
+                json!({"jsonrpc": "2.0", "id": 12, "method": "tools/call"}),
+                call_request(13, "bogus", &json!({})),
+                call_request(14, "herdr_launch", &json!({})),
+                request(15, "bogus/unknown", &json!({})),
+                json!({"id": 16, "method": "ping"}),
+                status_call(17),
+            ],
+            8,
+        )
+        .await;
 
     let refused = |reply: &Value, id: u64| {
         assert_eq!(reply["id"], id, "the request id echoes verbatim");
@@ -171,12 +172,12 @@ async fn s31_strict_schemas_refuse_through_the_relay() {
         "the result stays inside the N5 bound: {result_len}"
     );
 
-    let (status, stderr) = close_relay(relay).await;
+    let (status, stderr) = relay.close().await;
     assert!(
         status.success(),
         "relay exits on stdin EOF: {status} {stderr}"
     );
-    stop_daemon(stop, daemon).await;
+    daemon.shutdown().await;
 }
 
 /// S32 (status half) — fifty concurrent `herdr_status` calls, each
@@ -185,7 +186,6 @@ async fn s31_strict_schemas_refuse_through_the_relay() {
 #[tokio::test]
 async fn s32_fifty_concurrent_status_calls_answer() {
     const CALLERS: usize = 50;
-    let tmp = tempdir().expect("tmp");
     let mut topology = Topology::single_shell();
     for _ in 1..CALLERS {
         topology.create_tab("w1");
@@ -194,30 +194,34 @@ async fn s32_fifty_concurrent_status_calls_answer() {
         pane.agent = Some(occupant(&format!("agent-{i}"), &format!("sess-{i}")));
     }
     let fake = FakeHerdr::start(topology);
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
-    let cwd = tmp.path().join("project");
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let cwd = dirs.root().join("project");
     fs::create_dir_all(&cwd).expect("project dir");
 
     // All fifty relays spawn, every request lands, then every reply is
     // read — the calls are in flight together, and every daemon-side
     // snapshot they fan out to hits the fake at once.
-    let replies = tokio::task::spawn_blocking(move || {
-        let mut relays: Vec<Relay> = (0..CALLERS)
-            .map(|i| spawn_relay(&sock, &cwd, Some(&format!("w1:p{}", i.saturating_add(1)))))
-            .collect();
-        for relay in &mut relays {
-            relay.send(&status_call(1));
-        }
-        let replies: Vec<Value> = relays.iter_mut().map(Relay::recv).collect();
-        for relay in relays {
-            let (status, stderr) = relay.close_and_wait();
-            assert!(status.success(), "relay exits on EOF: {status} {stderr}");
-        }
-        replies
-    })
-    .await
-    .expect("the blocking leg joins");
+    let mut relays: Vec<RelayClient> = (0..CALLERS)
+        .map(|i| {
+            RelayClient::spawn(
+                &daemon.socket_path(),
+                &cwd,
+                Some(&format!("w1:p{}", i.saturating_add(1))),
+            )
+        })
+        .collect();
+    for relay in &mut relays {
+        relay.send(&status_call(1)).await;
+    }
+    let mut replies = Vec::with_capacity(CALLERS);
+    for relay in &mut relays {
+        replies.push(relay.recv().await);
+    }
+    for relay in relays {
+        let (status, stderr) = relay.close().await;
+        assert!(status.success(), "relay exits on EOF: {status} {stderr}");
+    }
 
     assert_eq!(replies.len(), CALLERS);
     for reply in &replies {
@@ -226,9 +230,9 @@ async fn s32_fifty_concurrent_status_calls_answer() {
         assert!(page["health"]["daemon"]["pid"].is_u64());
         assert_eq!(page["runs"], json!([]));
     }
-    stop_daemon(stop, daemon).await;
+    daemon.shutdown().await;
     assert_eq!(
-        e2e::bindings(&state).len(),
+        bindings(&dirs.store_path()).len(),
         CALLERS,
         "each relay bound its own minted relayInstanceId"
     );

@@ -4,7 +4,8 @@
 //! (F9/F25), the ack must name the captured identity (F16), the cancel
 //! `close` leg lands (F20), and the §4.14 pre-wire gate answers shutdown
 //! `Failed{Absent}` (F29). The cases live in `wire`/`holds`/`terminal`;
-//! the fixtures stay here.
+//! the domain fixtures stay here — the daemon, wait, seam and wire-read
+//! legs are the shared `support` harness (P5.T1).
 //!
 //! `wire` — commit→wire→ack (F8, F9/F25, F20). `holds` — the F10
 //! verify-holds. `terminal` — F16's `unknown` and F29's `absent`.
@@ -13,10 +14,8 @@ mod holds;
 mod terminal;
 mod wire;
 
-use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Duration;
 
 use governor_core::identity::{
     AgentKind, AgentName, CallerBinding, CallerKey, ChildIdentity, Digest, EffectId, EffectKey,
@@ -28,22 +27,19 @@ use governor_core::lifecycle::{
     StateChange, Transition, op_digest,
 };
 use governor_core::task::{Launch, LaunchPhase, Task};
-use herdr_governor::adapters::herdr::SessionKind;
-use herdr_governor::daemon::{self, Boundary, SeamAction, SeamConfig, Settings};
+use herdr_governor::daemon::Settings;
 use herdr_governor::store::{ApplyError, Store};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
-use crate::support::fake_herdr::topology::{Occupant, SessionRef};
-use crate::support::fake_herdr::{FakeHerdr, Fault, Topology};
+use crate::support::daemon::{
+    Catalog, DaemonDirs, TestDaemon, await_for, fixture, never, pause_at_dispatch,
+    socket_incarnation,
+};
+use crate::support::fake_herdr::topology::agent_topology;
+use crate::support::fake_herdr::{FakeHerdr, Fault};
 
-const DEADLINE: Duration = Duration::from_secs(10);
 /// `reconcile_secs = 1` — the fastest cadence the catalog accepts; drives
 /// `hand_out` once a second for the interactive cases.
 const TICK_SECS: u64 = 1;
-/// The seam pause that holds a runner at `dispatch_committed` — long
-/// enough for the test to interpose, far inside `shutdown_grace`.
-const SEAM_PAUSE_MS: u64 = 400;
 
 // — Fixture builders —————————————————————————————————————————————————
 
@@ -248,61 +244,27 @@ fn move_state(store: &mut Store, id: &str, state: State) {
     panic!("state move lost to the coordinator eight times running");
 }
 
-// — Daemon bring-up ———————————————————————————————————————————————————
+// — The fixture world ————————————————————————————————————————————————
 
-/// `[daemon]` fixture — like `e2e_supervision`'s, plus
-/// `shutdown_grace_secs = 1` so the F29 drain ends promptly after the
-/// paused runner's result lands (the 400ms seam pause is well inside it).
-fn fixture(root: &Path) -> (PathBuf, PathBuf) {
-    let state = root.join("state");
-    let config = root.join("config");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::create_dir_all(&config).unwrap();
-    std::fs::write(
-        config.join("catalog.toml"),
-        "[policy]\ntiers = [\"standard\"]\nprovider_limit_threshold = 0.6\ncooldown_secs = 60\n\n\
-         [catalog]\noperating_points = []\n\n\
-         [daemon]\nherdr_socket = \"/nonexistent/herdr.sock\"\n\
-         jev_base_url = \"http://127.0.0.1:9\"\njev_model = \"m\"\nreconcile_secs = 3600\n\
-         shutdown_grace_secs = 1\n",
-    )
-    .unwrap();
-    let credentials = config.join("credentials");
-    std::fs::write(&credentials, "test-token\n").unwrap();
-    std::fs::set_permissions(&credentials, std::fs::Permissions::from_mode(0o600)).unwrap();
-    (state, config)
+/// The `DaemonDirs` + `Settings` for `TestDaemon` — like
+/// `e2e_supervision`'s, plus `shutdown_grace_secs = 1` so the F29 drain
+/// ends promptly after the paused runner's result lands (the seam pause
+/// is well inside it). The argv carries the fake's socket and the case's
+/// reconcile cadence; the catalog's own socket stays decorative.
+fn world(fake: &FakeHerdr, reconcile_secs: u64) -> (DaemonDirs, Settings) {
+    let mut catalog = Catalog::new(Path::new("/nonexistent/herdr.sock"), "http://127.0.0.1:9");
+    catalog.tiers = vec!["standard".to_owned()];
+    catalog.reconcile_secs = 3600;
+    catalog.daemon_extra = "shutdown_grace_secs = 1\n".to_owned();
+    let dirs = fixture(&catalog);
+    let mut settings = dirs.settings();
+    settings.herdr_socket = Some(fake.socket_path().to_path_buf());
+    settings.reconcile_secs = Some(reconcile_secs);
+    (dirs, settings)
 }
 
-fn settings(state: &Path, config: &Path, fake: &FakeHerdr, reconcile_secs: u64) -> Settings {
-    Settings {
-        state_dir: state.to_path_buf(),
-        config_dir: config.to_path_buf(),
-        herdr_socket: Some(fake.socket_path().to_path_buf()),
-        reconcile_secs: Some(reconcile_secs),
-    }
-}
-
-/// Spawn `daemon::run`; returns the task handle and the shutdown sender.
-fn spawn_daemon(
-    settings: Settings,
-    seam: Option<SeamConfig>,
-) -> (
-    JoinHandle<Result<ExitCode, daemon::DaemonError>>,
-    oneshot::Sender<()>,
-) {
-    let (tx, rx) = oneshot::channel();
-    (tokio::spawn(daemon::run(settings, seam, Some(rx))), tx)
-}
-
-/// The `<state>/governor.sock` appearing means §4.3 steps 1–8 completed —
-/// the startup pass already ran.
-async fn wait_bound(state: &Path) {
-    let sock = state.join("governor.sock");
-    wait_for("governor socket", || sock.exists()).await;
-}
-
-fn open_store(state: &Path) -> Store {
-    Store::open(&state.join("governor.db")).expect("store opens")
+fn open_store(dirs: &DaemonDirs) -> Store {
+    Store::open(&dirs.store_path()).expect("store opens")
 }
 
 fn read_run(store: &Store, id: &str) -> Run {
@@ -329,104 +291,4 @@ fn result_json_of(store: &Store, key: &str) -> Option<String> {
             |row| row.get(0),
         )
         .unwrap()
-}
-
-/// The bounded poll: `tokio::time::sleep` yields to the daemon and fake
-/// tasks on the same (current-thread) runtime — `park_timeout` would
-/// freeze the executor.
-async fn wait_for(what: &str, mut until: impl FnMut() -> bool) {
-    let deadline = Instant::now().checked_add(DEADLINE).expect("deadline");
-    while Instant::now() < deadline {
-        if until() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
-
-/// Whether `what` becomes true within `within` — the negative wait: a
-/// thing that must NOT happen is asserted by exhausting the window.
-async fn never(what: &str, within: Duration, mut happened: impl FnMut() -> bool) {
-    let deadline = Instant::now().checked_add(within).expect("deadline");
-    while Instant::now() < deadline {
-        assert!(!happened(), "{what} must not happen");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-/// Stop the daemon and require a clean exit.
-async fn stop(
-    handle: JoinHandle<Result<ExitCode, daemon::DaemonError>>,
-    shutdown: oneshot::Sender<()>,
-) {
-    let _sent = shutdown.send(());
-    let code = handle.await.expect("daemon task").expect("run");
-    assert_eq!(code, ExitCode::SUCCESS);
-}
-
-/// `single_shell` with an agent occupant on `w1:p1` — returns the
-/// topology and the pane's `terminal_id` (the identity seed needs it).
-fn agent_topology(name: &str, session: Option<&str>) -> (Topology, String) {
-    let mut topology = Topology::single_shell();
-    let pane = topology.panes.first_mut().expect("shell pane");
-    pane.agent = Some(Occupant {
-        name: name.to_owned(),
-        kind: "kind-a".to_owned(),
-        status: "working".to_owned(),
-        session: session.map(|value| SessionRef {
-            kind: SessionKind::Id,
-            value: value.to_owned(),
-        }),
-    });
-    let terminal = pane.terminal_id.clone();
-    (topology, terminal)
-}
-
-/// The `HerdrIncarnation` a snapshot over `path` mints —
-/// `<inode>:<mtime_secs>.<mtime_nsecs zero-padded to 9 digits>`.
-fn socket_incarnation(path: &Path) -> String {
-    use std::os::unix::fs::MetadataExt as _;
-    let meta = std::fs::metadata(path).expect("socket stat");
-    format!("{}:{}.{:09}", meta.ino(), meta.mtime(), meta.mtime_nsec())
-}
-
-fn saw_wire(fake: &FakeHerdr, method: &str) -> bool {
-    fake.requests().iter().any(|(m, _)| m == method)
-}
-
-/// A pause seam on `suffix` at `dispatch_committed` — the deterministic
-/// window between the durable commit and the wire op.
-fn pause_at_dispatch(suffix: &str) -> SeamConfig {
-    SeamConfig {
-        suffix: suffix.to_owned(),
-        boundary: Boundary::DispatchCommitted,
-        action: SeamAction::Pause(Duration::from_millis(SEAM_PAUSE_MS)),
-    }
-}
-
-// — The six §4.4 contracts ————————————————————————————————————————————
-
-// — Wire-side assertions ——————————————————————————————————————————————
-
-/// The `text` param of the most recent `agent.prompt` to `pane`.
-fn wire_prompt_text(fake: &FakeHerdr, pane: &str) -> String {
-    fake.requests()
-        .iter()
-        .rev()
-        .find(|(m, p)| {
-            m == "agent.prompt" && p.get("target").and_then(|v| v.as_str()) == Some(pane)
-        })
-        .and_then(|(_, p)| p.get("text").and_then(|v| v.as_str()).map(str::to_owned))
-        .expect("an agent.prompt reached the wire")
-}
-
-/// The `text` param of the `n`th `agent.prompt` (0-based).
-fn wire_prompt_text_at(fake: &FakeHerdr, n: usize) -> String {
-    fake.requests()
-        .iter()
-        .filter(|(m, _)| m == "agent.prompt")
-        .nth(n)
-        .and_then(|(_, p)| p.get("text").and_then(|v| v.as_str()).map(str::to_owned))
-        .expect("the nth agent.prompt reached the wire")
 }

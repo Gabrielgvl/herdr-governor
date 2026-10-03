@@ -4,7 +4,6 @@
 
 pub mod crash;
 pub mod daemon;
-pub mod e2e;
 pub mod fake_herdr;
 pub mod fake_jev;
 pub mod mcp_client;
