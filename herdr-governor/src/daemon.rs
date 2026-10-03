@@ -6,7 +6,8 @@
 //! optional `shutdown` oneshot — the same function tests drive
 //! in-process.
 //!
-//! Module layout: `api` (the M1 tool-value contract), `settings`/`seam`
+//! Module layout: `api` (the M1 tool-value contract), `identity`/`status`
+//! (F1's caller resolution + binding, F7's paged status), `settings`/`seam`
 //! (argv + the fault seam), `paths`/`lock` (state dir + single instance),
 //! `clock`/`ids` (one epoch read + all entropy), `log` (the safe tracing
 //! surface), `startup`/`serve`/`shutdown` (bring-up, the reconcile tick,
@@ -14,7 +15,9 @@
 //! store owner).
 
 pub mod api;
+pub mod identity;
 pub mod ids;
+pub mod status;
 
 mod clock;
 mod coordinator;
@@ -243,7 +246,13 @@ pub async fn run(
     log::bound(&paths.sock());
 
     let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
-    let accept = crate::mcp::serve::spawn(listener, tx.clone(), coordinator.shutdown_receiver());
+    let accept = crate::mcp::serve::spawn(
+        listener,
+        tx.clone(),
+        coordinator.shutdown_receiver(),
+        crate::adapters::herdr::Client::new(resolved.herdr_socket.clone()),
+        daemon.herdr_op_timeout,
+    );
     let tick = serve::spawn_tick(&resolved, daemon.herdr_op_timeout, tx.clone());
     let mut tasks = shutdown::spawn_signals(&tx);
     tasks.extend([accept, tick]);

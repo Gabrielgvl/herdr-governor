@@ -6,7 +6,9 @@
 //! Two line shapes are legal. The relay's v1 frame
 //! (`{"v":1,"caller":…,"rpc":<request>}`) is the real path: `initialize`
 //! and `ping` answer locally, `tools/list`/`tools/call` route through
-//! `tools` — a call posts `Msg::Tool` to the coordinator and its
+//! `tools` — a call gathers the request-time evidence (§4.2: a fresh
+//! `session.snapshot`, the `canonicalize` of the envelope's
+//! `projectRoot`), posts `Msg::Tool` to the coordinator and its
 //! `ToolResponse` comes back as the `isError`/`content` result — and
 //! everything else is `-32601`. A bare JSON-RPC request line is the §4.3
 //! lock-probe's vocabulary (`ping` → `{}`): it is answered through
@@ -31,13 +33,15 @@ use tokio::task::JoinHandle;
 use super::framing::{self, Inbound};
 use super::jsonrpc::{self, Request, Response};
 use super::tools;
-use crate::adapters::herdr::MAX_FRAME_BYTES;
+use crate::adapters::herdr::{Client, MAX_FRAME_BYTES};
 use crate::daemon::Msg;
 use crate::daemon::api::{ToolError, ToolRequest, ToolResponse};
 
 /// Spawn the accept task (§4.3 step 8). Runs until the shutdown `watch`
 /// flips or the handle is aborted at teardown; per-connection handlers
-/// are detached tasks so a wedged client never stalls `accept`.
+/// are detached tasks so a wedged client never stalls `accept`. `herdr`
+/// and `op_timeout` equip each connection to take its request-time
+/// `session.snapshot` (§4.11).
 ///
 /// `select!` expands to an internal `%` over its arms — the written arms
 /// hold no arithmetic.
@@ -49,6 +53,8 @@ pub(crate) fn spawn(
     listener: UnixListener,
     tx: mpsc::Sender<Msg>,
     mut stop: watch::Receiver<bool>,
+    herdr: Client,
+    op_timeout: Duration,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -65,7 +71,12 @@ pub(crate) fn spawn(
                 accepted = listener.accept() => {
                     match accepted {
                         Ok((stream, _)) => {
-                            tokio::spawn(conn(stream, tx.clone()));
+                            tokio::spawn(conn(
+                                stream,
+                                tx.clone(),
+                                herdr.clone(),
+                                op_timeout,
+                            ));
                         }
                         Err(_) => {
                             // EMFILE/EAGAIN-style storms: yield briefly,
@@ -83,7 +94,7 @@ pub(crate) fn spawn(
 /// line over `MAX_FRAME_BYTES` (no newline inside the bound), a `write`
 /// error or EOF ends the connection silently; a second frame can never
 /// arrive — the socket is gone after the first reply.
-async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>) {
+async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>, herdr: Client, op_timeout: Duration) {
     let mut reader = BufReader::new(stream);
     let mut line = Vec::new();
     let bound = u64::try_from(MAX_FRAME_BYTES.saturating_add(1)).unwrap_or(u64::MAX);
@@ -93,7 +104,7 @@ async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>) {
         _ => return,
     }
     let reply = match framing::decode_request(&line) {
-        Ok(inbound) => answer_frame(inbound, &tx)
+        Ok(inbound) => answer_frame(inbound, &tx, &herdr, op_timeout)
             .await
             .map(|rpc| framing::encode_reply(&rpc)),
         Err(_) => answer_bare(&line).map(|response| {
@@ -111,13 +122,18 @@ async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>) {
 /// the reply is the inner JSON-RPC response `framing::encode_reply`
 /// re-envelopes. A notification or a `respond`-less call yields `None`
 /// and the connection closes without a reply.
-async fn answer_frame(inbound: Inbound, tx: &mpsc::Sender<Msg>) -> Option<Value> {
+async fn answer_frame(
+    inbound: Inbound,
+    tx: &mpsc::Sender<Msg>,
+    herdr: &Client,
+    op_timeout: Duration,
+) -> Option<Value> {
     let bytes = serde_json::to_vec(&inbound.rpc).unwrap_or_default();
     let request = match jsonrpc::parse(&bytes) {
         Ok(request) => request,
         Err(response) => return Some(value_of(&response)),
     };
-    answer_call(request, inbound.caller, tx)
+    answer_call(request, inbound.caller, tx, herdr, op_timeout)
         .await
         .map(|response| value_of(&response))
 }
@@ -130,44 +146,77 @@ async fn answer_call(
     request: Request,
     caller: CallerEnvelope,
     tx: &mpsc::Sender<Msg>,
+    herdr: &Client,
+    op_timeout: Duration,
 ) -> Option<Response> {
     let Request::Call { id, method, params } = request else {
         return None;
     };
     match method.as_str() {
         "tools/list" => Some(tools::list_response(id)),
-        "tools/call" => Some(call(id, caller, &params, tx).await),
+        "tools/call" => Some(call(id, caller, &params, tx, herdr, op_timeout).await),
         _ => jsonrpc::respond(&Request::Call { id, method, params }),
     }
 }
 
 /// `tools/call`: strict-decode the params into a `ToolRequest` (a
-/// `ToolError` refusal is already the wire answer), post it to the
-/// coordinator, and encode whatever comes back. A coordinator that
-/// cannot answer — mailbox closed at shutdown — maps to
-/// `DAEMON_UNAVAILABLE` (§4.14 step 1's in-flight rule, N7's code).
+/// `ToolError` refusal is already the wire answer), gather the
+/// request-time evidence and post it to the coordinator, then encode
+/// whatever comes back. A coordinator that cannot answer — mailbox
+/// closed at shutdown — maps to `DAEMON_UNAVAILABLE` (§4.14 step 1's
+/// in-flight rule, N7's code).
 async fn call(
     id: Value,
     caller: CallerEnvelope,
     params: &Value,
     tx: &mpsc::Sender<Msg>,
+    herdr: &Client,
+    op_timeout: Duration,
 ) -> Response {
     let tool_response = match tools::decode_call(caller, params) {
-        Ok(request) => post(request, tx).await,
+        Ok(request) => post(request, tx, herdr, op_timeout).await,
         Err(error) => Err(error),
     };
     tools::call_response(id, &tool_response)
 }
 
 /// Hand one `ToolRequest` to the coordinator and wait on its `oneshot`.
-/// Either send or receive failing means the coordinator is gone — the
-/// reply is the typed `DAEMON_UNAVAILABLE` the relay also fabricates.
-async fn post(request: ToolRequest, tx: &mpsc::Sender<Msg>) -> ToolResponse {
+/// The request-time evidence §4.2/§4.6 assigns the connection task
+/// rides the message: a fresh `session.snapshot` — an `Err` here is
+/// `DAEMON_UNAVAILABLE` in the arm, never an identity verdict — and the
+/// `canonicalize` of the envelope's `projectRoot` (`None` when the path
+/// does not resolve, H#3). Either send or receive failing means the
+/// coordinator is gone — the reply is the typed `DAEMON_UNAVAILABLE`
+/// the relay also fabricates.
+async fn post(
+    request: ToolRequest,
+    tx: &mpsc::Sender<Msg>,
+    herdr: &Client,
+    op_timeout: Duration,
+) -> ToolResponse {
     let (reply, wait) = oneshot::channel();
-    if tx.send(Msg::Tool { request, reply }).await.is_err() {
+    let snapshot = herdr.session_snapshot(op_timeout).await;
+    let resolved_root = canonical_root(&request.caller.project_root.0).await;
+    let msg = Msg::Tool {
+        request,
+        snapshot: Box::new(snapshot),
+        resolved_root,
+        reply,
+    };
+    if tx.send(msg).await.is_err() {
         return Err(unavailable());
     }
     wait.await.unwrap_or_else(|_| Err(unavailable()))
+}
+
+/// The `realpath` of the relay-attached `projectRoot` (§4.6): `Some`
+/// only when the path resolves to a UTF-8 name — the arm compares it to
+/// the envelope string and refuses on mismatch, never re-anchored.
+async fn canonical_root(project_root: &str) -> Option<String> {
+    tokio::fs::canonicalize(project_root)
+        .await
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_owned))
 }
 
 fn unavailable() -> ToolError {
@@ -196,6 +245,8 @@ fn value_of(response: &Response) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use governor_core::identity::{CallerEnvelope, PaneId, ProjectRoot, RelayInstanceId};
     use serde_json::{Value, json};
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
@@ -203,9 +254,18 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{conn, spawn};
+    use crate::adapters::herdr::Client;
     use crate::daemon::Msg;
     use crate::daemon::api::ToolResponse;
     use crate::mcp::framing::{decode_reply, encode_request};
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// A client pointed nowhere — snapshot reads fail fast and the `Err`
+    /// rides `Msg::Tool`, which is what these tests pin.
+    fn client() -> Client {
+        Client::new("/nonexistent/herdr.sock")
+    }
 
     fn caller() -> CallerEnvelope {
         CallerEnvelope {
@@ -238,7 +298,7 @@ mod tests {
     async fn serve_closes_after_one_reply() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
         let (tx, _rx) = mpsc::channel::<Msg>(8);
-        let task = tokio::spawn(conn(server, tx));
+        let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
         let rpc = json!({"jsonrpc": "2.0", "id": 7, "method": "ping"});
@@ -263,7 +323,7 @@ mod tests {
     async fn serve_refuses_second_frame_on_a_connection() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
         let (tx, _rx) = mpsc::channel::<Msg>(8);
-        let task = tokio::spawn(conn(server, tx));
+        let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
         let first = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
@@ -286,8 +346,11 @@ mod tests {
         task.await.expect("conn task joins");
     }
 
-    /// A `tools/call` posts `Msg::Tool` to the coordinator mailbox and
-    /// the `ToolResponse` its `oneshot` carries comes back as the wire
+    /// A `tools/call` posts `Msg::Tool` to the coordinator mailbox with
+    /// the request-time evidence the arm judges on — the fresh
+    /// `session.snapshot` (an `Err` rides, never short-circuits) and the
+    /// `canonicalize` of the envelope's `projectRoot` — and the
+    /// `ToolResponse` its `oneshot` carries comes back as the wire
     /// result. The caller/argument decode itself is M1's
     /// `decode_call_maps_arguments_to_typed_calls` — this proves the
     /// post-and-answer plumbing the coordinator sits behind.
@@ -295,15 +358,22 @@ mod tests {
     async fn serve_posts_tool_call_and_answers_the_oneshot() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
         let (tx, mut rx) = mpsc::channel::<Msg>(8);
-        let task = tokio::spawn(conn(server, tx));
+        let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
+        let root = tempfile::tempdir().expect("tmp");
+        let canonical = root.path().canonicalize().expect("canonicalize");
+        let root_str = canonical.to_str().expect("utf8").to_owned();
+        let caller = CallerEnvelope {
+            project_root: ProjectRoot(root_str.clone()),
+            ..caller()
+        };
         let rpc = json!({
             "jsonrpc": "2.0", "id": "c1", "method": "tools/call",
             "params": {"name": "herdr_status", "arguments": {"cursor": "c9"}},
         });
         let write = tokio::spawn({
-            let frame = encode_request(&caller(), &rpc);
+            let frame = encode_request(&caller, &rpc);
             async move {
                 client.get_mut().write_all(&frame).await.expect("write");
                 let mut line = Vec::new();
@@ -315,9 +385,24 @@ mod tests {
             }
         });
 
-        let Some(Msg::Tool { reply, .. }) = rx.recv().await else {
+        let Some(Msg::Tool {
+            snapshot,
+            resolved_root,
+            reply,
+            ..
+        }) = rx.recv().await
+        else {
             panic!("the coordinator mailbox got the tool call");
         };
+        assert!(
+            snapshot.is_err(),
+            "a failed snapshot rides the message — never an identity verdict"
+        );
+        assert_eq!(
+            resolved_root.as_deref(),
+            Some(root_str.as_str()),
+            "the connection task canonicalizes the envelope's projectRoot"
+        );
         let response: ToolResponse = Ok(json!({"health": {"ok": true}}));
         reply.send(response).expect("oneshot answers");
 
@@ -341,7 +426,7 @@ mod tests {
     async fn serve_answers_the_bare_lock_probe() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
         let (tx, _rx) = mpsc::channel::<Msg>(8);
-        let task = tokio::spawn(conn(server, tx));
+        let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
         let line = leg(
@@ -365,10 +450,10 @@ mod tests {
         let listener = tokio::net::UnixListener::bind(dir.path().join("g.sock")).expect("bind");
         let (tx, _rx) = mpsc::channel::<Msg>(8);
         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-        let accept = spawn(listener, tx, stop_rx);
+        let accept = spawn(listener, tx, stop_rx, client(), TIMEOUT);
 
         stop_tx.send(true).expect("watch flips");
-        tokio::time::timeout(std::time::Duration::from_secs(5), accept)
+        tokio::time::timeout(Duration::from_secs(5), accept)
             .await
             .expect("the accept task exits on shutdown")
             .expect("accept joins");

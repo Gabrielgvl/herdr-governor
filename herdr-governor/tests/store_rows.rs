@@ -91,7 +91,8 @@ mod tests {
     #[test]
     fn ready_effects_excludes_done_launches() {
         // F10 read-side guard: a `planned` effect on a `done` launch is never
-        // handed to a dispatcher; run-subject and open-launch effects are.
+        // handed to a dispatcher; effects on a live run or open launch are.
+        // `run:r-1:prompt:task` stays out too — r-1 is settled (§4.4).
         let (_dir, store) = fixture();
         let keys: Vec<String> = store
             .ready_effects()
@@ -101,7 +102,7 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            ["launch:l-open:evaluate", "run:r-1:prompt:task"],
+            ["launch:l-open:evaluate"],
             "the done launch's effect must be excluded, plan order kept"
         );
         assert_eq!(
@@ -289,6 +290,209 @@ mod tests {
                 .relay_binding(&RelayInstanceId("none".into()))
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    /// A fixture batch (I10: lifecycle writes live in `transitions`/`tests`).
+    macro_rules! sql {
+        ($store:expr, $($arg:tt)*) => {
+            $store.conn().execute_batch(&format!($($arg)*)).unwrap()
+        };
+    }
+
+    /// Runs `r-2`/`r-3`/`r-4` (unsettled, caller 1) and `r-5` (caller 2).
+    fn seed_live_runs(store: &Store) {
+        sql!(
+            store,
+            "INSERT INTO launches (launch_id, caller_id, project_root, idempotency_key,
+                 digest_version, task_digest, task_json, phase, created_at, updated_at)
+             VALUES ('l-2', 1, '/p', 'k-3', 1, '{HEX}', '{TASK}', 'routed', '{T0}', '{T0}'),
+                    ('l-3', 1, '/p', 'k-4', 1, '{HEX}', '{TASK}', 'routed', '{T0}', '{T0}'),
+                    ('l-4', 1, '/p', 'k-6', 1, '{HEX}', '{TASK}', 'routed', '{T0}', '{T0}'),
+                    ('l-6', 2, '/p', 'k-5', 1, '{HEX}', '{TASK}', 'routed', '{T0}', '{T0}');
+             INSERT INTO runs (run_id, launch_id, owner_caller_id, state, child_name,
+                 cwd, max_age_deadline, created_at, updated_at)
+             VALUES ('r-2', 'l-2', 1, 'active', 'w1:r-2', '/p', '{T1}', '{T0}', '{T0}'),
+                    ('r-3', 'l-4', 1, 'prompting', 'w1:r-3', '/p', '{T1}', '{T0}', '{T0}'),
+                    ('r-4', 'l-3', 1, 'judging', 'w1:r-4', '/p', '{T1}', '{T0}', '{T0}'),
+                    ('r-5', 'l-6', 2, 'active', 'w1:r-5', '/p', '{T1}', '{T0}', '{T0}');"
+        );
+    }
+
+    fn ready_keys(store: &Store) -> String {
+        let keys = store.ready_effects().unwrap();
+        keys.into_iter()
+            .map(|e| e.key.0)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// §4.4 — settled-Run `planned` effects are excluded except `close`; `event:%` hints pass (§4.8).
+    #[test]
+    fn ready_effects_excludes_settled_runs_except_close() {
+        let (_dir, store) = fixture();
+        seed_live_runs(&store);
+        sql!(
+            store,
+            "INSERT INTO effects (effect_id, effect_key, kind, subject_run_id, state,
+                 planned_at)
+             VALUES ('e-close', 'run:r-1:close', 'close', 'r-1', 'planned', '{T1}'),
+                    ('e-hint', 'event:ev-1:hint', 'prompt', 'r-1', 'planned', '2026-10-01T00:03:00.000Z'),
+                    ('e-nudge', 'run:r-2:nudge:1', 'prompt', 'r-2', 'planned', '2026-10-01T00:04:30.000Z'),
+                    ('e-retire', 'run:r-1:retire:0', 'close', 'r-1', 'planned', '2026-10-01T00:06:00.000Z');"
+        );
+        assert_eq!(
+            ready_keys(&store),
+            "launch:l-open:evaluate,run:r-1:close,event:ev-1:hint,run:r-2:nudge:1,run:r-1:retire:0",
+            "settled-run prompts stay out; close/retire and event:% pass"
+        );
+    }
+
+    /// §4.8 [r2] — `event:%` hints pass even on done launches and settled runs.
+    #[test]
+    fn ready_effects_returns_hints_for_done_launches_and_settled_runs() {
+        let (_dir, store) = fixture();
+        sql!(
+            store,
+            "INSERT INTO effects (effect_id, effect_key, kind, subject_launch_id, state,
+                 planned_at)
+             VALUES ('e-hint-l', 'event:ev-3:hint', 'prompt', 'l-done', 'planned', '{T1}'),
+                    ('e-nudge-l', 'launch:l-done:recheck', 'prompt', 'l-done', 'planned', '{T1}');"
+        );
+        assert_eq!(
+            ready_keys(&store),
+            "launch:l-open:evaluate,event:ev-3:hint",
+            "the done-Launch hint passes; a non-event key does not"
+        );
+    }
+
+    /// `outbox_page` is `seq`-ordered; `after` resumes strictly past.
+    #[test]
+    fn outbox_page_is_seq_ordered_and_bounded() {
+        let (_dir, store) = fixture();
+        sql!(
+            store,
+            "INSERT INTO outbox (run_id, seq, message_key, sender_caller_id,
+                 body_digest, body_inline, state, enqueued_at)
+             VALUES ('r-1', 1, 'mk-1', 1, '{HEX}', 'b1', 'queued', '{T0}'),
+                    ('r-1', 2, 'mk-2', 1, '{HEX}', 'b2', 'queued', '{T0}'),
+                    ('r-1', 3, 'mk-3', 1, '{HEX}', 'b3', 'queued', '{T0}'),
+                    ('r-1', 4, 'mk-4', 1, '{HEX}', 'b4', 'queued', '{T0}'),
+                    ('r-1', 5, 'mk-5', 1, '{HEX}', 'b5', 'queued', '{T0}');"
+        );
+        let run = RunId("r-1".into());
+        let seqs = |page: Vec<governor_core::delivery::OutboxMessage>| {
+            page.into_iter().map(|m| m.seq).collect::<Vec<u64>>()
+        };
+        let p1 = store.outbox_page(&run, None, 3).unwrap();
+        assert_eq!(seqs(p1), [1, 2, 3], "the first page is bounded");
+        let p2 = store.outbox_page(&run, Some(3), 3).unwrap();
+        assert_eq!(seqs(p2), [4, 5], "the cursor resumes strictly after");
+        let p3 = store.outbox_page(&run, Some(5), 3).unwrap();
+        assert!(p3.is_empty(), "past the end is empty");
+    }
+
+    /// `latest_acceptance` answers the newest *answered* set; stale does not shadow.
+    #[test]
+    fn latest_acceptance_returns_the_newest_answered_set() {
+        let (_dir, store) = fixture();
+        sql!(
+            store,
+            "INSERT INTO judgment_sets (set_id, purpose, run_id, run_version,
+                 work_generation, evidence_generation, task_digest, handoff_digest,
+                 model, question_version, policy_version, outcome, requested_at)
+             VALUES ('js-2', 'acceptance', 'r-1', 3, 1, 0, '{HEX}', '{HEX}', 'm',
+                     'q1', 'cfg-1', 'answered', '2026-10-01T00:03:00.000Z'),
+                    ('js-3', 'acceptance', 'r-1', 4, 2, 0, '{HEX}', '{HEX}', 'm',
+                     'q1', 'cfg-1', 'stale', '2026-10-01T00:04:30.000Z');
+             INSERT INTO judgments (set_id, question, probabilities_json, answer, threshold)
+             VALUES ('js-2', 'handoff_meets_item_1', '{{}}', 'met', NULL);"
+        );
+        let record = store
+            .latest_acceptance(&RunId("r-1".into()))
+            .unwrap()
+            .expect("an answered acceptance exists");
+        assert_eq!(record.set.id.0, "js-2", "the newest answered round");
+        assert_eq!(record.judgments.len(), 1, "its per-item rows ride along");
+    }
+
+    /// The caller-owned reads scope to the owner and keyset-paginate.
+    #[test]
+    fn caller_owned_reads_scope_order_and_bound() {
+        let (_dir, store) = fixture();
+        seed_live_runs(&store);
+        sql!(
+            store,
+            "INSERT INTO recoveries (predecessor_run_id, origin, state, expires_at,
+                 created_at, updated_at)
+             VALUES ('r-2', 'caller', 'pending', '{T1}', '{T0}', '{T0}'),
+                    ('r-3', 'provider_limit', 'pending', '{T1}', '{T1}', '{T1}'),
+                    ('r-4', 'caller', 'blocked', '{T1}', '{T0}', '{T0}'),
+                    ('r-5', 'caller', 'pending', '{T1}', '{T0}', '{T0}');"
+        );
+        let one = caller();
+        let two = CallerKey {
+            agent_kind: AgentKind("kind-b".into()),
+            native_session: NativeSession("sess-2".into()),
+        };
+        let ids = |page: Vec<governor_core::lifecycle::Run>| {
+            page.into_iter().map(|r| r.id.0).collect::<Vec<String>>()
+        };
+        // Owner one: r-1 is settled (out); r-2..r-4 page in keyset order.
+        let first = store.unsettled_runs_owned_by(&one, None, 2).unwrap();
+        assert_eq!(ids(first), ["r-2", "r-3"], "unsettled, bounded, ordered");
+        let rest = store
+            .unsettled_runs_owned_by(&one, Some(&RunId("r-3".into())), 9)
+            .unwrap();
+        assert_eq!(ids(rest), ["r-4"], "the cursor resumes strictly after");
+        // Owner two: only r-5 is unsettled; an unknown caller owns nothing.
+        assert_eq!(
+            ids(store.unsettled_runs_owned_by(&two, None, 9).unwrap()),
+            ["r-5"],
+            "r-1 is settled and excluded"
+        );
+        let nobody = CallerKey {
+            agent_kind: AgentKind("x".into()),
+            native_session: NativeSession("x".into()),
+        };
+        assert!(
+            store
+                .unsettled_runs_owned_by(&nobody, None, 9)
+                .unwrap()
+                .is_empty(),
+            "an unknown caller owns nothing"
+        );
+        let preds = |page: Vec<governor_core::recovery::RecoveryObligation>| {
+            page.into_iter()
+                .map(|r| r.predecessor.0)
+                .collect::<Vec<String>>()
+        };
+        // Pending only (r-4 is blocked), following the predecessor's owner.
+        assert_eq!(
+            preds(store.recoveries_pending_owned_by(&one, None, 1).unwrap()),
+            ["r-2"],
+            "bounded by limit"
+        );
+        assert_eq!(
+            preds(
+                store
+                    .recoveries_pending_owned_by(&one, Some(&RunId("r-2".into())), 9)
+                    .unwrap()
+            ),
+            ["r-3"],
+            "the cursor resumes at the next pending obligation"
+        );
+        // Caller two owns r-5's obligation (T0) and the fixture's r-1 (T1).
+        assert_eq!(
+            preds(store.recoveries_pending_owned_by(&two, None, 9).unwrap()),
+            ["r-5", "r-1"],
+            "pending obligations of both owned runs, oldest first"
+        );
+        let ev = EventId("ev-1".into());
+        let hit = |who: &CallerKey| store.mailbox_event_destined_to(who, &ev).unwrap().is_some();
+        assert!(
+            hit(&two) && !hit(&one),
+            "ev-1 rides r-1: only the destination reads the body"
         );
     }
 }

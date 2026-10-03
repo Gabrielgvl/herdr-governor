@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use governor_core::identity::{LaunchId, RunId, Timestamp};
+use governor_core::identity::{HerdrIncarnation, LaunchId, RunId, Timestamp};
 use governor_core::lifecycle::{
     self, EffectKind, EffectState, Event, Transition, VersionTriple, Versioned, transition,
 };
@@ -21,10 +21,14 @@ use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::store::{ApplyError, Store};
 
 use super::DaemonError;
-use super::api::{ToolError, ToolRequest, ToolResponse};
+use super::api::{ToolRequest, ToolResponse};
 use super::clock::Clock;
+use super::identity;
 use super::log;
 use super::seam::SeamConfig;
+
+/// `tool` — the `Msg::Tool` arm's implementation (F1 + F7).
+mod tool;
 
 /// The bounded mailbox §4.2 pins: 256 messages, so a flood of posts
 /// applies backpressure instead of an unbounded queue.
@@ -42,15 +46,20 @@ pub(super) const MSG_CAPACITY: usize = 256;
 )]
 pub(crate) enum Msg {
     /// A tool call that reached the listener — M2's connection task
-    /// posts it; A1 answers everything `DAEMON_UNAVAILABLE`: the
-    /// transport exists, the tool surface lands with A2.
+    /// posts it with the request-time evidence it gathered; the arm
+    /// resolves and binds the caller (F1) then serves the call
+    /// (`herdr_status` is PR A's only tool, §7).
     Tool {
         /// The validated request.
-        #[expect(
-            dead_code,
-            reason = "read by P5.A2's Msg::Tool handler; A1's placeholder arm answers without inspecting it"
-        )]
         request: ToolRequest,
+        /// The connection task's request-time `session.snapshot` — F1
+        /// resolves the caller against this fresh read, never a cached
+        /// one (§4.6); an `Err` here is `DAEMON_UNAVAILABLE`, never an
+        /// identity verdict. Boxed: `Tool` otherwise dwarfs `Tick`.
+        snapshot: Box<Result<Observed<SessionSnapshot>, HerdrError>>,
+        /// The connection task's `canonicalize` of the envelope's
+        /// `projectRoot` — `None` when the path does not resolve (H#3).
+        resolved_root: Option<String>,
         /// The reply slot the connection task waits on.
         reply: oneshot::Sender<ToolResponse>,
     },
@@ -198,22 +207,34 @@ pub(super) struct Coordinator {
     loaded: LoadedConfig,
     daemon: DaemonSettings,
     catalog_path: PathBuf,
-    #[expect(
-        dead_code,
-        reason = "the coordinator's one clock — B1's dispatchers and C3's review ticks read it"
-    )]
     clock: Clock,
     seam: Option<SeamConfig>,
     /// The §4.14 step-1 flag the runner's pre-wire gate reads (`watch` —
     /// B1 subscribes receivers from this sender).
     shutdown_watch: watch::Sender<bool>,
+    /// When the coordinator was constructed — F7's uptime epoch (the one
+    /// clock).
+    started_at: Timestamp,
+    /// The last good snapshot's stamp — `Some` proves the Herdr
+    /// connection answered (a tick's or a tool call's request-time read);
+    /// F7 renders it as `herdr.freshSecsAgo`/`incarnation`.
+    herdr_seen: Option<(Timestamp, HerdrIncarnation)>,
+    /// When the live config adopted — F7's `config.lastGoodAt`.
+    config_adopted_at: Timestamp,
+    /// The last refused reload's class (`read`/`decode`/`invalid`) —
+    /// `None` while the last catalog attempt adopted; F7 renders it as
+    /// `config.valid`/`lastError`.
+    config_last_error: Option<&'static str>,
 }
 
 impl Coordinator {
     /// The single-owner task: `store` is moved in; the shutdown `watch`
-    /// starts unset and is raised exactly once (§4.14 step 1).
+    /// starts unset and is raised exactly once (§4.14 step 1). The
+    /// construction `now` doubles as F7's `lastGoodAt` — the startup
+    /// catalog was just adopted.
     pub(super) fn new(store: Store, args: CoordinatorArgs) -> Self {
         let (shutdown_watch, _) = watch::channel(false);
+        let now = args.clock.now();
         Self {
             store,
             loaded: args.loaded,
@@ -222,6 +243,10 @@ impl Coordinator {
             clock: args.clock,
             seam: args.seam,
             shutdown_watch,
+            started_at: now,
+            herdr_seen: None,
+            config_adopted_at: now,
+            config_last_error: None,
         }
     }
 
@@ -378,16 +403,26 @@ impl Coordinator {
     }
 
     /// One `Msg` to completion.
-    async fn handle(&mut self, msg: Msg) {
+    pub(super) async fn handle(&mut self, msg: Msg) {
         match msg {
-            Msg::Tool { reply, .. } => {
-                let _unused = reply.send(Err(ToolError::new(
-                    ToolError::DAEMON_UNAVAILABLE,
-                    "tool surface is not wired in this build",
-                )));
+            Msg::Tool {
+                request,
+                snapshot,
+                resolved_root,
+                reply,
+            } => {
+                let response = self.tool(request, *snapshot, resolved_root.as_deref());
+                let _unused = reply.send(response);
             }
             Msg::Tick { snapshot } => {
                 let answered = snapshot.is_ok();
+                if let Ok(observed) = &snapshot {
+                    // A good snapshot is the freshness F7 reports — the
+                    // same evidence the request-time read in `tool`
+                    // records.
+                    self.herdr_seen =
+                        Some((self.clock.now(), identity::incarnation(&observed.epoch)));
+                }
                 let panes = snapshot.map_or(0, |observed| observed.value.panes.len());
                 log::tick(answered, panes);
             }
@@ -400,7 +435,8 @@ impl Coordinator {
 
     /// `SIGHUP` — `config::reload` against the last-good; on `Adopted` the
     /// `[daemon]` table must still be present (a daemonless reload would
-    /// silently strand the daemon, so it retains instead).
+    /// silently strand the daemon, so it retains instead). F7's
+    /// `config.valid`/`lastError`/`lastGoodAt` track the same outcomes.
     async fn reload(&mut self) {
         match config::reload(&self.loaded, &self.catalog_path).await {
             config::ReloadOutcome::Adopted(loaded) => match loaded.daemon.clone() {
@@ -409,6 +445,8 @@ impl Coordinator {
                     log::config_adopted(&loaded.version.0);
                     self.daemon = daemon;
                     self.loaded = *loaded;
+                    self.config_adopted_at = self.clock.now();
+                    self.config_last_error = None;
                     if settings_changed {
                         // The spawned tasks captured their intervals at
                         // startup; a `[daemon]` change takes effect at
@@ -419,11 +457,13 @@ impl Coordinator {
                 None => log::config_retained("missing-daemon"),
             },
             config::ReloadOutcome::Retained { error, .. } => {
-                log::config_retained(match error {
+                let class = match error {
                     ConfigLoadError::Read(_) => "read",
                     ConfigLoadError::Decode(_) => "decode",
                     ConfigLoadError::Invalid(_) => "invalid",
-                });
+                };
+                self.config_last_error = Some(class);
+                log::config_retained(class);
             }
         }
     }
