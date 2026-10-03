@@ -162,7 +162,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - `rejected` when doneWhen is not verifiable;
     - `failed {effectCertainty, runId?, createdTopology}` (H#55–56).
 - **F6 `herdr_run`**, with these actions:
-  - `observe {runId}`: state, settlement, handoff digest and path, per-item acceptance, and outbox entries (paginated).
+  - `observe {runId, cursor?}`: state, settlement, handoff digest and path, per-item acceptance, and outbox entries paged by `seq` — `cursor` is the opaque continuation a previous page's `nextCursor` returned.
   - `message {runId, messageKey, text}`: see F17.
   - `ack {eventId}`: idempotent.
   - `handover {runIds, successorPaneId}`: the current owner must be live, and the successor must be verified by F1.
