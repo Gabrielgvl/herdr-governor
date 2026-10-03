@@ -149,12 +149,14 @@ impl Subscriptions {
         self.armed.clear();
     }
 
-    /// Run the one-shot output matchers against `pane`'s current text and
-    /// deliver `pane.output_matched` to each stream whose unfired
-    /// `substring` marker is on screen (a2: arming while the marker is on
-    /// screen fires immediately; the same marker never fires twice per
-    /// arm). `regex` markers match as substrings — ponytail: no regex
-    /// engine in the fake, add one when a test arms a real pattern.
+    /// Run the one-shot output matchers against `pane`'s current text —
+    /// the armed spec's `source` read, so a `set_pane_text` override is
+    /// what the detector sees — and deliver `pane.output_matched` to each
+    /// stream whose unfired `substring` marker is on screen (a2: arming
+    /// while the marker is on screen fires immediately; the same marker
+    /// never fires twice per arm). `regex` markers match as substrings —
+    /// ponytail: no regex engine in the fake, add one when a test arms a
+    /// real pattern.
     pub fn match_output(&mut self, pane: &PaneRow) {
         self.armed.retain(|s| !s.tx.is_closed());
         for sub in &mut self.armed {
@@ -171,12 +173,19 @@ impl Subscriptions {
                 let Some(marker) = spec.pointer("/match/value").and_then(Value::as_str) else {
                     continue;
                 };
-                let Some(line) = pane.text.lines().find(|l| l.contains(marker)) else {
+                let empty = serde_json::Map::new();
+                let read = read_json(pane, spec.as_object().unwrap_or(&empty));
+                let Some(line) = read
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .lines()
+                    .find(|l| l.contains(marker))
+                    .map(str::to_owned)
+                else {
                     continue;
                 };
                 *fired = true;
-                let empty = serde_json::Map::new();
-                let read = read_json(pane, spec.as_object().unwrap_or(&empty));
                 let data = json!({"pane_id": pane.pane_id, "matched_line": line, "read": read});
                 sub.tx.send(frame("pane.output_matched", &data)).ok();
             }

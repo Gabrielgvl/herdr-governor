@@ -5,8 +5,22 @@
 //! `invalid_request`). Pure: no I/O, no clock. Ids mirror the captures:
 //! panes `w<n>:p<k>` counted per workspace (a move renumbers, a46
 //! `after-workspace-move`), terminals `term_<hex>` surviving moves.
+//!
+//! `knobs` — the scripted-world fault knobs (`impl Topology` lives there
+//! so this file stays under the 500-line gate); `json` — the
+//! evidence-shaped emission (`session_snapshot`, `pane_info`,
+//! `pane_read`).
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use herdr_governor::adapters::herdr::SessionKind;
 use serde_json::{Map, Value, json};
+
+pub mod json;
+pub mod knobs;
+
+pub use json::{pane_json, read_json};
 
 /// A `{code, message}` the server answers instead of a result.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +45,16 @@ fn invalid(message: &str) -> WireError {
     }
 }
 
+/// The reported `agent_session` — `id` for a harness-minted session id,
+/// `path` under a scripted `session_dir` (a46 `--session-dir`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRef {
+    /// `kind` — `id` or `path`.
+    pub kind: SessionKind,
+    /// `value` — the session id, or the transcript path.
+    pub value: String,
+}
+
 /// An agent occupying a pane (the a3 `agent_started` record's fields).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Occupant {
@@ -40,8 +64,8 @@ pub struct Occupant {
     pub kind: String,
     /// `agent_status` wire value.
     pub status: String,
-    /// `agent_session.value` when the harness reports one (`kind:"id"`).
-    pub session: Option<String>,
+    /// `agent_session` when the harness reports one.
+    pub session: Option<SessionRef>,
 }
 
 /// One pane row — a shell until an agent starts on it.
@@ -57,8 +81,15 @@ pub struct PaneRow {
     pub terminal_id: String,
     /// `revision` — bumped on every text write.
     pub revision: u64,
+    /// `state_change_seq` override (`set_state_change_seq`); unset reads
+    /// as `revision`, the fake's stand-in for a real change counter.
+    pub state_change_seq: Option<u64>,
     /// The screen contents `pane.read` returns and markers match on.
     pub text: String,
+    /// Per-source `pane.read` overrides (`set_pane_text`) — the
+    /// `detection`/`visible` reads the retirement sweep and composer
+    /// guard take; a source without an entry reads `text`.
+    pub source_texts: BTreeMap<String, String>,
     /// The occupant, if any.
     pub agent: Option<Occupant>,
 }
@@ -104,6 +135,13 @@ pub struct Topology {
     pub next_terminal: u64,
     /// Workspace counter.
     pub next_workspace: u32,
+    /// Session counter — the first minted `id` session is bare
+    /// (`<name>-session`), later mints carry the counter suffix so a
+    /// `replace_occupant` never re-mints a live session.
+    pub next_session: u64,
+    /// The scripted session directory (`set_session_dir`): starts and
+    /// occupant replacements mint `kind:"path"` sessions under it.
+    pub session_dir: Option<PathBuf>,
 }
 
 impl Topology {
@@ -117,6 +155,8 @@ impl Topology {
             panes: Vec::new(),
             next_terminal: 0x65c9_1800_0000,
             next_workspace: 1,
+            next_session: 0,
+            session_dir: None,
         };
         let ws = t.create_workspace("fake");
         t.create_tab(&ws);
@@ -164,7 +204,32 @@ impl Topology {
         format!("term_{:014x}", self.next_terminal)
     }
 
-    fn add_pane(&mut self, workspace_id: &str, tab_id: &str) -> String {
+    /// Mint the next `agent_session`: `kind:"path"` under `session_dir`
+    /// (`<dir>/<seq>_<name>.jsonl`, the a46 `--session-dir` shape), else
+    /// the `kind:"id"` `<name>-session` — bare on the first mint,
+    /// counter-suffixed after.
+    pub(super) fn mint_session(&mut self, name: &str) -> SessionRef {
+        let n = self.next_session;
+        self.next_session = self.next_session.saturating_add(1);
+        if let Some(dir) = &self.session_dir {
+            let file = dir.join(format!("{n:04}_{name}.jsonl"));
+            return SessionRef {
+                kind: SessionKind::Path,
+                value: file.to_string_lossy().into_owned(),
+            };
+        }
+        let value = if n == 0 {
+            format!("{name}-session")
+        } else {
+            format!("{name}-session-{n}")
+        };
+        SessionRef {
+            kind: SessionKind::Id,
+            value,
+        }
+    }
+
+    pub(super) fn add_pane(&mut self, workspace_id: &str, tab_id: &str) -> String {
         let terminal_id = self.mint_terminal();
         let ws = self
             .workspaces
@@ -179,7 +244,9 @@ impl Topology {
             workspace_id: workspace_id.to_owned(),
             terminal_id,
             revision: 0,
+            state_change_seq: None,
             text: String::new(),
+            source_texts: BTreeMap::new(),
             agent: None,
         });
         pane_id
@@ -191,7 +258,7 @@ impl Topology {
         self.panes.iter().find(|p| p.pane_id == pane_id)
     }
 
-    fn pane_mut(&mut self, pane_id: &str) -> Result<&mut PaneRow, WireError> {
+    pub(super) fn pane_mut(&mut self, pane_id: &str) -> Result<&mut PaneRow, WireError> {
         self.panes
             .iter_mut()
             .find(|p| p.pane_id == pane_id)
@@ -212,72 +279,6 @@ impl Topology {
                 code: "agent_not_found",
                 message: format!("agent target {target} not found"),
             })
-    }
-
-    /// Append screen output to a pane (bumps `revision`); returns the new
-    /// text so the caller can run output matchers. Panics on an unknown
-    /// pane — a scripting error.
-    pub fn write_output(&mut self, pane_id: &str, text: &str) -> &PaneRow {
-        let pane = self
-            .pane_mut(pane_id)
-            .unwrap_or_else(|e| panic!("{}", e.message));
-        pane.text.push_str(text);
-        pane.revision = pane.revision.saturating_add(1);
-        pane
-    }
-
-    /// Knob: pane replacement — the pane is closed and a fresh shell pane
-    /// takes its place in the same tab (a46 `closed-pane` →
-    /// `recreated-pane`: new `pane_id`, new `terminal_id`, `agent_status`
-    /// `unknown`, no agent). Returns the new pane id.
-    pub fn replace_pane(&mut self, pane_id: &str) -> String {
-        let pos = self
-            .panes
-            .iter()
-            .position(|p| p.pane_id == pane_id)
-            .unwrap_or_else(|| panic!("pane {pane_id} is not scripted"));
-        let old = self.panes.remove(pos);
-        self.add_pane(&old.workspace_id, &old.tab_id)
-    }
-
-    /// Knob: workspace move — the pane keeps its terminal, occupant and
-    /// session but is renumbered into the destination workspace's first
-    /// tab (a46 `after-workspace-move`: `w1:p1` → `w2:p1`, same
-    /// `terminal_id`). Returns the new pane id.
-    pub fn move_to_workspace(&mut self, pane_id: &str, workspace_id: &str) -> String {
-        let tab_id = self
-            .tabs
-            .iter()
-            .find(|t| t.workspace_id == workspace_id)
-            .map_or_else(
-                || panic!("workspace {workspace_id} has no tab"),
-                |t| t.tab_id.clone(),
-            );
-        let ws = self
-            .workspaces
-            .iter_mut()
-            .find(|w| w.workspace_id == workspace_id)
-            .unwrap_or_else(|| panic!("workspace {workspace_id} is not scripted"));
-        let new_id = format!("{workspace_id}:p{}", ws.next_pane);
-        ws.next_pane = ws.next_pane.saturating_add(1);
-        let pane = self
-            .pane_mut(pane_id)
-            .unwrap_or_else(|e| panic!("{}", e.message));
-        pane.pane_id.clone_from(&new_id);
-        pane.tab_id = tab_id;
-        pane.workspace_id = workspace_id.to_owned();
-        new_id
-    }
-
-    /// Knob: set an agent's wire status (drives `agent_status_changed`).
-    pub fn set_agent_status(&mut self, pane_id: &str, status: &str) -> &PaneRow {
-        let pane = self
-            .pane_mut(pane_id)
-            .unwrap_or_else(|e| panic!("{}", e.message));
-        if let Some(agent) = pane.agent.as_mut() {
-            agent.status = status.to_owned();
-        }
-        pane
     }
 
     /// Answer one unary request: `Ok(result)` carries the `type`-tagged
@@ -361,22 +362,24 @@ impl Topology {
 
     /// `agent.start`: pre-flight `agent_pane_busy` on an occupied pane (a3
     /// `start_on_occupied_pane`), else the agent registers idle and
-    /// `interactive_ready` with an `id`-kind session.
+    /// `interactive_ready` with the minted session.
     fn agent_start(&mut self, p: &Map<String, Value>) -> Result<Value, WireError> {
         let (name, kind, pane_id) = (
             str_param(p, "name")?.to_owned(),
             str_param(p, "kind")?.to_owned(),
             str_param(p, "pane_id")?,
         );
-        let pane = self.pane_mut(pane_id)?;
-        if pane.agent.is_some() {
+        let shell = self.pane(pane_id).ok_or_else(|| pane_not_found(pane_id))?;
+        if shell.agent.is_some() {
             return Err(WireError {
                 code: "agent_pane_busy",
                 message: format!("agent target pane {pane_id} is not an available shell"),
             });
         }
+        let session = self.mint_session(&name);
+        let pane = self.pane_mut(pane_id)?;
         pane.agent = Some(Occupant {
-            session: Some(format!("{name}-session")),
+            session: Some(session),
             name,
             kind: kind.clone(),
             status: "idle".to_owned(),
@@ -390,111 +393,10 @@ impl Topology {
         );
         Ok(json!({"type": "agent_started", "agent": pane_json(pane), "argv": argv}))
     }
-
-    /// The `session_snapshot` payload.
-    #[must_use]
-    pub fn snapshot(&self) -> Value {
-        let layouts: Vec<Value> = self
-            .tabs
-            .iter()
-            .map(|t| {
-                let panes: Vec<Value> = self
-                    .panes
-                    .iter()
-                    .filter(|p| p.tab_id == t.tab_id)
-                    .map(|p| json!({"pane_id": p.pane_id, "focused": false}))
-                    .collect();
-                json!({"tab_id": t.tab_id, "workspace_id": t.workspace_id,
-                       "panes": panes, "splits": [], "zoomed": false})
-            })
-            .collect();
-        json!({
-            "version": "0.9.1", "protocol": 22,
-            "workspaces": self.workspaces.iter().map(|w| self.workspace_json(w)).collect::<Vec<_>>(),
-            "tabs": self.tabs.iter().map(|t| self.tab_json(t)).collect::<Vec<_>>(),
-            "panes": self.panes.iter().map(pane_json).collect::<Vec<_>>(),
-            "layouts": layouts,
-            "agents": self.agents_json(),
-            "focused_workspace_id": self.workspaces.first().map(|w| w.workspace_id.clone()),
-            "focused_tab_id": self.tabs.first().map(|t| t.tab_id.clone()),
-            "focused_pane_id": self.panes.first().map(|p| p.pane_id.clone()),
-        })
-    }
-
-    fn agents_json(&self) -> Vec<Value> {
-        self.panes
-            .iter()
-            .filter(|p| p.agent.is_some())
-            .map(pane_json)
-            .collect()
-    }
-
-    fn rollup(&self, f: impl Fn(&PaneRow) -> bool) -> &'static str {
-        if self.panes.iter().any(|p| f(p) && p.agent.is_some()) {
-            "idle"
-        } else {
-            "unknown"
-        }
-    }
-
-    fn tab_json(&self, t: &TabRow) -> Value {
-        json!({"tab_id": t.tab_id, "workspace_id": t.workspace_id, "number": t.number,
-               "label": t.label, "focused": false,
-               "agent_status": self.rollup(|p| p.tab_id == t.tab_id),
-               "pane_count": self.panes.iter().filter(|p| p.tab_id == t.tab_id).count()})
-    }
-
-    fn workspace_json(&self, w: &WorkspaceRow) -> Value {
-        let in_ws = |p: &PaneRow| p.workspace_id == w.workspace_id;
-        json!({"workspace_id": w.workspace_id, "number": w.number, "label": w.label,
-               "focused": false, "agent_status": self.rollup(in_ws),
-               "active_tab_id": self.tabs.iter().find(|t| t.workspace_id == w.workspace_id)
-                                    .map(|t| t.tab_id.clone()),
-               "tab_count": self.tabs.iter().filter(|t| t.workspace_id == w.workspace_id).count(),
-               "pane_count": self.panes.iter().filter(|p| in_ws(p)).count()})
-    }
 }
 
 fn str_param<'a>(p: &'a Map<String, Value>, key: &str) -> Result<&'a str, WireError> {
     p.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| invalid("api request params are malformed"))
-}
-
-/// A pane as `PaneInfo` — plus the `AgentInfo`-only members when occupied
-/// (the schema's two records share every pane field; a46 shows `name` and
-/// `interactive_ready` only on agent surfaces).
-#[must_use]
-pub fn pane_json(p: &PaneRow) -> Value {
-    let mut v = json!({
-        "pane_id": p.pane_id, "tab_id": p.tab_id, "workspace_id": p.workspace_id,
-        "terminal_id": p.terminal_id, "revision": p.revision, "focused": false,
-        "agent_status": p.agent.as_ref().map_or("unknown", |a| a.status.as_str()),
-        "cwd": "/home/user/lane", "foreground_cwd": "/home/user/lane",
-        "scroll": {"max_offset_from_bottom": 0, "offset_from_bottom": 0, "viewport_rows": 40},
-    });
-    if let (Some(a), Some(obj)) = (p.agent.as_ref(), v.as_object_mut()) {
-        obj.insert("agent".to_owned(), json!(a.kind));
-        obj.insert("name".to_owned(), json!(a.name));
-        obj.insert("interactive_ready".to_owned(), json!(true));
-        obj.insert("state_change_seq".to_owned(), json!(p.revision));
-        if let Some(s) = &a.session {
-            obj.insert(
-                "agent_session".to_owned(),
-                json!({"agent": a.kind, "kind": "id", "source": format!("herdr:{}", a.kind),
-                       "value": s}),
-            );
-        }
-    }
-    v
-}
-
-/// The `pane_read` payload; `source` echoes the request. ponytail: every
-/// source reads the same text — add a scrollback model when a test needs it.
-#[must_use]
-pub fn read_json(p: &PaneRow, params: &Map<String, Value>) -> Value {
-    json!({"pane_id": p.pane_id, "tab_id": p.tab_id, "workspace_id": p.workspace_id,
-           "revision": p.revision,
-           "source": params.get("source").cloned().unwrap_or_else(|| json!("recent")),
-           "format": "text", "text": p.text, "truncated": false})
 }

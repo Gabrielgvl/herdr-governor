@@ -11,10 +11,13 @@
 //! `script.rs`. Deterministic: delays are `tokio::time::sleep` (the
 //! paused test clock advances them), ordering is scripted queues.
 //!
-//! `topology` — the tables and the unary dispatcher; `script` — the fault
-//! queue and the armed-subscription registry; this file — the listener,
-//! connection discipline, restart and the test-facing handle.
+//! `topology` — the tables and the unary dispatcher (`topology/knobs`
+//! the scripted-world knobs, `topology/json` the wire emission);
+//! `script` — the fault queue and the armed-subscription registry;
+//! `knobs` — the test-facing knob methods; this file — the listener,
+//! connection discipline, restart and the handle's core.
 
+pub mod knobs;
 pub mod script;
 pub mod topology;
 
@@ -68,6 +71,8 @@ pub struct State {
     /// Every well-formed request the fake accepted: `(method, params)` —
     /// the proof a lost-ack request still landed.
     pub requests: Vec<(String, Value)>,
+    /// Latched `session.snapshot` failure (the `snapshot_fault` knob).
+    pub snapshot_fault: bool,
 }
 
 /// The test-facing handle: the socket in a tempdir, the listener task, the
@@ -96,6 +101,7 @@ impl FakeHerdr {
                 script: Script::default(),
                 subs: Subscriptions::default(),
                 requests: Vec::new(),
+                snapshot_fault: false,
             })),
             accept: None,
             conns: Arc::new(Mutex::new(JoinSet::new())),
@@ -126,58 +132,6 @@ impl FakeHerdr {
     /// The shared state, for scripting and assertions.
     pub fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("fake state poisoned")
-    }
-
-    /// Queue a fault for the next request of `method`.
-    pub fn fault(&self, method: &str, fault: Fault) {
-        self.state().script.push(method, fault);
-    }
-
-    /// Append screen output to a pane and run the output matchers.
-    pub fn write_output(&self, pane_id: &str, text: &str) {
-        let mut s = self.state();
-        let State { topology, subs, .. } = &mut *s;
-        let pane = topology.write_output(pane_id, text);
-        subs.match_output(pane);
-        drop(s);
-    }
-
-    /// Knob: pane replacement (see `Topology::replace_pane`).
-    #[must_use]
-    pub fn replace_pane(&self, pane_id: &str) -> String {
-        self.state().topology.replace_pane(pane_id)
-    }
-
-    /// Knob: workspace move (see `Topology::move_to_workspace`).
-    #[must_use]
-    pub fn move_to_workspace(&self, pane_id: &str, workspace_id: &str) -> String {
-        self.state()
-            .topology
-            .move_to_workspace(pane_id, workspace_id)
-    }
-
-    /// Knob: an agent status change, delivered to the armed streams.
-    pub fn set_agent_status(&self, pane_id: &str, status: &str) {
-        let mut s = self.state();
-        let State { topology, subs, .. } = &mut *s;
-        let pane = topology.set_agent_status(pane_id, status);
-        subs.agent_status_changed(pane);
-        drop(s);
-    }
-
-    /// Knob: a scroll change on `pane_id`, delivered to the armed streams.
-    pub fn scroll(&self, pane_id: &str, scroll: &Value) {
-        let mut s = self.state();
-        let State { topology, subs, .. } = &mut *s;
-        let pane = topology.pane(pane_id).expect("scripted pane");
-        subs.scroll_changed(pane, scroll);
-        drop(s);
-    }
-
-    /// Knob: subscription EOF mid-stream — every armed stream closes
-    /// silently; the listener stays up (`immediate_rearm_after_teardown`).
-    pub fn close_subscriptions(&self) {
-        self.state().subs.close_all();
     }
 
     /// Knob: daemon down — stop accepting, cut every connection (unary
@@ -340,17 +294,45 @@ async fn handle_conn(stream: UnixStream, state: &Mutex<State>) {
     write_json(&mut wr, &reply).await;
 }
 
+/// Create a `kind:"path"` session's transcript file — empty and only
+/// when absent (`create_new`: test-written records are never
+/// truncated).
+fn touch(path: &str) {
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(path)
+        .ok();
+}
+
 /// Apply one unary request to the topology, record it, and run the
-/// output matchers (a prompt's text lands on the pane).
+/// output matchers (a prompt's text lands on the pane). A latched
+/// `snapshot_fault` answers `session.snapshot` `unavailable` instead of
+/// dispatching; a `kind:"path"` session in the result gets its empty
+/// transcript file.
 fn apply(state: &Mutex<State>, method: &str, params: &Value) -> Result<Value, WireError> {
     let mut s = guard(state);
     s.requests.push((method.to_owned(), params.clone()));
+    if method == "session.snapshot" && s.snapshot_fault {
+        return Err(WireError {
+            code: "unavailable",
+            message: "session snapshot unavailable".to_owned(),
+        });
+    }
     let State { topology, subs, .. } = &mut *s;
     let out = topology.dispatch(method, params);
     for pane in &topology.panes {
         subs.match_output(pane);
     }
     drop(s);
+    if let Ok(result) = &out {
+        let session = result.pointer("/agent/agent_session");
+        if session.and_then(|v| v.get("kind")).and_then(Value::as_str) == Some("path")
+            && let Some(path) = session.and_then(|v| v.get("value")).and_then(Value::as_str)
+        {
+            touch(path);
+        }
+    }
     out
 }
 
