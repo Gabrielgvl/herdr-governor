@@ -21,6 +21,10 @@ use core::time::Duration;
 
 use serde::Deserialize;
 
+use self::daemon::RawDaemon;
+use super::DaemonSettings;
+
+mod daemon;
 use governor_core::config::{
     Capability, Catalog, Config, ConfigVersion, CostClass, DEFAULT_EXPLORATION_RATE,
     DEFAULT_IDLE_WINDOW, DEFAULT_JUDGMENT_WINDOW, DEFAULT_MAX_AGE, DEFAULT_RECOVERY_EXPIRY,
@@ -30,6 +34,9 @@ use governor_core::identity::AgentKind;
 
 /// The file's root table: `[policy]` and `[catalog]` are both required —
 /// a catalog.toml without one of them is a broken file, not a partial one.
+/// `[daemon]` is optional at decode: its absence is `LoadedConfig.daemon
+/// == None`, which the `daemon`/`check-config` arms refuse at their own
+/// boundary — a consumer that never serves never needs it.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawConfig {
@@ -37,6 +44,8 @@ pub(super) struct RawConfig {
     policy: RawPolicy,
     /// `[catalog]` — the operating-point list.
     catalog: RawCatalog,
+    /// `[daemon]` — the daemon's own settings (§4.15), `None` when absent.
+    daemon: Option<RawDaemon>,
 }
 
 /// `[catalog]` — `operating_points` is required; `operating_points = []`
@@ -122,14 +131,17 @@ struct RawPolicy {
 
 impl RawConfig {
     /// Stamp `version` (sha256 of the file bytes — OQ-7) and map the DTOs
-    /// onto the core `Config`; `Config::validate` still owns every value
-    /// rule — nothing is checked here.
-    pub(super) fn into_config(self, version: ConfigVersion) -> Config {
-        Config {
+    /// onto the core `Config` plus the decoded `[daemon]` settings;
+    /// `Config::validate` still owns every value rule — nothing is
+    /// checked here.
+    pub(super) fn into_config(self, version: ConfigVersion) -> (Config, Option<DaemonSettings>) {
+        let daemon = self.daemon.map(RawDaemon::into_settings);
+        let config = Config {
             version,
             catalog: self.catalog.into_catalog(),
             policy: self.policy.into_policy(),
-        }
+        };
+        (config, daemon)
     }
 }
 
@@ -215,26 +227,26 @@ mod tests {
     /// The smallest complete file: only the fields that carry no core
     /// `DEFAULT_*` (and the required `operating_points` key) are written.
     const MINIMAL: &str = r#"
-[policy]
-tiers = ["fast"]
-provider_limit_threshold = 0.6
-cooldown_secs = 60
+    [policy]
+    tiers = ["fast"]
+    provider_limit_threshold = 0.6
+    cooldown_secs = 60
 
-[catalog]
-operating_points = []
-"#;
+    [catalog]
+    operating_points = []
+    "#;
 
     /// One operating point with every field present.
     const POINT: &str = r#"
-[[catalog.operating_points]]
-id = "forge-pro"
-harness = "forge"
-args = ["--model", "pro"]
-tier = "fast"
-capabilities = ["start", "prompt_ack"]
-cost_class = 3
-provider = "vendor-a"
-"#;
+    [[catalog.operating_points]]
+    id = "forge-pro"
+    harness = "forge"
+    args = ["--model", "pro"]
+    tier = "fast"
+    capabilities = ["start", "prompt_ack"]
+    cost_class = 3
+    provider = "vendor-a"
+    "#;
 
     /// `MINIMAL` plus one operating point.
     fn with_point() -> String {
@@ -299,7 +311,7 @@ provider = "vendor-a"
     fn decodes_every_operating_point_field() {
         let raw: RawConfig = toml::from_str(&with_point()).expect("catalog with a point decodes");
         assert_eq!(raw.catalog.operating_points.len(), 1, "one point");
-        let point = &raw.catalog.operating_points[0];
+        let point = raw.catalog.operating_points.first().expect("one point");
         assert_eq!(point.id, "forge-pro");
         assert_eq!(point.harness, "forge");
         assert_eq!(
@@ -425,7 +437,8 @@ provider = "vendor-a"
     #[test]
     fn into_config_maps_every_field() {
         let raw: RawConfig = toml::from_str(&with_point()).expect("decodes");
-        let config = raw.into_config(ConfigVersion("v1".into()));
+        let (config, daemon) = raw.into_config(ConfigVersion("v1".into()));
+        assert!(daemon.is_none(), "MINIMAL writes no [daemon] table");
         assert_eq!(config.version.0, "v1", "the caller-stamped version lands");
         assert_eq!(config.policy.cooldown.as_secs(), 60, "secs map to Duration");
         assert_eq!(config.policy.tiers[0].0, "fast");

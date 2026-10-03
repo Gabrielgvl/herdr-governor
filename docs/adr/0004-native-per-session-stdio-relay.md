@@ -39,4 +39,4 @@ The owner ruled (2026-09-29/30) that the caller transport is a **native per-sess
 
 ## Open questions
 
-- The unix socket's exact path is not ruled; the state directory (0700) is the natural home, decided at implementation.
+- ~~The unix socket's exact path is not ruled; the state directory (0700) is the natural home, decided at implementation.~~ **Ruled (Phase 5 A1):** the socket is `<state>/governor.sock` (0600) under the `0700` state dir `~/.local/state/herdr-governor` (overridable by `daemon --state-dir`/`relay --socket`); the relay reads `HOME` only to derive that default — the one documented env exception.

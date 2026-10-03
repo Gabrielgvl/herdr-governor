@@ -3,4 +3,5 @@
 //! subcommands and the member-level tests drive.
 
 pub mod adapters;
+pub mod daemon;
 pub mod store;

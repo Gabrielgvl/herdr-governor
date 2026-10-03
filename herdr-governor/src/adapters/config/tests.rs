@@ -43,6 +43,23 @@ tier = "fast"
 capabilities = ["start"]
 cost_class = 0
 provider = "vendor-b"
+
+[daemon]
+herdr_socket = "/run/test/herdr.sock"
+jev_base_url = "https://jev.invalid"
+jev_model = "jev-test"
+jev_timeout_secs = 21
+herdr_op_timeout_secs = 11
+agent_start_timeout_ms = 31000
+reconcile_secs = 31
+review_interval_secs = 301
+launch_wait_secs = 61
+shutdown_grace_secs = 11
+retire_enabled = false
+retire_grace_secs = 901
+transcript_data_dirs = ["/tmp/roots-a", "/tmp/roots-b"]
+transcript_project_dirs = ["/tmp/projects"]
+devin_log_dir = "/tmp/native-logs"
 "#;
 
 /// Write `contents` as `dir/catalog.toml` and return its path.
