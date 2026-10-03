@@ -25,6 +25,49 @@ pub struct LoadedConfig {
     /// Lowercase-hex sha256 of the file bytes — `config.version` verbatim
     /// (OQ-7: the file declares no version of its own).
     pub version: ConfigVersion,
+    /// The `[daemon]` table (§4.15), `None` when the file omits it — the
+    /// `daemon`/`check-config` arms refuse the absence at their own
+    /// boundary; nothing else consumes it.
+    pub daemon: Option<DaemonSettings>,
+}
+
+/// §4.15 — the decoded `[daemon]` table: the daemon's own settings.
+/// `herdr_socket`, `jev_base_url` and `jev_model` are required keys;
+/// everything else carries the spec's written default. The three `Option`
+/// overrides stay `None` for "derive it" — `transcript_*` falls back to
+/// `TranscriptRoots::from_env`, `devin_log_dir` to the harness data dir.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DaemonSettings {
+    /// The Herdr socket the daemon drives.
+    pub herdr_socket: std::path::PathBuf,
+    /// The Jev API base URL.
+    pub jev_base_url: String,
+    /// The Jev model id.
+    pub jev_model: String,
+    /// Jev call deadline.
+    pub jev_timeout: std::time::Duration,
+    /// One Herdr op deadline.
+    pub herdr_op_timeout: std::time::Duration,
+    /// `agent_start` deadline.
+    pub agent_start_timeout: std::time::Duration,
+    /// Reconcile tick interval.
+    pub reconcile: std::time::Duration,
+    /// Deadline-review sweep interval.
+    pub review_interval: std::time::Duration,
+    /// `herdr_launch` wait bound.
+    pub launch_wait: std::time::Duration,
+    /// §4.14 in-flight receipt bound.
+    pub shutdown_grace: std::time::Duration,
+    /// F30 — `false` journals `would_retire` and closes nothing.
+    pub retire_enabled: bool,
+    /// F30 — the idle/done + unchanged-screen grace before a close.
+    pub retire_grace: std::time::Duration,
+    /// F31 — overrides `TranscriptRoots::from_env`'s data roots.
+    pub transcript_data_dirs: Option<Vec<std::path::PathBuf>>,
+    /// F31 — overrides `TranscriptRoots::from_env`'s project roots.
+    pub transcript_project_dirs: Option<Vec<std::path::PathBuf>>,
+    /// F31 — overrides the harness log dir under the data root.
+    pub devin_log_dir: Option<std::path::PathBuf>,
 }
 
 /// F27 — why a `catalog.toml` load failed: unreadable bytes, undecodable
@@ -54,7 +97,8 @@ pub enum ConfigLoadError {
 pub enum ReloadOutcome<'a> {
     /// The new bytes decoded and validated — or were byte-identical to the
     /// live ones (the digest-equality cheap path): this is the live config.
-    Adopted(LoadedConfig),
+    /// Boxed — `LoadedConfig` dwarfs the `Retained` variant.
+    Adopted(Box<LoadedConfig>),
     /// The new file failed to read, decode or validate; the last-good
     /// config stays live (F27) and the typed error rides along.
     Retained {
@@ -94,10 +138,10 @@ pub async fn reload<'a>(current: &'a LoadedConfig, path: &Path) -> ReloadOutcome
     };
     let version = ConfigVersion(sha256_hex(&bytes));
     if version == current.version {
-        return ReloadOutcome::Adopted(current.clone());
+        return ReloadOutcome::Adopted(Box::new(current.clone()));
     }
     match assemble(&bytes, version) {
-        Ok(loaded) => ReloadOutcome::Adopted(loaded),
+        Ok(loaded) => ReloadOutcome::Adopted(Box::new(loaded)),
         Err(error) => ReloadOutcome::Retained {
             last_good: current,
             error,
@@ -121,9 +165,13 @@ pub async fn load_credentials(path: &Path) -> Result<ApiKey, JevError> {
 /// the caller hashes so `reload` can compare before paying for a decode.
 fn assemble(bytes: &[u8], version: ConfigVersion) -> Result<LoadedConfig, ConfigLoadError> {
     let raw: raw::RawConfig = toml::from_slice(bytes).map_err(ConfigLoadError::Decode)?;
-    let config = raw.into_config(version.clone());
+    let (config, daemon) = raw.into_config(version.clone());
     config.validate().map_err(ConfigLoadError::Invalid)?;
-    Ok(LoadedConfig { config, version })
+    Ok(LoadedConfig {
+        config,
+        version,
+        daemon,
+    })
 }
 
 /// OQ-7 — `sha256(file bytes)` as lowercase hex.

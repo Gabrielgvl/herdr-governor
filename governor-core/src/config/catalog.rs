@@ -127,6 +127,11 @@ pub const DEFAULT_IDLE_WINDOW: Duration = Duration::from_mins(15);
 /// is not a stable `const fn` on the pinned toolchain, hence hours.)
 pub const MAX_POLICY_WINDOW: Duration = Duration::from_hours(3_650 * 24);
 
+/// F27 — the provider-name bound: 64 bytes. `herdr_status` lists every
+/// provider's cooldown inside one paged response's byte budget (F7), so a
+/// legal catalog keeps the section bounded.
+pub const PROVIDER_NAME_MAX_BYTES: usize = 64;
+
 /// F27 — one loaded `catalog.toml`: the catalog, the policy and the version
 /// every decision made under it records.
 #[derive(Debug, Clone, PartialEq)]
@@ -186,6 +191,13 @@ pub enum ConfigError {
         /// The dotted path of the duration.
         field: String,
     },
+    /// A bounded name exceeds its byte limit — provider names are capped
+    /// at `PROVIDER_NAME_MAX_BYTES` so the status cooldowns listing stays
+    /// inside its page budget (F7).
+    NameTooLong {
+        /// The dotted path of the over-long name.
+        field: String,
+    },
 }
 
 impl core::fmt::Display for ConfigError {
@@ -213,6 +225,12 @@ impl core::fmt::Display for ConfigError {
                 write!(
                     formatter,
                     "{field}: duration exceeds the 10-year policy bound"
+                )
+            }
+            Self::NameTooLong { field } => {
+                write!(
+                    formatter,
+                    "{field}: name exceeds the {PROVIDER_NAME_MAX_BYTES}-byte bound"
                 )
             }
         }
@@ -352,6 +370,11 @@ fn validate_catalog(catalog: &Catalog, policy: &Policy, errors: &mut Vec<ConfigE
         }
         if point.provider.0.trim().is_empty() {
             errors.push(ConfigError::Missing {
+                field: format!("{base}.provider"),
+            });
+        }
+        if point.provider.0.len() > PROVIDER_NAME_MAX_BYTES {
+            errors.push(ConfigError::NameTooLong {
                 field: format!("{base}.provider"),
             });
         }

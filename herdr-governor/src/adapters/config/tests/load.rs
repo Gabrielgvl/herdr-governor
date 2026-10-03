@@ -69,6 +69,33 @@ async fn golden_catalog_parses() {
     assert_eq!(point.provider.0, "vendor-a");
     let caps: Vec<&str> = point.capabilities.iter().map(|c| c.0.as_str()).collect();
     assert_eq!(caps, ["start", "prompt_ack"], "capabilities map verbatim");
+    let daemon = loaded
+        .daemon
+        .as_ref()
+        .expect("GOLDEN writes a [daemon] table");
+    assert_eq!(
+        daemon.herdr_socket,
+        std::path::Path::new("/run/test/herdr.sock")
+    );
+    assert_eq!(daemon.jev_base_url, "https://jev.invalid");
+    assert_eq!(daemon.jev_model, "jev-test");
+    assert_eq!(daemon.jev_timeout, Duration::from_secs(21));
+    assert_eq!(daemon.agent_start_timeout, Duration::from_secs(31));
+    assert_eq!(daemon.reconcile, Duration::from_secs(31));
+    assert_eq!(daemon.shutdown_grace, Duration::from_secs(11));
+    assert!(!daemon.retire_enabled, "the written false lands");
+    assert_eq!(daemon.retire_grace, Duration::from_secs(901));
+    assert_eq!(
+        daemon.transcript_data_dirs,
+        Some(vec![
+            std::path::PathBuf::from("/tmp/roots-a"),
+            std::path::PathBuf::from("/tmp/roots-b")
+        ])
+    );
+    assert_eq!(
+        daemon.devin_log_dir,
+        Some(std::path::PathBuf::from("/tmp/native-logs"))
+    );
 }
 
 #[test]
@@ -387,4 +414,80 @@ async fn policy_defaults_apply() {
     assert_eq!(policy.judgment_window, Duration::from_mins(30));
     assert_eq!(policy.idle_window, Duration::from_mins(15));
     assert_eq!(policy.no_change_cap, None, "absent caps are None");
+}
+
+/// A minimal valid catalog the `[daemon]` cases bolt their table onto —
+/// the daemon table is the subject, so the core half stays at defaults.
+fn daemon_doc(body: &str) -> String {
+    format!(
+        "[policy]\ntiers = [\"fast\"]\nprovider_limit_threshold = 0.6\ncooldown_secs = 60\n\n[catalog]\noperating_points = []\n\n{body}"
+    )
+}
+
+/// §4.15 — the `[daemon]` table: required keys refuse at decode, every
+/// absent timeout/interval decodes to the spec's written default, the
+/// optional overrides stay `None`, and an absent table lands `None` (the
+/// `daemon`/`check-config` arms refuse it at their own boundary).
+#[tokio::test]
+async fn settings_defaults_and_required_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    // Absent `[daemon]` → `daemon: None` — a file that never serves a
+    // daemon still loads.
+    let path = write_catalog(dir.path(), &daemon_doc(""));
+    let loaded = crate::adapters::config::load(&path)
+        .await
+        .expect("no [daemon] still loads");
+    assert!(loaded.daemon.is_none(), "absent table is None");
+
+    // The minimal table: only the three required keys — every
+    // timeout/interval decodes to the §4.15 default, overrides stay None.
+    let minimal_path = write_catalog(
+        dir.path(),
+        &daemon_doc(
+            "[daemon]\nherdr_socket = \"/run/x/herdr.sock\"\njev_base_url = \"https://a.invalid\"\njev_model = \"m\"\n",
+        ),
+    );
+    let loaded_min = crate::adapters::config::load(&minimal_path)
+        .await
+        .expect("minimal [daemon] loads");
+    let daemon = loaded_min.daemon.expect("the table lands");
+    assert_eq!(daemon.jev_timeout, Duration::from_secs(20));
+    assert_eq!(daemon.herdr_op_timeout, Duration::from_secs(10));
+    assert_eq!(daemon.agent_start_timeout, Duration::from_secs(30));
+    assert_eq!(daemon.reconcile, Duration::from_secs(30));
+    assert_eq!(daemon.review_interval, Duration::from_secs(300));
+    assert_eq!(daemon.launch_wait, Duration::from_secs(60));
+    assert_eq!(daemon.shutdown_grace, Duration::from_secs(10));
+    assert!(daemon.retire_enabled, "retirement defaults on");
+    assert_eq!(daemon.retire_grace, Duration::from_mins(15));
+    assert_eq!(daemon.transcript_data_dirs, None, "absent ⇒ derive");
+    assert_eq!(daemon.transcript_project_dirs, None);
+    assert_eq!(daemon.devin_log_dir, None);
+
+    // Each required key missing → Decode; an unknown key → Decode.
+    for (name, body) in [
+        (
+            "herdr_socket",
+            "[daemon]\njev_base_url = \"https://a.invalid\"\njev_model = \"m\"\n",
+        ),
+        (
+            "jev_base_url",
+            "[daemon]\nherdr_socket = \"/run/x/herdr.sock\"\njev_model = \"m\"\n",
+        ),
+        (
+            "jev_model",
+            "[daemon]\nherdr_socket = \"/run/x/herdr.sock\"\njev_base_url = \"https://a.invalid\"\n",
+        ),
+        (
+            "unknown key",
+            "[daemon]\nherdr_socket = \"/run/x/herdr.sock\"\njev_base_url = \"https://a.invalid\"\njev_model = \"m\"\nbogus = 1\n",
+        ),
+    ] {
+        let bad_path = write_catalog(dir.path(), &daemon_doc(body));
+        match crate::adapters::config::load(&bad_path).await {
+            Err(ConfigLoadError::Decode(_)) => {}
+            other => panic!("{name}: must be a decode error, got {other:?}"),
+        }
+    }
 }

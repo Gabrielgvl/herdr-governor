@@ -47,7 +47,7 @@ impl Timestamp {
     }
 }
 
-/// Appendix B `runs.run_id` — one Run of a Launch's Task (uuid v7 text).
+/// Appendix B `runs.run_id` — one Run of a Launch's Task (uuid v4 text).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RunId(pub String);
 

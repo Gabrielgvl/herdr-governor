@@ -162,7 +162,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - `rejected` when doneWhen is not verifiable;
     - `failed {effectCertainty, runId?, createdTopology}` (H#55–56).
 - **F6 `herdr_run`**, with these actions:
-  - `observe {runId}`: state, settlement, handoff digest and path, per-item acceptance, and outbox entries (paginated).
+  - `observe {runId, cursor?}`: state, settlement, handoff digest and path, per-item acceptance, and outbox entries paged by `seq` — `cursor` is the opaque continuation a previous page's `nextCursor` returned.
   - `message {runId, messageKey, text}`: see F17.
   - `ack {eventId}`: idempotent.
   - `handover {runIds, successorPaneId}`: the current owner must be live, and the successor must be verified by F1.
@@ -461,7 +461,7 @@ Appendix B holds the executable DDL, including constraints, triggers and the `ou
 
 ### Starting dependency set (`Cargo.lock` is a hard path; approved once)
 
-- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `rmcp` (server; the daemon's unix-socket endpoint and the relay's stdio transport), `schemars`, `thiserror`, `tracing`, `tracing-subscriber`, `uuid` (v7), `sha2`, `rustix` (fs, process).
+- **Runtime:** `tokio`, `serde`, `serde_json`, `toml`, `rusqlite` (bundled), `reqwest` (rustls), `thiserror`, `tracing` (direct, default features off — the stderr subscriber is in-repo), `sha2`, `rustix` (fs, process, time). The MCP surface and the relay are hand-rolled (OQ-A), as are the UUID v4/v7 mints over `/dev/urandom` (OQ-O) — no `rmcp`, `schemars`, `tracing-subscriber` or `uuid` dependency.
 - **Dev:** `proptest`, `tempfile`.
 - No CLI-parsing crate.
 
@@ -931,7 +931,7 @@ CREATE TABLE launches (
 );
 
 CREATE TABLE runs (
-  run_id              TEXT PRIMARY KEY,
+  run_id              TEXT PRIMARY KEY,                       -- uuid v4
   launch_id           TEXT NOT NULL UNIQUE REFERENCES launches(launch_id),
   owner_caller_id     INTEGER NOT NULL REFERENCES callers(caller_id),
   owner_generation    INTEGER NOT NULL DEFAULT 0,
