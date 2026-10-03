@@ -1,5 +1,6 @@
 //! Test fixtures for the delivery module — constructed inputs, no I/O.
 
+use alloc::format;
 use alloc::vec::Vec;
 
 use crate::config::Capability;
@@ -126,6 +127,27 @@ pub(super) fn child_prompt_effect(state: EffectState) -> Effect {
         certainty: None,
         receipt: None,
         dispatched_at: None,
+    }
+}
+
+/// A `prompt` effect to the child's captured identity under the journal key
+/// `run:r1:<suffix>` (`prompt:task`, `nudge:<episode>`, `outbox:<seq>`, …),
+/// in `state`.
+pub(super) fn child_prompt_keyed(suffix: &str, state: EffectState) -> Effect {
+    Effect {
+        id: EffectId(format!("eff:{suffix}")),
+        key: EffectKey(format!("run:r1:{suffix}")),
+        ..child_prompt_effect(state)
+    }
+}
+
+/// A hint-keyed effect: prompt kind, the owner's pane as captured target —
+/// never a child-queue row.
+pub(super) fn hint(state: EffectState) -> Effect {
+    Effect {
+        key: EffectKey("event:ev1:hint".into()),
+        target: Some(EffectTarget::CallerContext(PaneId("w6:p1".into()))),
+        ..child_prompt_effect(state)
     }
 }
 

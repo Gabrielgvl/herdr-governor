@@ -21,6 +21,7 @@ use crate::adapters::herdr::{
 use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolRequest};
 use crate::daemon::clock::Clock;
 use crate::daemon::coordinator::{Coordinator, CoordinatorArgs, Msg, Signal};
+use crate::daemon::paths::Paths;
 use crate::store::Store;
 
 const RELAY: &str = "abababababababababababababababab";
@@ -141,7 +142,7 @@ fn daemon_settings() -> DaemonSettings {
     }
 }
 
-fn coordinator_at(store: Store, catalog_path: &Path) -> Coordinator {
+fn coordinator_at(store: Store, catalog_path: &Path, dir: &Path) -> Coordinator {
     Coordinator::new(
         store,
         CoordinatorArgs {
@@ -160,12 +161,13 @@ fn coordinator_at(store: Store, catalog_path: &Path) -> Coordinator {
             catalog_path: catalog_path.to_path_buf(),
             clock: Clock::new(),
             seam: None,
+            paths: Paths::create(&dir.join("state")).expect("paths"),
         },
     )
 }
 
-fn coordinator_with(store: Store) -> Coordinator {
-    coordinator_at(store, Path::new("/nonexistent/catalog.toml"))
+fn coordinator_with(store: Store, dir: &Path) -> Coordinator {
+    coordinator_at(store, Path::new("/nonexistent/catalog.toml"), dir)
 }
 
 fn store_in(dir: &Path) -> Store {
@@ -191,7 +193,7 @@ fn status_request(envelope: &CallerEnvelope) -> ToolRequest {
 fn tool_status_resolves_binds_and_pages() {
     let tmp = tempfile::tempdir().expect("tmp");
     let root = canonical(tmp.path());
-    let mut coordinator = coordinator_with(store_in(tmp.path()));
+    let mut coordinator = coordinator_with(store_in(tmp.path()), tmp.path());
     let agents = vec![agent("w1:p1", Some("sess-1"))];
     let request = status_request(&envelope("w1:p1", &root));
 
@@ -248,7 +250,7 @@ async fn reload_without_daemon_table_records_the_refusal() {
          [catalog]\noperating_points = []\n",
     )
     .expect("catalog");
-    let mut coordinator = coordinator_at(store_in(tmp.path()), &catalog_path);
+    let mut coordinator = coordinator_at(store_in(tmp.path()), &catalog_path, tmp.path());
     let request = status_request(&envelope("w1:p1", &root));
     let agents = || vec![agent("w1:p1", Some("sess-1"))];
 
@@ -298,7 +300,7 @@ async fn reload_without_daemon_table_records_the_refusal() {
 async fn tool_status_reports_tick_health() {
     let tmp = tempfile::tempdir().expect("tmp");
     let root = canonical(tmp.path());
-    let mut coordinator = coordinator_with(store_in(tmp.path()));
+    let mut coordinator = coordinator_with(store_in(tmp.path()), tmp.path());
     coordinator
         .handle(Msg::Tick {
             snapshot: Ok(observed(snapshot(Vec::new()))),
@@ -360,7 +362,7 @@ async fn tool_status_reports_tick_health() {
 fn tool_refusals_are_typed() {
     let tmp = tempfile::tempdir().expect("tmp");
     let root = canonical(tmp.path());
-    let mut coordinator = coordinator_with(store_in(tmp.path()));
+    let mut coordinator = coordinator_with(store_in(tmp.path()), tmp.path());
 
     let request = status_request(&envelope("w1:p1", &root));
     let sessionless = coordinator

@@ -73,13 +73,17 @@ impl Coordinator {
         resolved_root: Option<&str>,
     ) -> Result<CallerKey, ToolError> {
         let now = self.clock.now();
+        // The request-time read is a real Herdr read — it feeds the one
+        // health record (§4.7) like the tick/observation reads do, Err
+        // included; the verdict then answers `DAEMON_UNAVAILABLE` as
+        // before, never an identity verdict.
+        self.health.record(&snapshot, now);
         let Ok(observed) = snapshot else {
             return Err(ToolError::new(
                 ToolError::DAEMON_UNAVAILABLE,
                 "request-time herdr snapshot unavailable",
             ));
         };
-        self.herdr_seen = Some((now, identity::incarnation(&observed.epoch)));
         let agents = identity::agent_rows(&observed.value);
         let (caller, binding) = identity::resolve(&self.store, envelope, resolved_root, &agents)?;
         if let Some(fresh) = binding {
@@ -98,15 +102,17 @@ impl Coordinator {
         Ok(caller)
     }
 
-    /// The last good snapshot's record — test-only: `herdr_seen` is
-    /// written by the Tick arm and every tool call's request-time read,
-    /// and a status page always renders the latter, so the tick arm's
-    /// own write is observable only through this read (F13).
+    /// The last good snapshot's record — test-only: `health` is written
+    /// by the Tick arm and every tool call's request-time read, and a
+    /// status page always renders the latter, so the tick arm's own
+    /// write is observable only through this read (F13).
     #[cfg(test)]
     pub(in crate::daemon) fn herdr_seen(
         &self,
     ) -> Option<(Timestamp, governor_core::identity::HerdrIncarnation)> {
-        self.herdr_seen.clone()
+        self.health
+            .last_ok()
+            .zip(self.health.incarnation().cloned())
     }
 
     /// F7 — what `status::page` needs of coordinator state, as values.
@@ -119,10 +125,11 @@ impl Coordinator {
                 .saturating_div(1_000),
             version: env!("CARGO_PKG_VERSION"),
             herdr: self
-                .herdr_seen
-                .as_ref()
+                .health
+                .last_ok()
+                .zip(self.health.incarnation())
                 .map(|(at, incarnation)| status::HerdrHealth {
-                    at: *at,
+                    at,
                     incarnation: incarnation.0.clone(),
                 }),
             config: status::ConfigHealth {

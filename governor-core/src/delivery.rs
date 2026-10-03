@@ -20,7 +20,7 @@ pub use followup::{
 pub use mailbox::{
     HINT_MIN_INTERVAL, MailboxEvent, MailboxEventKind, MailboxSubject, hint_effect, hint_eligible,
 };
-pub use serial::next_dispatchable_follow_up;
+pub use serial::{next_dispatchable_follow_up, prompt_dispatchable};
 
 #[cfg(test)]
 mod tests {
@@ -28,6 +28,7 @@ mod tests {
     mod f17;
     mod f18;
     mod f9;
+    mod f9_dispatch;
 
     use super::{
         FOLLOWUP_FILE_MAX_BYTES, FOLLOWUP_FILE_RETENTION, FOLLOWUP_INLINE_MAX_BYTES,

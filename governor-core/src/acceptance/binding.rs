@@ -9,7 +9,9 @@ use alloc::vec::Vec;
 use crate::config::ConfigVersion;
 use crate::identity::{Digest, RunId, Timestamp};
 use crate::lifecycle::JudgmentVerdict;
-use crate::routing::{Question, QuestionVersion};
+use crate::routing::{
+    JudgmentOutcome, JudgmentPurpose, JudgmentRecord, Question, QuestionVersion, noul_cleared,
+};
 
 /// F24/Appendix B `handoffs` — the frozen copy of a valid marked file, keyed
 /// `(run_id, work_generation, digest)`. `frozen_path`/`frozen_at` are supplied
@@ -147,6 +149,36 @@ pub fn unjudged_items(
         })
         .filter(|key| key.needs_judgment(completed))
         .collect()
+}
+
+/// F24 — the verdict of an answered `acceptance` judgment set, or `None`
+/// when the record is not a complete valid assessment of the Task's
+/// `item_count` doneWhen items: `record.set` must be an `answered`
+/// `acceptance` set and its judgments exactly the rendered ask's answers —
+/// one `handoff_meets_item_k` per `k` in `{0..item_count}`, each item once
+/// and none outside the family (a one-item prefix of a larger Task, a
+/// duplicate, an out-of-range item or a foreign question are all `None`).
+/// `None` is journal-and-re-ask, never a verdict (OQ-K). `items_met[i]` is
+/// item `i`'s noul at the calibrated majority; `verdict` resolves the set.
+#[must_use]
+pub fn acceptance_verdict(record: &JudgmentRecord, item_count: u8) -> Option<JudgmentVerdict> {
+    if record.set.purpose != JudgmentPurpose::Acceptance
+        || record.set.outcome != JudgmentOutcome::Answered
+    {
+        return None;
+    }
+    let mut items_met = Vec::new();
+    items_met.resize(usize::from(item_count), None);
+    for judgment in &record.judgments {
+        let Question::HandoffMeetsItem { item } = judgment.question else {
+            return None;
+        };
+        let slot = items_met.get_mut(usize::from(item))?;
+        if slot.replace(noul_cleared(judgment, None)).is_some() {
+            return None;
+        }
+    }
+    Some(verdict(&items_met.into_iter().collect::<Option<Vec<_>>>()?))
 }
 
 /// F24 — the verdict once every doneWhen item has a completed assessment:

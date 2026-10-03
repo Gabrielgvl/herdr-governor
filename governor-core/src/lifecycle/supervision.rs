@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use crate::config::Policy;
 use crate::delivery::MailboxEventKind;
 use crate::identity::{ChildIdentity, ChildStatus, EffectKey, NativeSession, PaneId};
-use crate::routing::{Judgment, JudgmentOutcome, JudgmentRecord, Question, noul_yes};
+use crate::routing::{JudgmentOutcome, JudgmentRecord, Question, noul_cleared};
 
 use super::{
     Effect, EffectKind, EffectOutcome, EffectReceipt, EffectResult, EffectState, EffectTarget, Run,
@@ -38,20 +38,6 @@ fn observe_fields(
             identity.native_session = Some(session.clone());
         }
     }
-}
-
-/// F23/F21 — a noul judgment clears `threshold` when its affirmative
-/// probability reaches it. `Judgment.probabilities` carries the calibrated
-/// distribution over the question's answer space; the Phase-4 contract is
-/// that the Jev adapter maps a noul's wire `noul` scalar to P(yes) under the
-/// `"yes"` key. The comparison itself is `routing::noul_yes` — one
-/// threshold rule for routing and supervision, so a recorded `None`
-/// resolves at the same calibrated majority there.
-fn noul_cleared(judgment: &Judgment, threshold: Option<f64>) -> bool {
-    judgment
-        .probabilities
-        .get("yes")
-        .is_some_and(|p| noul_yes(*p, threshold))
 }
 
 /// Whether a journaled row records a completed review — only an
@@ -109,6 +95,45 @@ pub fn periodic_review(run: &Run, owner_absent: bool, journal: &[Effect]) -> Opt
     let base = effect_key(run, &format!("review:{}", run.evidence_generation));
     let key = next_ask_key(journal, &base)?;
     // `jev_evaluate` renders on dispatch-time state — no plan-time digest.
+    Some(planned_effect(
+        run,
+        EffectKind::JevEvaluate,
+        key,
+        None,
+        None,
+    ))
+}
+
+/// F24 — the acceptance ask's re-ask rule: the `accept:<wg>:<gen>` family
+/// retries a failed, unconfirmed, stale or otherwise unanswered attempt
+/// under the next attempt key, only while the Run is `judging` — an
+/// answered or in-flight attempt suppresses it (`next_ask_key`). One
+/// exception ends the family: a `too_large` attempt is terminal because
+/// the frozen request cannot shrink, so the wait falls to
+/// `judgment_deadline` → `unresolved(judgment_unavailable)` (OQ-I).
+/// `Some` is the effect to plan.
+#[must_use]
+pub fn acceptance_retry(run: &Run, journal: &[Effect]) -> Option<Effect> {
+    if run.state != State::Judging {
+        return None;
+    }
+    let base = effect_key(
+        run,
+        &format!("accept:{}:{}", run.work_generation, run.evidence_generation),
+    );
+    let prefix = format!("{}:", base.0);
+    let too_large = journal.iter().any(|effect| {
+        (effect.key == base || effect.key.0.starts_with(&prefix))
+            && matches!(
+                &effect.receipt,
+                Some(EffectReceipt::Judgments(record))
+                    if record.set.outcome == JudgmentOutcome::TooLarge
+            )
+    });
+    if too_large {
+        return None;
+    }
+    let key = next_ask_key(journal, &base)?;
     Some(planned_effect(
         run,
         EffectKind::JevEvaluate,

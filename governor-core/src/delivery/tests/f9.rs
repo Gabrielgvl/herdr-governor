@@ -2,11 +2,17 @@
 //! slot per captured identity, and F17's safe moment.
 
 use crate::config::Capability;
-use crate::delivery::{OutboxMessage, OutboxState, next_dispatchable_follow_up};
+use crate::delivery::{
+    OutboxMessage, OutboxState, next_dispatchable_follow_up, prompt_dispatchable,
+};
 use crate::identity::{ChildStatus, EffectKey, PaneId, RunId};
-use crate::lifecycle::{Effect, EffectKind, EffectState, EffectTarget, PromptCertainty, State};
+use crate::lifecycle::{
+    Effect, EffectKind, EffectState, EffectTarget, PromptCertainty, Run, State,
+};
 
-use super::builders::{child_prompt_effect, dispatched, message, qualified, run, settled_run};
+use super::builders::{
+    child_prompt_effect, child_prompt_keyed, dispatched, hint, message, qualified, run, settled_run,
+};
 
 #[test]
 fn f17_queued_follow_up_is_eligible_when_idle_or_done() {
@@ -294,5 +300,124 @@ fn f9_a_submitted_follow_up_lifts_its_journal_barrier() {
         next_dispatchable_follow_up(&run(), &unlinked, &[unconfirmed], &[]),
         None,
         "only the entry linked by effect_id lifts its own barrier (F9)"
+    );
+}
+
+#[test]
+fn f9_prompt_dispatchable_with_candidate_in_journal() {
+    // The DispatchCommit revalidation gate: the candidate is itself a
+    // `planned` journal row, so the F9 slot test must exclude it while
+    // keeping the plan order against its siblings.
+    let mut prompting = run();
+    prompting.state = State::Prompting;
+    prompting.prompt_certainty = None;
+    for (suffix, at_state) in [
+        ("prompt:task", prompting.clone()),
+        ("nudge:0", run()),
+        ("outbox:1", run()),
+    ] {
+        let candidate = child_prompt_keyed(suffix, EffectState::Planned);
+        let check = |observed: &Run, slice: &[Effect]| {
+            prompt_dispatchable(observed, &[], slice, &candidate.key)
+        };
+        assert!(
+            check(&at_state, core::slice::from_ref(&candidate)),
+            "a planned {suffix} prompt with a clear pipeline dispatches (F9)"
+        );
+        // The ordering barrier: an unlifted unconfirmed child prompt, or
+        // the run's own unconfirmed prompt certainty.
+        let unconfirmed_sibling = [
+            child_prompt_keyed("outbox:7", EffectState::Unconfirmed),
+            candidate.clone(),
+        ];
+        assert!(
+            !check(&at_state, &unconfirmed_sibling),
+            "an unconfirmed sibling prompt bars {suffix} (F9)"
+        );
+        let mut barred = at_state.clone();
+        barred.prompt_certainty = Some(PromptCertainty::Unconfirmed);
+        assert!(
+            !check(&barred, core::slice::from_ref(&candidate)),
+            "an unconfirmed prompt_certainty bars {suffix} (F9)"
+        );
+        // The single slot: another dispatching child prompt excludes it.
+        let dispatching_sibling = [
+            candidate.clone(),
+            child_prompt_keyed("outbox:8", EffectState::Dispatching),
+        ];
+        assert!(
+            !check(&at_state, &dispatching_sibling),
+            "one prompt at a time per captured identity — {suffix} waits (F9)"
+        );
+        // Plan order: an earlier planned sibling precedes; a later one
+        // does not block the candidate.
+        let earlier = [
+            child_prompt_keyed("outbox:9", EffectState::Planned),
+            candidate.clone(),
+        ];
+        assert!(
+            !check(&at_state, &earlier),
+            "an earlier planned sibling holds the order against {suffix} (F9)"
+        );
+        let later = [
+            candidate.clone(),
+            child_prompt_keyed("outbox:9", EffectState::Planned),
+        ];
+        assert!(
+            check(&at_state, &later),
+            "a later planned sibling does not block {suffix} (F9)"
+        );
+        // Never prompt a blocked child.
+        let mut blocked = at_state.clone();
+        blocked.child_status = Some(ChildStatus::Blocked);
+        assert!(
+            !check(&blocked, core::slice::from_ref(&candidate)),
+            "a blocked child is never prompted — {suffix} (F17/H#17)"
+        );
+    }
+}
+
+#[test]
+fn f9_two_planned_prompts_dispatch_in_plan_order() {
+    let first = child_prompt_keyed("outbox:1", EffectState::Planned);
+    let second = child_prompt_keyed("outbox:2", EffectState::Planned);
+    let journal = [first.clone(), second.clone()];
+    assert!(
+        prompt_dispatchable(&run(), &[], &journal, &first.key),
+        "the earliest planned prompt is dispatchable (F9)"
+    );
+    assert!(
+        !prompt_dispatchable(&run(), &[], &journal, &second.key),
+        "the later planned prompt waits behind the head (F9)"
+    );
+    // Position in the slice is the plan order (ORDER BY planned_at,
+    // effect_id) — the same two rows reversed flip the answer.
+    let reversed = [second.clone(), first.clone()];
+    assert!(
+        prompt_dispatchable(&run(), &[], &reversed, &second.key),
+        "slice order is the F9 order"
+    );
+    assert!(
+        !prompt_dispatchable(&run(), &[], &reversed, &first.key),
+        "slice order is the F9 order"
+    );
+}
+
+#[test]
+fn f9_hint_is_never_gated_by_the_child_queue() {
+    // A hint addresses the owner's pane, a different captured identity:
+    // a dispatching or unconfirmed one neither holds the child's prompt
+    // slot nor bars its queue.
+    let candidate = child_prompt_keyed("outbox:1", EffectState::Planned);
+    let mut unconfirmed_hint = hint(EffectState::Unconfirmed);
+    unconfirmed_hint.key = EffectKey("event:ev2:hint".into());
+    let journal = [
+        hint(EffectState::Dispatching),
+        unconfirmed_hint,
+        candidate.clone(),
+    ];
+    assert!(
+        prompt_dispatchable(&run(), &[], &journal, &candidate.key),
+        "in-flight hints are outside the child's serialization (F9/F18)"
     );
 }
