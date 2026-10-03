@@ -1,21 +1,26 @@
 //! `startup` — the §4.3 bring-up sequence (F28): `prepare` runs steps 1–5's
 //! synchronous half (state dir, catalog + `[daemon]` + credential, the
-//! lock-then-unlink instance lock, `Store::open`) and `bind` runs the
-//! listener half of step 8 (`UnixListener::bind` + `chmod 0600`, after
-//! marking and before the tasks spawn — H#5's ordering). Step 5's restart
-//! marking and steps 6–7 are coordinator transitions (`coordinator.rs`).
-//! The stale-socket unlink happens inside `lock::acquire`, never here.
+//! lock-then-unlink instance lock, `Store::open`), `reconcile_pass` runs
+//! steps 6–7 on one fresh snapshot, and `bind` runs the listener half of
+//! step 8 (`UnixListener::bind` + `chmod 0600`, after marking and before
+//! the tasks spawn — H#5's ordering). Step 5's restart marking and the
+//! steps 6–7 transitions are coordinator work (`coordinator.rs`,
+//! `reconcile.rs`). The stale-socket unlink happens inside
+//! `lock::acquire`, never here.
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use tokio::net::UnixListener;
 
 use crate::adapters::config::{self, DaemonSettings, LoadedConfig};
+use crate::adapters::herdr;
 use crate::adapters::jev::ApiKey;
 use crate::store::Store;
 
 use super::DaemonError;
+use super::coordinator::Coordinator;
 use super::lock::{self, InstanceLock};
 use super::log;
 use super::paths::Paths;
@@ -43,7 +48,12 @@ pub(super) struct Prepared {
     pub daemon: DaemonSettings,
     /// The argv overrides resolved against `daemon`.
     pub resolved: Resolved,
-    /// The Jev credential (loaded at step 2; held for the Jev callers).
+    /// The Jev credential (loaded at step 2 — §19's fail-fast; held for
+    /// the Jev callers).
+    #[expect(
+        dead_code,
+        reason = "the Jev lane wires in with PR C's renderable asks; the credential still loads and validates at startup"
+    )]
     pub api_key: ApiKey,
     /// `<config>/catalog.toml` — the reload source.
     pub catalog_path: PathBuf,
@@ -84,6 +94,23 @@ pub(super) async fn prepare(settings: &Settings) -> Result<Prepared, DaemonError
         api_key,
         catalog_path,
     })
+}
+
+/// §4.3 steps 6–7 — one fresh `session.snapshot` into the coordinator's
+/// startup pass: launch convergence, every unsettled Run's observation
+/// (with the revised identity-less rule), the elapsed-deadline sweep and
+/// the sessionless foreign-incarnation settlement — all strictly before
+/// `bind` (H#5). A snapshot error records health and yields an `Err`
+/// view; it is never a refusal by itself.
+pub(super) async fn reconcile_pass(
+    coordinator: &mut Coordinator,
+    resolved: &Resolved,
+    op_timeout: Duration,
+) -> Result<(), DaemonError> {
+    let snapshot = herdr::Client::new(resolved.herdr_socket.clone())
+        .session_snapshot(op_timeout)
+        .await;
+    coordinator.startup_pass(&snapshot)
 }
 
 /// §4.3 step 8's listener half — `UnixListener::bind` on the now-free

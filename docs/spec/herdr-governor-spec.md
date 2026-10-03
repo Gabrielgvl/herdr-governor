@@ -292,7 +292,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - a unique recovery obligation is recorded as `pending`;
     - an event tells the owner that closing the pane (`cancel` with `closePane`) triggers recovery.
   - **Dispatch** happens once a fresh snapshot shows the predecessor's identity `absent`. It creates a Launch keyed `recovery:<predecessorRunId>` that carries the predecessor's Task plus a preamble: continue from the observed git and transcript state, and don't repeat side effects that already happened.
-  - **Status:** `pending` → `dispatched` (with successor references and its certainty), `blocked` (abstained, no candidates), or `failed`. An obligation still pending after the policy expiry (default 24 h) fails `expired`.
+  - **Status:** `pending` → `dispatched` when the successor's routing decision persists (with the successor reference), `blocked` when the successor abstains, or `failed`. A successor Launch may exist while the obligation is `pending`, bound by its key `recovery:<predecessorRunId>`. An obligation still pending after the policy expiry (default 24 h) fails `expired`.
   - **Caller-requested recovery (`recoveryOf`):**
     - it requires the predecessor to be settled — an unsettled predecessor is refused `RECOVERY_PREDECESSOR_UNSETTLED`;
     - it claims the predecessor's obligation if one exists; a second recovery of the same predecessor is refused `RECOVERY_EXISTS`;
@@ -812,6 +812,11 @@ The DoD is stated in each phase in §10. It must hold on a merged `main` commit,
 - **Follow-up split:** `StateChange::WriteFollowUp(FollowUpWrite::{Enqueue, Dispatch, Resolve})` replaces the whole-row follow-up write — an insert-once enqueue plus one forward-only conditional `UPDATE` per F17/F9 edge, each in the transaction of its prompt effect's journal write. The outbox row is the source of truth for a follow-up's F9 barrier: a journaled `unconfirmed` prompt effect whose linked entry is `submitted` no longer bars the queue, while the effect row keeps its wire fact.
 - **Credential hardening:** the Jev credential file is opened `O_NOFOLLOW` and must be owned by the effective uid; `rustix` (fs, process) is an approved direct `herdr-governor` dependency (§9, §13).
 
+**Decided by the owner (2026-10-03):**
+- **Recovery obligation stays `pending` through admission:** `caller_admission` records the obligation `pending` — the claimed `provider_limit` one unchanged, or a new `caller` one; `pending` → `dispatched` rides the successor's Route transaction and `pending` → `blocked` its abstention (F21, Appendix B). A `dispatched`-at-admission ordering is undeliverable: the terminal states absorb and the `recoveries` CHECK requires `successor_launch_id` iff `dispatched`.
+- **Acceptance verdict and retry bounds:** an answered `acceptance` judgment set verdicts only when its `handoff_meets_item_k` answers cover exactly the Task's doneWhen items, each once — a partial or malformed set is journaled and re-asked (OQ-K). A `too_large` acceptance attempt is terminal for its `accept:<wg>:<gen>` family — the frozen request cannot shrink — so the wait falls to `judgment_deadline` → `unresolved(judgment_unavailable)` (OQ-I, F24).
+- **Provider-name bound:** `Config::validate` refuses a provider name over 64 bytes, so `herdr_status`'s cooldowns section fits the response byte budget for any legal catalog (F7/F27).
+
 ## 20. Approval
 
 | Role | Name | Status |
@@ -1131,7 +1136,7 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 | Resolve a follow-up | outbox `dispatching` → `submitted` or `unconfirmed` with the effect's result commit; `unconfirmed` → `submitted` on transcript evidence (F9) |
 | Settle | runs (conditional on version and unsettled) plus the terminal mailbox event, the queued follow-ups expired, and the recovery and cooldown when the settlement is `provider_limited` |
 | Handover or adopt | `runs.owner_caller_id` and `owner_generation+1`, conditional on the expected owner |
-| Recovery dispatch | recovery `pending` → `dispatched`, plus the successor Launch admission |
+| Recovery dispatch | successor Launch admission (the obligation stays `pending`); `pending` → `dispatched` rides the successor's Route transaction |
 | Freeze a handoff | the handoff row, `evidence_generation+1`, and `judgment_deadline` if not already set |
 | Record evidence | the run row (`evidence_digest`, `evidence_generation+1`); in `judging` the re-planned acceptance ask rides the same write — no second freeze row |
 

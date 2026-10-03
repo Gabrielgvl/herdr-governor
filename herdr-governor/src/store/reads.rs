@@ -11,7 +11,7 @@ use governor_core::config::{Capability, OperatingPointId, Qualification};
 use governor_core::delivery::{MailboxEvent, OutboxMessage, OutboxState};
 use governor_core::identity::{
     CallerBinding, CallerKey, Digest, EffectKey, EventId, IdempotencyKey, JudgmentSetId, LaunchId,
-    ProjectRoot, RelayInstanceId, RunId, Timestamp,
+    PaneId, ProjectRoot, RelayInstanceId, RunId, Timestamp,
 };
 use governor_core::lifecycle::{Effect, EffectKind, EffectState, Run, State};
 use governor_core::recovery::{Cooldown, RecoveryObligation, RecoveryStatus};
@@ -336,6 +336,22 @@ impl Store {
             "SELECT * FROM callers WHERE agent_kind = ?1 AND native_session = ?2",
             params![key.agent_kind.0, key.native_session.0],
             |row| CallerRow::read(row)?.first_seen_at(),
+        )
+    }
+
+    /// The pane `caller` most recently bound from — the latest
+    /// `relay_bindings.pane_id_at_bind` by `bound_at` (ties break on the
+    /// relay id). The prompt envelope's sender pane and the hint/tab
+    /// re-resolve read it; `None` for a caller with no binding.
+    pub fn caller_pane(&self, caller: &CallerKey) -> Result<Option<PaneId>, StoreError> {
+        let Some(id) = caller_id(&self.conn, caller)? else {
+            return Ok(None);
+        };
+        self.first(
+            "SELECT pane_id_at_bind FROM relay_bindings WHERE caller_id = ?1 \
+             ORDER BY bound_at DESC, relay_instance_id DESC LIMIT 1",
+            params![id],
+            |row| Ok(PaneId(row.get::<_, String>(0)?)),
         )
     }
 

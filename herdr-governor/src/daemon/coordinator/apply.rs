@@ -80,10 +80,6 @@ pub(in crate::daemon) fn apply_with_retry(
 /// path composes `[WriteEffect::Dispatch]` + `transition(Event::EffectResult)`
 /// into a single commit. The three vecs append in order — `Transition` has
 /// no other fields to merge.
-#[expect(
-    dead_code,
-    reason = "the composed-transition consumer lands with P5.B1's DispatchCommit path"
-)]
 pub(in crate::daemon) fn concat(
     mut first: Transition,
     rest: impl IntoIterator<Item = Transition>,

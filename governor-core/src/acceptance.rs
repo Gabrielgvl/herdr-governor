@@ -10,7 +10,8 @@ mod deadlines;
 mod reading;
 
 pub use binding::{
-    AssessmentKey, FrozenHandoff, assessment_key, freeze_handoff, unjudged_items, verdict,
+    AssessmentKey, FrozenHandoff, acceptance_verdict, assessment_key, freeze_handoff,
+    unjudged_items, verdict,
 };
 pub use deadlines::{judgment_deadline, judgment_overdue, repair_deadline, repair_overdue};
 pub use reading::{

@@ -380,6 +380,19 @@ pub(crate) fn noul_yes(probability: Probability, threshold: Option<f64>) -> bool
     probability.0 >= threshold.unwrap_or(0.5)
 }
 
+/// F23/F24 — a noul judgment clears `threshold` when its affirmative
+/// probability reaches it. `Judgment.probabilities` carries the calibrated
+/// distribution over the question's answer space; the Phase-4 contract is
+/// that the Jev adapter maps a noul's wire `noul` scalar to P(yes) under the
+/// `"yes"` key. One threshold rule for routing, supervision and acceptance —
+/// a recorded `None` resolves at the same calibrated majority everywhere.
+pub(crate) fn noul_cleared(judgment: &Judgment, threshold: Option<f64>) -> bool {
+    judgment
+        .probabilities
+        .get("yes")
+        .is_some_and(|p| noul_yes(*p, threshold))
+}
+
 /// F13 step 5 — the exploration lottery: `sha256(caller ‖ idempotencyKey)`,
 /// with `caller` the durable caller key, read as a uniform fraction below
 /// the policy rate.

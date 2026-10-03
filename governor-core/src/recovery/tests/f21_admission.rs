@@ -3,12 +3,12 @@
 //! admission rules.
 
 use crate::identity::{
-    AgentKind, CallerKey, ChildStatus, LaunchId, NativeSession, Observation, RunId, Timestamp,
+    AgentKind, CallerKey, ChildStatus, NativeSession, Observation, RunId, Timestamp,
 };
 use crate::lifecycle::Settlement;
 use crate::recovery::{
-    RECOVERY_KEY_PREFIX, RecoveryOrigin, RecoveryStatus, caller_admission, dispatch_ready,
-    successor_key, successor_task,
+    RECOVERY_KEY_PREFIX, RecoveryObligation, RecoveryOrigin, RecoveryStatus, caller_admission,
+    dispatch_ready, successor_key, successor_task,
 };
 use crate::task::Refusal;
 
@@ -101,7 +101,6 @@ fn f21_recoveryof_requires_owner() {
         &predecessor,
         None,
         &Observation::Absent,
-        &LaunchId("launch-2".into()),
         &foreign,
         Timestamp(0),
         &policy(),
@@ -132,7 +131,6 @@ fn f21_recoveryof_second_recovery_refused() {
                 &predecessor,
                 Some(&existing),
                 &Observation::Absent,
-                &LaunchId("launch-2".into()),
                 &caller,
                 Timestamp(0),
                 &policy(),
@@ -140,9 +138,8 @@ fn f21_recoveryof_second_recovery_refused() {
             if claimable {
                 let claimed = admitted(result);
                 assert_eq!(
-                    claimed.status,
-                    RecoveryStatus::Dispatched,
-                    "the unclaimed provider_limit obligation is claimable"
+                    claimed, existing,
+                    "the claim returns the pending obligation unchanged — dispatched rides the successor's Route transaction"
                 );
             } else {
                 assert_eq!(
@@ -162,7 +159,6 @@ fn f21_recovery_of_unsettled_refused() {
         &predecessor,
         None,
         &Observation::Absent,
-        &LaunchId("launch-2".into()),
         &caller(),
         Timestamp(0),
         &policy(),
@@ -182,7 +178,6 @@ fn f21_recovery_of_active_refused_retryable() {
         &predecessor,
         None,
         &unique(Some(ChildStatus::Working)),
-        &LaunchId("launch-2".into()),
         &caller,
         Timestamp(0),
         &policy(),
@@ -196,7 +191,6 @@ fn f21_recovery_of_active_refused_retryable() {
         &predecessor,
         None,
         &Observation::Absent,
-        &LaunchId("launch-2".into()),
         &caller,
         Timestamp(0),
         &policy(),
@@ -204,8 +198,8 @@ fn f21_recovery_of_active_refused_retryable() {
     let obligation = admitted(retried);
     assert_eq!(
         obligation.status,
-        RecoveryStatus::Dispatched,
-        "the refusal is retryable: once the observation gate is met the same request admits"
+        RecoveryStatus::Pending,
+        "the refusal is retryable: once the observation gate is met the same request admits a pending obligation"
     );
 }
 
@@ -225,7 +219,6 @@ fn f21_recoveryof_provider_limited_needs_absent() {
             &predecessor,
             None,
             &observation,
-            &LaunchId("launch-2".into()),
             &caller,
             Timestamp(0),
             &policy(),
@@ -236,21 +229,19 @@ fn f21_recoveryof_provider_limited_needs_absent() {
             "a provider_limited predecessor must be observed absent first"
         );
     }
+    let existing = obligation(RecoveryStatus::Pending);
     let claimed = caller_admission(
         &predecessor,
-        Some(&obligation(RecoveryStatus::Pending)),
+        Some(&existing),
         &Observation::Absent,
-        &LaunchId("launch-2".into()),
         &caller,
         Timestamp(0),
         &policy(),
     );
-    let mut expected = obligation(RecoveryStatus::Dispatched);
-    expected.successor_launch = Some(LaunchId("launch-2".into()));
     assert_eq!(
         claimed,
-        Ok(expected),
-        "the claim dispatches the obligation and binds the caller's launch, preserving origin"
+        Ok(existing),
+        "the claim returns the pending obligation unchanged — the successor binds at dispatch"
     );
 }
 
@@ -274,7 +265,6 @@ fn f21_recoveryof_other_settlements_idle_done_or_absent() {
                 &predecessor,
                 None,
                 &observation,
-                &LaunchId("launch-2".into()),
                 &caller,
                 Timestamp(0),
                 &policy(),
@@ -282,8 +272,8 @@ fn f21_recoveryof_other_settlements_idle_done_or_absent() {
             let obligation = admitted(result);
             assert_eq!(
                 obligation.status,
-                RecoveryStatus::Dispatched,
-                "settled predecessor observed idle/done/absent admits ({settlement:?})"
+                RecoveryStatus::Pending,
+                "settled predecessor observed idle/done/absent admits a pending obligation ({settlement:?})"
             );
         }
         for observation in [
@@ -296,7 +286,6 @@ fn f21_recoveryof_other_settlements_idle_done_or_absent() {
                 &predecessor,
                 None,
                 &observation,
-                &LaunchId("launch-2".into()),
                 &caller,
                 Timestamp(0),
                 &policy(),
@@ -318,7 +307,6 @@ fn f21_recoveryof_creates_caller_obligation() {
         &predecessor,
         None,
         &Observation::Absent,
-        &LaunchId("launch-2".into()),
         &caller,
         Timestamp(1_000),
         &policy(),
@@ -331,13 +319,12 @@ fn f21_recoveryof_creates_caller_obligation() {
     );
     assert_eq!(
         obligation.status,
-        RecoveryStatus::Dispatched,
-        "the admitted successor dispatch is recorded"
+        RecoveryStatus::Pending,
+        "admission records the pending obligation — dispatch rides the Route transaction"
     );
     assert_eq!(
-        obligation.successor_launch,
-        Some(LaunchId("launch-2".into())),
-        "successor bound (Appendix B CHECK)"
+        obligation.successor_launch, None,
+        "a pending obligation binds no successor (Appendix B CHECK)"
     );
     assert_eq!(
         obligation.predecessor,
@@ -348,5 +335,53 @@ fn f21_recoveryof_creates_caller_obligation() {
         obligation.expires_at,
         Timestamp(1_000 + 86_400_000),
         "the policy expiry still stamps"
+    );
+}
+
+#[test]
+fn f21_caller_admission_returns_pending_obligation() {
+    // The F21 amendment: admission returns the *pending* obligation —
+    // `dispatched` rides the successor's Route transaction and `blocked`
+    // its abstention, because the absorbing terminals and the recoveries
+    // CHECK make `dispatched`-at-admission undeliverable.
+    let caller = caller();
+    let predecessor = run("run-1", &caller, Some(Settlement::ProviderLimited));
+    // A claimed `provider_limit` obligation is returned unchanged — still
+    // `pending`, still unbound.
+    let existing = obligation(RecoveryStatus::Pending);
+    let claimed = caller_admission(
+        &predecessor,
+        Some(&existing),
+        &Observation::Absent,
+        &caller,
+        Timestamp(5_000),
+        &policy(),
+    );
+    assert_eq!(
+        claimed,
+        Ok(existing),
+        "a claimed provider_limit obligation returns pending and unchanged"
+    );
+    // A fresh admission is a new `caller`-origin obligation: `pending`,
+    // unbound, expiring `recovery_expiry` after now.
+    let created = caller_admission(
+        &predecessor,
+        None,
+        &Observation::Absent,
+        &caller,
+        Timestamp(5_000),
+        &policy(),
+    );
+    assert_eq!(
+        created,
+        Ok(RecoveryObligation {
+            predecessor: RunId("run-1".into()),
+            origin: RecoveryOrigin::Caller,
+            status: RecoveryStatus::Pending,
+            reason: None,
+            successor_launch: None,
+            expires_at: Timestamp(5_000 + 86_400_000),
+        }),
+        "a caller-requested recovery records a pending, unbound obligation"
     );
 }

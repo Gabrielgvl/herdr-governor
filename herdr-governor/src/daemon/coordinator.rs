@@ -1,36 +1,43 @@
 //! `coordinator` — the one task that owns the `Store` (§4.2): every
 //! lifecycle write is a `Transition` computed and applied here, one `Msg`
-//! processed to completion before the next is taken. A1 lands the loop,
-//! the bounded apply-retry, `Event::Restart` marking (§4.3 step 5), the
-//! shutdown `watch` gate and the `Tool` placeholder — B1 adds
-//! `EffectResult`/`DispatchCommit`, B3 `Observation`. SQLite runs inline;
-//! async I/O happens only in the tasks that *post* messages.
+//! processed to completion before the next is taken. A1 landed the loop,
+//! the bounded apply-retry, `Event::Restart` marking (§4.3 step 5) and the
+//! shutdown `watch` gate; A2 the `Tool` arm (F1/F7), B3 the `Tick`/
+//! `Observation` arms (§4.7) — B1 adds `EffectResult`/`DispatchCommit`.
+//! SQLite runs inline; async I/O happens only in the tasks that *post*
+//! messages.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use governor_core::identity::{CallerEnvelope, HerdrIncarnation, LaunchId, RunId, Timestamp};
-use governor_core::lifecycle::{
-    self, EffectKind, EffectState, Event, Transition, VersionTriple, Versioned, transition,
-};
-use governor_core::task::{AbstainReason, LaunchOutcome, LaunchPhase, finish};
+use governor_core::identity::{CallerEnvelope, ChildStatus, EffectKey, PaneId, Timestamp};
+use governor_core::lifecycle::{self, EffectResult, Event, Transition, VersionTriple, Versioned};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::adapters::config::{self, ConfigLoadError, DaemonSettings, LoadedConfig};
+use crate::adapters::config::{DaemonSettings, LoadedConfig};
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::store::Store;
 
-use apply::{ApplyOutcome, Marks, apply_with_retry};
-
-use super::DaemonError;
 use super::api::{ToolError, ToolRequest, ToolResponse};
 use super::clock::Clock;
-use super::identity;
-use super::log;
+use super::paths::Paths;
+use super::reconcile::HerdrHealth;
+use super::runner;
 use super::seam::SeamConfig;
+use super::{CommitVerdict, RenderContext};
 
 /// `apply` — the §4.2 bounded-apply mechanics every arm shares.
 pub(super) mod apply;
+/// `effects` — the `DispatchCommit`/`EffectResult` arms plus the §4.4
+/// hand-out scan (B1).
+mod effects;
+/// `reload` — the F27 `SIGHUP` arm (`config::reload` against last-good).
+mod reload;
+/// `restart` — §4.3 step 5's `mark_restart` arm `daemon::run` drives.
+mod restart;
+/// `tick` — the `Msg::Tick`/`Msg::Observation` arms (§4.7).
+mod tick;
 /// `tool` — the `Msg::Tool` arm's implementation (F1 + F7).
 mod tool;
 
@@ -88,11 +95,50 @@ pub(crate) enum Msg {
         /// lets the method answer locally.
         reply: oneshot::Sender<Result<(), ToolError>>,
     },
-    /// One reconcile tick: a fresh Herdr snapshot or its error (F28/B3
-    /// derive observations from `Ok`; A1 records liveness only).
+    /// One reconcile tick: a fresh Herdr snapshot or its error — the
+    /// `on_tick` arm records health and runs the §4.7 steps-0–2 pass.
     Tick {
         /// The tick task's snapshot read.
         snapshot: Result<Observed<SessionSnapshot>, HerdrError>,
+    },
+    /// §4.7 step 8 — a `pane.agent_status_changed` event: the
+    /// subscription task's fresh `session.snapshot` rides the message
+    /// (the coordinator performs no I/O, so the read it triggers travels
+    /// with it). `status` is the wire value, carried for diagnostics —
+    /// classification re-derives state from the snapshot.
+    Observation {
+        /// The pane the status event named.
+        pane_id: PaneId,
+        /// The event's `agent_status` reduced to the spec states.
+        status: Option<ChildStatus>,
+        /// The fresh snapshot the subscription task took for the event —
+        /// or its error (a re-arm `Connect` failure's "gone" report).
+        snapshot: Result<Observed<SessionSnapshot>, HerdrError>,
+    },
+    /// §4.4 step 3 — a runner's dispatch commit request: the coordinator
+    /// re-reads the row and every gate against durable state, then either
+    /// writes `[WriteEffect::Dispatch]` (plus the outbox link) and replies
+    /// `Go`, or leaves/refuses the row and replies `Skip`/`Refused`.
+    DispatchCommit {
+        /// The effect key the runner is asking to dispatch.
+        key: EffectKey,
+        /// The runner's frozen context — the commit arm's audit input.
+        context: Arc<RenderContext>,
+        /// The runner waits on this for its verdict.
+        reply: oneshot::Sender<CommitVerdict>,
+    },
+    /// §4.4 step 7 — a runner's wire result: the journaled resolution
+    /// plus its receipt or cause. Boxed: the receipt's `JudgmentRecord`
+    /// dwarfs the other variants.
+    EffectResult(Box<EffectResult>),
+    /// A runner's pre-commit exit — its fresh verify found nothing honest
+    /// to wire (§4.4 step 2's `None`), so the row stays `planned` and the
+    /// in-flight subject claim drops: the next hand-off re-offers it.
+    /// Runner exits *after* `DispatchCommit` release via that arm's
+    /// non-`Go` verdicts or the `EffectResult` arm instead.
+    ReleaseSubject {
+        /// The effect key the claim was taken under.
+        key: EffectKey,
     },
     /// `SIGHUP` → reload the catalog (F27 adopt/retain); `SIGTERM`/`SIGINT`
     /// → the §4.14 shutdown.
@@ -135,6 +181,9 @@ pub(super) struct CoordinatorArgs {
     pub clock: Clock,
     /// The armed fault seam, if any.
     pub seam: Option<SeamConfig>,
+    /// The state-dir layout — the render contexts read `handoffs`/
+    /// `frozen` for the paths prompts and asks name (§4.4).
+    pub paths: Paths,
 }
 
 /// The coordinator: owns `Store`, `LoadedConfig`, `Clock`, the shutdown
@@ -153,16 +202,30 @@ pub(super) struct Coordinator {
     /// When the coordinator was constructed — F7's uptime epoch (the one
     /// clock).
     started_at: Timestamp,
-    /// The last good snapshot's stamp — `Some` proves the Herdr
-    /// connection answered (a tick's or a tool call's request-time read);
-    /// F7 renders it as `herdr.freshSecsAgo`/`incarnation`.
-    herdr_seen: Option<(Timestamp, HerdrIncarnation)>,
+    /// §4.7 health/freshness — the one Herdr-health record every
+    /// snapshot read feeds (tick, observation, startup pass and the
+    /// `Tool` arm's request-time read); F7 renders it as
+    /// `herdr.freshSecsAgo`/`incarnation`.
+    health: HerdrHealth,
+    /// The pane-set feed the subscription maintainer (§4.7 step 8)
+    /// watches — `None` until `arm_subscriptions`, so the startup pass
+    /// and unit tests push nothing.
+    subs_feed: Option<watch::Sender<BTreeSet<String>>>,
     /// When the live config adopted — F7's `config.lastGoodAt`.
     config_adopted_at: Timestamp,
     /// The last refused reload's class (`read`/`decode`/`invalid`) —
     /// `None` while the last catalog attempt adopted; F7 renders it as
     /// `config.valid`/`lastError`.
     config_last_error: Option<&'static str>,
+    /// The runner pool's environment — `None` until `arm_runner` wires it
+    /// (the mailbox `tx` exists only after `daemon::run`'s channel).
+    runner: Option<runner::RunnerEnv>,
+    /// The state-dir layout for `RenderContext` builds.
+    paths: Paths,
+    /// §4.4's per-subject serialization: subject → the in-flight effect
+    /// key. One effect per subject at a time, dispatched in
+    /// `planned_at, effect_id` order.
+    in_flight: BTreeMap<effects::Subject, EffectKey>,
 }
 
 impl Coordinator {
@@ -182,17 +245,18 @@ impl Coordinator {
             seam: args.seam,
             shutdown_watch,
             started_at: now,
-            herdr_seen: None,
+            health: HerdrHealth::default(),
+            subs_feed: None,
             config_adopted_at: now,
             config_last_error: None,
+            runner: None,
+            paths: args.paths,
+            in_flight: BTreeMap::new(),
         }
     }
 
-    /// The armed seam — B1's runner reads it for `checkpoint` matching.
-    #[expect(
-        dead_code,
-        reason = "carried through for P5.B1's runner/seam.rs checkpoints"
-    )]
+    /// The armed seam — the runner's checkpoints and the result arm's
+    /// `result_committed` checkpoint read it.
     pub(super) fn seam(&self) -> Option<SeamConfig> {
         self.seam.clone()
     }
@@ -204,86 +268,11 @@ impl Coordinator {
         self.shutdown_watch.subscribe()
     }
 
-    /// §4.3 step 5 — restart marking over **every** `dispatching` effect
-    /// (the [r2] fix: the scan is global, not per unsettled Run — a
-    /// settled Run's `close` row is reclassified too):
-    ///
-    /// * for every Run owning one (settled or not), apply
-    ///   `transition(Event::Restart)` — `on_restart` writes
-    ///   `dispatching → unconfirmed` and, for `prompting`, records the
-    ///   task prompt's certainty;
-    /// * for every `evaluating` Launch whose `jev_evaluate` is left
-    ///   `dispatching`, apply `finish(Abstained{InterruptedBeforeDecision},
-    ///   Some(Dispatching), None, …)` — the row's honest certainty is
-    ///   `unknown` (OQ-13).
-    ///
-    /// Per-subject applies — one bad row drops only its own mark. The
-    /// [r2] outbox `Unconfirmed` resolution composes in here with C3's
-    /// `linked_outbox_resolution` helper (it is not a separate pass).
-    pub(super) fn mark_restart(&mut self, now: Timestamp) -> Result<Marks, DaemonError> {
-        let dispatching = self.store.effects_in_state(EffectState::Dispatching)?;
-        let mut marks = Marks {
-            effects: dispatching.len(),
-            ..Marks::default()
-        };
-        let mut runs = BTreeSet::<RunId>::new();
-        let mut evals = BTreeSet::<LaunchId>::new();
-        for effect in &dispatching {
-            if let Some(run) = &effect.subject_run {
-                runs.insert(run.clone());
-            }
-            if effect.kind == EffectKind::JevEvaluate
-                && let Some(launch) = &effect.subject_launch
-            {
-                evals.insert(launch.clone());
-            }
-        }
-        // Disjoint field borrows: the store mutates, the policy only reads.
-        let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-        for run_id in runs {
-            match apply_with_retry(store, now, |st| {
-                let Some(run) = st.run(&run_id).ok().flatten() else {
-                    return empty();
-                };
-                let journal = st.journal(&run_id).unwrap_or_default();
-                transition(
-                    &run,
-                    &versioned(&run, Event::Restart),
-                    now,
-                    policy,
-                    (None, journal.as_slice(), &[]),
-                    "",
-                )
-            })? {
-                ApplyOutcome::Applied { .. } => marks.runs = marks.runs.saturating_add(1),
-                ApplyOutcome::Dropped { .. } => {}
-            }
-        }
-        for launch_id in evals {
-            match apply_with_retry(store, now, |st| {
-                let Some(launch) = st.launch(&launch_id).ok().flatten() else {
-                    return empty();
-                };
-                if launch.phase != LaunchPhase::Evaluating {
-                    return empty();
-                }
-                finish(
-                    &launch,
-                    LaunchOutcome::Abstained {
-                        reason: AbstainReason::InterruptedBeforeDecision,
-                    },
-                    Some(EffectState::Dispatching),
-                    None,
-                    now,
-                    policy,
-                )
-            })? {
-                ApplyOutcome::Applied { .. } => marks.evals = marks.evals.saturating_add(1),
-                ApplyOutcome::Dropped { .. } => {}
-            }
-        }
-        log::restart_marks(marks.effects, marks.runs, marks.evals);
-        Ok(marks)
+    /// §4.7 health/freshness — the tests' read of the record `tool`'s
+    /// `status_view` renders (`health` itself stays field-private).
+    #[cfg(test)]
+    pub(super) fn health(&self) -> &HerdrHealth {
+        &self.health
     }
 
     /// The message loop: process `Msg`s to completion until
@@ -298,6 +287,13 @@ impl Coordinator {
         mut rx: mpsc::Receiver<Msg>,
         mut shutdown: Option<oneshot::Receiver<()>>,
     ) -> (Self, Stop) {
+        // §4.7 step 8 — the maintainer arms on the set at bind time;
+        // every tick/observation pushes the current set after it.
+        self.push_subscription_specs();
+        // §4.4 — a restart leaves `planned` rows behind: offer them before
+        // the first message so the pipeline resumes without waiting on a
+        // tick.
+        self.hand_out();
         let stop = loop {
             tokio::select! {
                 // The oneshot wins over a queued Msg (biased): a stop
@@ -323,13 +319,41 @@ impl Coordinator {
                         Some(Msg::Signal(Signal::Shutdown)) => {
                             break self.begin_shutdown(Stop::Signalled);
                         }
-                        Some(msg) => self.handle(msg).await,
+                        Some(msg) => {
+                            self.handle(msg).await;
+                            // Every arm is also a dispatch trigger: an
+                            // apply that planned an effect hands it out.
+                            self.hand_out();
+                        }
                         None => break self.begin_shutdown(Stop::Requested),
                     }
                 }
             }
         };
+        self.drain(&mut rx).await;
         (self, stop)
+    }
+
+    /// §4.14 step 2 — the in-flight drain: after the watch is set, serve
+    /// `EffectResult`s (the wire answers runners still post) for
+    /// `shutdown_grace`; `DispatchCommit`s are refused `Skip` (a row left
+    /// `planned` re-dispatches at the next start — far more honest than a
+    /// `dispatching` row the wire never saw). Everything else is dropped —
+    /// the gate is closed, admission is over.
+    async fn drain(&mut self, rx: &mut mpsc::Receiver<Msg>) {
+        let deadline = tokio::time::Instant::now()
+            .checked_add(self.daemon.shutdown_grace)
+            .unwrap_or_else(tokio::time::Instant::now);
+        while let Ok(incoming) = tokio::time::timeout_at(deadline, rx.recv()).await {
+            match incoming {
+                Some(Msg::EffectResult(result)) => self.on_effect_result(result).await,
+                Some(Msg::DispatchCommit { reply, .. }) => {
+                    let _gone = reply.send(CommitVerdict::Skip);
+                }
+                Some(_) => {}
+                None => break,
+            }
+        }
     }
 
     /// §4.14 step 1 — stop admission: set the watch *before* anything else
@@ -361,70 +385,31 @@ impl Coordinator {
                 let verdict = self.verify(&caller, *snapshot, resolved_root.as_deref());
                 let _unused = reply.send(verdict);
             }
-            Msg::Tick { snapshot } => {
-                let answered = snapshot.is_ok();
-                if let Ok(observed) = &snapshot {
-                    // A good snapshot is the freshness F7 reports — the
-                    // same evidence the request-time read in `tool`
-                    // records.
-                    self.herdr_seen =
-                        Some((self.clock.now(), identity::incarnation(&observed.epoch)));
-                }
-                let panes = snapshot.map_or(0, |observed| observed.value.panes.len());
-                log::tick(answered, panes);
-            }
+            Msg::Tick { snapshot } => self.on_tick(&snapshot),
+            Msg::Observation {
+                pane_id,
+                status,
+                snapshot,
+            } => self.on_observation(&pane_id, status, &snapshot),
+            Msg::DispatchCommit {
+                key,
+                context,
+                reply,
+            } => self.on_dispatch_commit(&key, &context, reply),
+            Msg::EffectResult(result) => self.on_effect_result(result).await,
+            Msg::ReleaseSubject { key } => self.free(&key),
             Msg::Signal(Signal::Reload) => self.reload().await,
             Msg::Signal(Signal::Shutdown) => {
                 // Handled in `serve`'s arm — unreachable here.
             }
         }
     }
-
-    /// `SIGHUP` — `config::reload` against the last-good; on `Adopted` the
-    /// `[daemon]` table must still be present (a daemonless reload would
-    /// silently strand the daemon, so it retains instead). F7's
-    /// `config.valid`/`lastError`/`lastGoodAt` track the same outcomes.
-    async fn reload(&mut self) {
-        match config::reload(&self.loaded, &self.catalog_path).await {
-            config::ReloadOutcome::Adopted(loaded) => {
-                if let Some(daemon) = loaded.daemon.clone() {
-                    let settings_changed = self.daemon != daemon;
-                    log::config_adopted(&loaded.version.0);
-                    self.daemon = daemon;
-                    self.loaded = *loaded;
-                    self.config_adopted_at = self.clock.now();
-                    self.config_last_error = None;
-                    if settings_changed {
-                        // The spawned tasks captured their intervals at
-                        // startup; a `[daemon]` change takes effect at
-                        // the next restart (documented limitation) — the
-                        // log says so rather than the false "retained".
-                        log::config_daemon_deferred();
-                    }
-                } else {
-                    // A daemonless catalog is a refused INVALID attempt —
-                    // last-good stays live; F7 reports `invalid` (F5).
-                    self.config_last_error = Some("invalid");
-                    log::config_retained("missing-daemon");
-                }
-            }
-            config::ReloadOutcome::Retained { error, .. } => {
-                let class = match error {
-                    ConfigLoadError::Read(_) => "read",
-                    ConfigLoadError::Decode(_) => "decode",
-                    ConfigLoadError::Invalid(_) => "invalid",
-                };
-                self.config_last_error = Some(class);
-                log::config_retained(class);
-            }
-        }
-    }
 }
 
-/// The `Versioned` stamp a `Restart` event rides — `on_restart` applies
-/// unconditionally (the staleness test exempts it), so the triple is the
-/// Run's current versions.
-fn versioned(run: &lifecycle::Run, event: Event) -> Versioned<Event> {
+/// The `Versioned` stamp a `Restart`/`Obs`/`Deadline` event rides — the
+/// Run's current versions (`on_restart` exempts the staleness check;
+/// `obs`/`deadline` events use the full triple).
+pub(super) fn versioned(run: &lifecycle::Run, event: Event) -> Versioned<Event> {
     Versioned {
         requested_against: VersionTriple {
             version: run.version,
@@ -437,7 +422,7 @@ fn versioned(run: &lifecycle::Run, event: Event) -> Versioned<Event> {
 
 /// An empty `Transition` — the recompute's "row vanished, nothing to
 /// write" answer (core's `nothing()` is crate-private).
-fn empty() -> Transition {
+pub(super) fn empty() -> Transition {
     Transition {
         state_changes: Vec::new(),
         events: Vec::new(),

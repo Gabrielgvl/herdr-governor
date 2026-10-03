@@ -37,6 +37,17 @@ impl Boundary {
             _ => return None,
         })
     }
+
+    /// The spec spelling — the `seam hit` marker prints it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PreDispatch => "pre_dispatch",
+            Self::DispatchCommitted => "dispatch_committed",
+            Self::WireReturned => "wire_returned",
+            Self::ResultCommitted => "result_committed",
+        }
+    }
 }
 
 /// What the seam does at its boundary.

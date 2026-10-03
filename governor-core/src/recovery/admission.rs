@@ -4,9 +4,7 @@
 use alloc::format;
 
 use crate::config::Policy;
-use crate::identity::{
-    CallerKey, ChildStatus, IdempotencyKey, LaunchId, Observation, RunId, Timestamp,
-};
+use crate::identity::{CallerKey, ChildStatus, IdempotencyKey, Observation, RunId, Timestamp};
 use crate::lifecycle::{Run, Settlement};
 use crate::task::{Refusal, Task};
 
@@ -75,13 +73,17 @@ pub fn dispatch_ready(observation: &Observation) -> bool {
 ///   observation gate is unmet the request is refused
 ///   `Err(RECOVERY_PREDECESSOR_ACTIVE)`, retryable once the gate is met.
 ///
-/// `Ok(_)` is the obligation to record — `dispatched` and bound to the
-/// successor Launch, per Appendix B's "Recovery dispatch" transaction.
+/// `Ok(_)` is the `pending` obligation to record — a claimed
+/// `provider_limit` obligation returned unchanged, or a new `caller`-origin
+/// one expiring `recovery_expiry` after `now`. The obligation stays
+/// `pending` through successor admission: `dispatched` rides the
+/// successor's Route transaction and `blocked` its abstention (F21,
+/// Appendix B's "Recovery dispatch"), so nothing here binds a
+/// `successor_launch_id` — the recoveries CHECK forbids one while pending.
 pub fn caller_admission(
     predecessor: &Run,
     obligation: Option<&RecoveryObligation>,
     observation: &Observation,
-    successor: &LaunchId,
     caller: &CallerKey,
     now: Timestamp,
     policy: &Policy,
@@ -126,18 +128,12 @@ pub fn caller_admission(
         return Err(Refusal::RecoveryPredecessorActive);
     }
     Ok(match claim {
-        Some(existing) => RecoveryObligation {
-            status: RecoveryStatus::Dispatched,
-            successor_launch: Some(successor.clone()),
-            ..existing.clone()
-        },
-        None => RecoveryObligation {
-            predecessor: predecessor.id.clone(),
-            origin: RecoveryOrigin::Caller,
-            status: RecoveryStatus::Dispatched,
-            reason: None,
-            successor_launch: Some(successor.clone()),
-            expires_at: now.after(policy.recovery_expiry),
-        },
+        Some(existing) => existing.clone(),
+        None => RecoveryObligation::pending(
+            predecessor.id.clone(),
+            RecoveryOrigin::Caller,
+            now,
+            policy.recovery_expiry,
+        ),
     })
 }
