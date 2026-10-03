@@ -4,4 +4,5 @@
 
 pub mod adapters;
 pub mod daemon;
+pub mod relay;
 pub mod store;
