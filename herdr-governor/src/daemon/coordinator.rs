@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use governor_core::identity::{HerdrIncarnation, LaunchId, RunId, Timestamp};
+use governor_core::identity::{CallerEnvelope, HerdrIncarnation, LaunchId, RunId, Timestamp};
 use governor_core::lifecycle::{
     self, EffectKind, EffectState, Event, Transition, VersionTriple, Versioned, transition,
 };
@@ -18,15 +18,19 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::adapters::config::{self, ConfigLoadError, DaemonSettings, LoadedConfig};
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
-use crate::store::{ApplyError, Store};
+use crate::store::Store;
+
+use apply::{ApplyOutcome, Marks, apply_with_retry};
 
 use super::DaemonError;
-use super::api::{ToolRequest, ToolResponse};
+use super::api::{ToolError, ToolRequest, ToolResponse};
 use super::clock::Clock;
 use super::identity;
 use super::log;
 use super::seam::SeamConfig;
 
+/// `apply` — the §4.2 bounded-apply mechanics every arm shares.
+pub(super) mod apply;
 /// `tool` — the `Msg::Tool` arm's implementation (F1 + F7).
 mod tool;
 
@@ -37,7 +41,8 @@ pub(super) const MSG_CAPACITY: usize = 256;
 /// The coordinator's mailbox. `#[non_exhaustive]`: B1/B3 add
 /// `EffectResult`, `DispatchCommit` and `Observation` without touching
 /// these arms. M2's connection task (`mcp::serve`) constructs `Tool`
-/// from outside `daemon` through the `daemon::Msg` re-export.
+/// and `VerifyCaller` from outside `daemon` through the `daemon::Msg`
+/// re-export.
 #[derive(Debug)]
 #[non_exhaustive]
 #[expect(
@@ -62,6 +67,26 @@ pub(crate) enum Msg {
         resolved_root: Option<String>,
         /// The reply slot the connection task waits on.
         reply: oneshot::Sender<ToolResponse>,
+    },
+    /// A framed non-tool request's F1 check — `initialize`, `ping`,
+    /// `tools/list` and unknown methods carry the relay's
+    /// `relayInstanceId` too, so the FIRST framed request (often an
+    /// `initialize`) must bind it and every later one must verify it,
+    /// not only the first `tools/call` (F1). The arm runs the Tool
+    /// arm's own resolve-and-bind; the reply carries the verdict alone.
+    VerifyCaller {
+        /// The relay-attached caller envelope.
+        caller: CallerEnvelope,
+        /// The same request-time `session.snapshot` `Tool` carries —
+        /// boxed for size parity; an `Err` is `DAEMON_UNAVAILABLE`,
+        /// never an identity verdict.
+        snapshot: Box<Result<Observed<SessionSnapshot>, HerdrError>>,
+        /// The connection task's `canonicalize` of the envelope's
+        /// `projectRoot` — `None` when the path does not resolve (H#3).
+        resolved_root: Option<String>,
+        /// The verdict slot the connection task waits on — `Ok(())`
+        /// lets the method answer locally.
+        reply: oneshot::Sender<Result<(), ToolError>>,
     },
     /// One reconcile tick: a fresh Herdr snapshot or its error (F28/B3
     /// derive observations from `Ok`; A1 records liveness only).
@@ -95,93 +120,6 @@ pub(super) enum Stop {
     /// The `daemon::run` oneshot fired (in-process tests) or every
     /// `Msg` sender dropped.
     Requested,
-}
-
-/// The outcome of one bounded apply (§4.2's CAS contract).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ApplyOutcome {
-    /// The transition committed — `attempts` counts the tries taken.
-    Applied {
-        /// How many tries it took (1 = clean).
-        attempts: usize,
-    },
-    /// Every attempt lost the CAS — logged and dropped, never retried past
-    /// the bound.
-    Dropped {
-        /// Always 3 — the bound.
-        attempts: usize,
-    },
-}
-
-/// §4.3 step 5's counts — how many `dispatching` effects restart marked
-/// `unconfirmed`, over how many Runs and stranded evaluations.
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) struct Marks {
-    /// `dispatching` rows seen (the input set's size).
-    pub effects: usize,
-    /// Runs whose restart transition applied.
-    pub runs: usize,
-    /// Stranded `evaluating` launches abstained.
-    pub evals: usize,
-}
-
-/// The apply bound §4.2 pins: re-read and recompute ≤ 3 attempts, then log
-/// and drop.
-const APPLY_BOUND: usize = 3;
-
-/// §4.2 — one `store.apply` attempt per loop, recomputing the transition
-/// against a fresh store read between attempts. `Conflict` retries; every
-/// other `ApplyError` aborts (it is a bug or corruption, not a race).
-/// An empty transition counts as a clean `Applied` without paying a
-/// transaction.
-pub(super) fn apply_with_retry(
-    store: &mut Store,
-    now: Timestamp,
-    mut recompute: impl FnMut(&Store) -> Transition,
-) -> Result<ApplyOutcome, ApplyError> {
-    for attempt in 1..=APPLY_BOUND {
-        let transition = recompute(store);
-        let sizes = (
-            transition.state_changes.len(),
-            transition.events.len(),
-            transition.effects.len(),
-        );
-        if sizes == (0, 0, 0) {
-            return Ok(ApplyOutcome::Applied { attempts: attempt });
-        }
-        match store.apply(&transition, now) {
-            Ok(()) => {
-                log::applied(attempt, sizes.0, sizes.1, sizes.2);
-                return Ok(ApplyOutcome::Applied { attempts: attempt });
-            }
-            Err(ApplyError::Conflict { .. }) => {}
-            Err(error) => return Err(error),
-        }
-    }
-    log::apply_dropped(APPLY_BOUND, "conflict");
-    Ok(ApplyOutcome::Dropped {
-        attempts: APPLY_BOUND,
-    })
-}
-
-/// §4.2 [r3] — concatenate `Transition`s into one apply: the governor-refused
-/// path composes `[WriteEffect::Dispatch]` + `transition(Event::EffectResult)`
-/// into a single commit. The three vecs append in order — `Transition` has
-/// no other fields to merge.
-#[expect(
-    dead_code,
-    reason = "the composed-transition consumer lands with P5.B1's DispatchCommit path"
-)]
-pub(super) fn concat(
-    mut first: Transition,
-    rest: impl IntoIterator<Item = Transition>,
-) -> Transition {
-    for next in rest {
-        first.state_changes.extend(next.state_changes);
-        first.events.extend(next.events);
-        first.effects.extend(next.effects);
-    }
-    first
 }
 
 /// What `Coordinator::new` needs beyond the `Store` — bundled so the
@@ -413,6 +351,15 @@ impl Coordinator {
             } => {
                 let response = self.tool(request, *snapshot, resolved_root.as_deref());
                 let _unused = reply.send(response);
+            }
+            Msg::VerifyCaller {
+                caller,
+                snapshot,
+                resolved_root,
+                reply,
+            } => {
+                let verdict = self.verify(&caller, *snapshot, resolved_root.as_deref());
+                let _unused = reply.send(verdict);
             }
             Msg::Tick { snapshot } => {
                 let answered = snapshot.is_ok();

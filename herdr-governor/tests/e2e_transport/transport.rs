@@ -52,12 +52,36 @@ fn fixture(root: &Path, herdr_socket: &Path) -> (PathBuf, PathBuf) {
     (state, config)
 }
 
-fn caller() -> CallerEnvelope {
-    CallerEnvelope {
-        pane_id: PaneId("w6:pKQ".into()),
-        project_root: ProjectRoot("/repo".into()),
-        relay_instance_id: RelayInstanceId("0123456789abcdef0123456789abcdef".into()),
-    }
+/// A `FakeHerdr` whose one pane `w1:p1` holds a native session, plus the
+/// caller envelope F1 resolves to it — `projectRoot` is `tmp`'s own
+/// canonical path so the connection task's realpath read agrees. A
+/// framed non-tool request (`ping`, `tools/list`) verifies against this
+/// occupant before its local answer is allowed out.
+fn occupied(tmp: &Path) -> (FakeHerdr, CallerEnvelope) {
+    let mut topology = Topology::single_shell();
+    topology.panes[0].agent = Some(Occupant {
+        name: "gov-caller".into(),
+        kind: "harness-x".into(),
+        status: "idle".into(),
+        session: Some(SessionRef {
+            kind: SessionKind::Id,
+            value: "caller-session".into(),
+        }),
+    });
+    let root = tmp
+        .canonicalize()
+        .expect("canonical tmp")
+        .to_str()
+        .expect("utf8")
+        .to_owned();
+    (
+        FakeHerdr::start(topology),
+        CallerEnvelope {
+            pane_id: PaneId("w1:p1".into()),
+            project_root: ProjectRoot(root),
+            relay_instance_id: RelayInstanceId("0123456789abcdef0123456789abcdef".into()),
+        },
+    )
 }
 
 /// Spawn the daemon in-process and poll for the bound socket — bounded,
@@ -117,15 +141,18 @@ async fn round_trip(sock: &Path, caller: &CallerEnvelope, rpc: &Value) -> Value 
 
 /// PR A's surface (OQ-S): `tools/list` over the real socket serves exactly
 /// `herdr_status` — `herdr_launch`/`herdr_run` stay unlisted until B2/C4.
+/// F1 gates the framed request first: `Msg::VerifyCaller` resolves and
+/// binds the caller before the list is allowed out.
 #[tokio::test]
 async fn transport_tools_list_exposes_status_only_in_pr_a() {
     let tmp = tempfile::tempdir().expect("tmp");
-    let (state, config) = fixture(tmp.path(), Path::new("/nonexistent/herdr.sock"));
+    let (fake, caller) = occupied(tmp.path());
+    let (state, config) = fixture(tmp.path(), fake.socket_path());
     let (sock, stop, daemon) = start_daemon(&state, &config).await;
 
     let reply = round_trip(
         &sock,
-        &caller(),
+        &caller,
         &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
     )
     .await;
@@ -146,20 +173,23 @@ async fn transport_tools_list_exposes_status_only_in_pr_a() {
 
 /// One task per connection (§4.11): concurrent connections carry
 /// independent request/reply pairs — distinct ids echo back on their own
-/// connection with no cross-talk.
+/// connection with no cross-talk. Each framed `ping` posts its own
+/// `VerifyCaller`: the coordinator serializes them — the first binds,
+/// the rest verify against the same occupant.
 #[tokio::test]
 async fn transport_concurrent_connections_are_independent() {
     let tmp = tempfile::tempdir().expect("tmp");
-    let (state, config) = fixture(tmp.path(), Path::new("/nonexistent/herdr.sock"));
+    let (fake, caller) = occupied(tmp.path());
+    let (state, config) = fixture(tmp.path(), fake.socket_path());
     let (sock, stop, daemon) = start_daemon(&state, &config).await;
 
     let mut legs = Vec::new();
     for id in 0..8u64 {
         let leg_sock = sock.clone();
-        let caller = caller();
+        let leg_caller = caller.clone();
         legs.push(tokio::spawn(async move {
             let request = json!({"jsonrpc": "2.0", "id": id, "method": "ping"});
-            (id, round_trip(&leg_sock, &caller, &request).await)
+            (id, round_trip(&leg_sock, &leg_caller, &request).await)
         }));
     }
     for leg in legs {
@@ -182,35 +212,13 @@ async fn transport_concurrent_connections_are_independent() {
 async fn transport_herdr_status_serves_over_the_real_socket() {
     let tmp = tempfile::tempdir().expect("tmp");
     // The caller occupies `w1:p1` with a native session — the snapshot's
-    // one agent row F1 resolves the envelope's `paneId` to.
-    let mut topology = Topology::single_shell();
-    topology.panes[0].agent = Some(Occupant {
-        name: "gov-caller".into(),
-        kind: "harness-x".into(),
-        status: "idle".into(),
-        session: Some(SessionRef {
-            kind: SessionKind::Id,
-            value: "caller-session".into(),
-        }),
-    });
-    let fake = FakeHerdr::start(topology);
+    // one agent row F1 resolves the envelope's `paneId` to — and
+    // `projectRoot` is the tempdir's canonical path so the connection
+    // task's realpath read agrees.
+    let (fake, caller) = occupied(tmp.path());
     let (state, config) = fixture(tmp.path(), fake.socket_path());
     let (sock, stop, daemon) = start_daemon(&state, &config).await;
 
-    // `projectRoot` must equal its own `canonicalize` — the tempdir's
-    // canonical path makes the connection task's realpath read agree.
-    let root = tmp
-        .path()
-        .canonicalize()
-        .expect("canonical tmp")
-        .to_str()
-        .expect("utf8")
-        .to_owned();
-    let caller = CallerEnvelope {
-        pane_id: PaneId("w1:p1".into()),
-        project_root: ProjectRoot(root),
-        relay_instance_id: RelayInstanceId("0123456789abcdef0123456789abcdef".into()),
-    };
     let reply = round_trip(
         &sock,
         &caller,
@@ -252,18 +260,19 @@ async fn transport_herdr_status_serves_over_the_real_socket() {
 #[tokio::test]
 async fn transport_frame_bound_counts_payload_before_newline() {
     let tmp = tempfile::tempdir().expect("tmp");
-    let (state, config) = fixture(tmp.path(), Path::new("/nonexistent/herdr.sock"));
+    let (fake, caller) = occupied(tmp.path());
+    let (state, config) = fixture(tmp.path(), fake.socket_path());
     let (sock, stop, daemon) = start_daemon(&state, &config).await;
 
     let rpc = |pad: usize| json!({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {"pad": "x".repeat(pad)}});
-    let base = encode_request(&caller(), &rpc(0)).len() - 1;
+    let base = encode_request(&caller, &rpc(0)).len() - 1;
     let maxed = rpc(MAX_FRAME_BYTES - base);
     assert_eq!(
-        encode_request(&caller(), &maxed).len() - 1,
+        encode_request(&caller, &maxed).len() - 1,
         MAX_FRAME_BYTES,
         "the frame payload is exactly the bound"
     );
-    let reply = round_trip(&sock, &caller(), &maxed).await;
+    let reply = round_trip(&sock, &caller, &maxed).await;
     assert_eq!(reply["id"], 9);
     assert_eq!(reply["result"], json!({}), "the max-size frame is served");
 
@@ -273,7 +282,7 @@ async fn transport_frame_bound_counts_payload_before_newline() {
     let mut reader = tokio::io::BufReader::new(stream);
     reader
         .get_mut()
-        .write_all(&encode_request(&caller(), &rpc(MAX_FRAME_BYTES - base + 1)))
+        .write_all(&encode_request(&caller, &rpc(MAX_FRAME_BYTES - base + 1)))
         .await
         .expect("frame write");
     let mut line = Vec::new();

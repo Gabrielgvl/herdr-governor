@@ -4,17 +4,20 @@
 //! reply, then a close — a second frame is refused by the close itself.
 //!
 //! Two line shapes are legal. The relay's v1 frame
-//! (`{"v":1,"caller":…,"rpc":<request>}`) is the real path: `initialize`
-//! and `ping` answer locally, `tools/list`/`tools/call` route through
-//! `tools` — a call gathers the request-time evidence (§4.2: a fresh
-//! `session.snapshot`, the `canonicalize` of the envelope's
-//! `projectRoot`), posts `Msg::Tool` to the coordinator and its
-//! `ToolResponse` comes back as the `isError`/`content` result — and
-//! everything else is `-32601`. A bare JSON-RPC request line is the §4.3
+//! (`{"v":1,"caller":…,"rpc":<request>}`) is the real path: every framed
+//! request first proves its caller — F1 binds `relayInstanceId` on the
+//! FIRST framed request and verifies it on every later one. `tools/call`
+//! posts `Msg::Tool`, whose arm runs the request-time snapshot +
+//! resolve/bind and serves the call; every other method posts
+//! `Msg::VerifyCaller`, the same resolution for the verdict alone, then
+//! `initialize`, `ping` and `tools/list` answer locally — a refused
+//! caller is a `-32000` JSON-RPC error carrying the typed code, since
+//! these answers have no tool-result channel for `isError` — and an
+//! unknown method is `-32601`. A bare JSON-RPC request line is the §4.3
 //! lock-probe's vocabulary (`ping` → `{}`): it is answered through
-//! `jsonrpc::respond` only — no caller envelope exists to serve a tool.
-//! Every result passes `jsonrpc::result`, so the 60,000-byte bound (N5)
-//! is enforced here by construction.
+//! `jsonrpc::respond` only — it carries no caller envelope and stays
+//! unauthenticated. Every result passes `jsonrpc::result`, so the
+//! 60,000-byte bound (N5) is enforced here by construction.
 //!
 //! Admission stops when the coordinator's shutdown `watch` flips
 //! (§4.14 step 1): the accept loop returns instead of taking the next
@@ -23,19 +26,17 @@
 
 use std::time::Duration;
 
-use governor_core::identity::CallerEnvelope;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
-use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::net::UnixListener;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
-use super::framing::{self, Inbound};
-use super::jsonrpc::{self, Request, Response};
-use super::tools;
-use crate::adapters::herdr::{Client, MAX_FRAME_BYTES};
+use crate::adapters::herdr::Client;
 use crate::daemon::Msg;
-use crate::daemon::api::{ToolError, ToolRequest, ToolResponse};
+
+/// `answer` — the per-connection task: one bounded line, one reply,
+/// one close, and F1's verify-then-answer routing.
+mod answer;
+use answer::conn;
 
 /// Spawn the accept task (§4.3 step 8). Runs until the shutdown `watch`
 /// flips or the handle is aborted at teardown; per-connection handlers
@@ -90,164 +91,6 @@ pub(crate) fn spawn(
     })
 }
 
-/// One connection: read exactly one bounded line, answer it, close. A
-/// line over `MAX_FRAME_BYTES` (no newline inside the bound), a `write`
-/// error or EOF ends the connection silently; a second frame can never
-/// arrive — the socket is gone after the first reply.
-async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>, herdr: Client, op_timeout: Duration) {
-    let mut reader = BufReader::new(stream);
-    let mut line = Vec::new();
-    let bound = u64::try_from(MAX_FRAME_BYTES.saturating_add(1)).unwrap_or(u64::MAX);
-    let read = (&mut reader).take(bound).read_until(b'\n', &mut line).await;
-    match read {
-        Ok(n) if n > 0 && line.last() == Some(&b'\n') => {}
-        _ => return,
-    }
-    // The bound counts payload bytes before the `\n` (§4.11): `line`
-    // still carries its terminator, so the decode sees it stripped.
-    let Some(payload) = line.strip_suffix(b"\n") else {
-        return;
-    };
-    let reply = match framing::decode_request(payload) {
-        Ok(inbound) => answer_frame(inbound, &tx, &herdr, op_timeout)
-            .await
-            .map(|rpc| framing::encode_reply(&rpc)),
-        Err(_) => answer_bare(payload).map(|response| {
-            let mut bytes = jsonrpc::serialize(&response);
-            bytes.push(b'\n');
-            bytes
-        }),
-    };
-    if let Some(bytes) = reply {
-        let _written = reader.get_mut().write_all(&bytes).await;
-    }
-}
-
-/// The v1-frame path: decode the forwarded `rpc` request and answer it —
-/// the reply is the inner JSON-RPC response `framing::encode_reply`
-/// re-envelopes. A notification or a `respond`-less call yields `None`
-/// and the connection closes without a reply.
-async fn answer_frame(
-    inbound: Inbound,
-    tx: &mpsc::Sender<Msg>,
-    herdr: &Client,
-    op_timeout: Duration,
-) -> Option<Value> {
-    let bytes = serde_json::to_vec(&inbound.rpc).unwrap_or_default();
-    let request = match jsonrpc::parse(&bytes) {
-        Ok(request) => request,
-        Err(response) => return Some(value_of(&response)),
-    };
-    answer_call(request, inbound.caller, tx, herdr, op_timeout)
-        .await
-        .map(|response| value_of(&response))
-}
-
-/// Route one decoded request: `tools/list` and `tools/call` are the MCP
-/// surface (`tools` owns both mappings and the caller envelope rides in
-/// the frame, never the params); `initialize`/`ping`/anything else is
-/// `respond`'s protocol vocabulary.
-async fn answer_call(
-    request: Request,
-    caller: CallerEnvelope,
-    tx: &mpsc::Sender<Msg>,
-    herdr: &Client,
-    op_timeout: Duration,
-) -> Option<Response> {
-    let Request::Call { id, method, params } = request else {
-        return None;
-    };
-    match method.as_str() {
-        "tools/list" => Some(tools::list_response(id)),
-        "tools/call" => Some(call(id, caller, &params, tx, herdr, op_timeout).await),
-        _ => jsonrpc::respond(&Request::Call { id, method, params }),
-    }
-}
-
-/// `tools/call`: strict-decode the params into a `ToolRequest` (a
-/// `ToolError` refusal is already the wire answer), gather the
-/// request-time evidence and post it to the coordinator, then encode
-/// whatever comes back. A coordinator that cannot answer — mailbox
-/// closed at shutdown — maps to `DAEMON_UNAVAILABLE` (§4.14 step 1's
-/// in-flight rule, N7's code).
-async fn call(
-    id: Value,
-    caller: CallerEnvelope,
-    params: &Value,
-    tx: &mpsc::Sender<Msg>,
-    herdr: &Client,
-    op_timeout: Duration,
-) -> Response {
-    let tool_response = match tools::decode_call(caller, params) {
-        Ok(request) => post(request, tx, herdr, op_timeout).await,
-        Err(error) => Err(error),
-    };
-    tools::call_response(id, &tool_response)
-}
-
-/// Hand one `ToolRequest` to the coordinator and wait on its `oneshot`.
-/// The request-time evidence §4.2/§4.6 assigns the connection task
-/// rides the message: a fresh `session.snapshot` — an `Err` here is
-/// `DAEMON_UNAVAILABLE` in the arm, never an identity verdict — and the
-/// `canonicalize` of the envelope's `projectRoot` (`None` when the path
-/// does not resolve, H#3). Either send or receive failing means the
-/// coordinator is gone — the reply is the typed `DAEMON_UNAVAILABLE`
-/// the relay also fabricates.
-async fn post(
-    request: ToolRequest,
-    tx: &mpsc::Sender<Msg>,
-    herdr: &Client,
-    op_timeout: Duration,
-) -> ToolResponse {
-    let (reply, wait) = oneshot::channel();
-    let snapshot = herdr.session_snapshot(op_timeout).await;
-    let resolved_root = canonical_root(&request.caller.project_root.0).await;
-    let msg = Msg::Tool {
-        request,
-        snapshot: Box::new(snapshot),
-        resolved_root,
-        reply,
-    };
-    if tx.send(msg).await.is_err() {
-        return Err(unavailable());
-    }
-    wait.await.unwrap_or_else(|_| Err(unavailable()))
-}
-
-/// The `realpath` of the relay-attached `projectRoot` (§4.6): `Some`
-/// only when the path resolves to a UTF-8 name — the arm compares it to
-/// the envelope string and refuses on mismatch, never re-anchored.
-async fn canonical_root(project_root: &str) -> Option<String> {
-    tokio::fs::canonicalize(project_root)
-        .await
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_owned))
-}
-
-fn unavailable() -> ToolError {
-    ToolError::new(
-        ToolError::DAEMON_UNAVAILABLE,
-        "the coordinator is not serving",
-    )
-}
-
-/// The bare-request path — the §4.3 lock-probe's dialect. `parse`
-/// failures are already the error `Response`; a decoded request answers
-/// through `respond` (`ping`/`initialize`, `-32601` otherwise — without a
-/// caller envelope no tool can be served); a notification earns silence.
-fn answer_bare(line: &[u8]) -> Option<Response> {
-    match jsonrpc::parse(line) {
-        Ok(request) => jsonrpc::respond(&request),
-        Err(response) => Some(response),
-    }
-}
-
-/// A `Response` as the `Value` a reply frame envelopes — the serialized
-/// form round-tripped, since `serialize` owns the member order.
-fn value_of(response: &Response) -> Value {
-    serde_json::from_slice(&jsonrpc::serialize(response)).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -261,13 +104,13 @@ mod tests {
     use super::{conn, spawn};
     use crate::adapters::herdr::Client;
     use crate::daemon::Msg;
-    use crate::daemon::api::ToolResponse;
+    use crate::daemon::api::{ToolError, ToolResponse};
     use crate::mcp::framing::{decode_reply, encode_request};
 
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     /// A client pointed nowhere — snapshot reads fail fast and the `Err`
-    /// rides `Msg::Tool`, which is what these tests pin.
+    /// rides the message, which is what these tests pin.
     fn client() -> Client {
         Client::new("/nonexistent/herdr.sock")
     }
@@ -281,7 +124,9 @@ mod tests {
     }
 
     /// One leg over an in-memory pair: write `frame`, return the reply
-    /// line plus the stream for a follow-up read.
+    /// line plus the stream for a follow-up read. For the bare-probe path
+    /// only — a framed request posts `VerifyCaller` first and needs its
+    /// verdict answered (`verified_leg` below).
     async fn leg(stream: &mut BufReader<UnixStream>, frame: &[u8]) -> Vec<u8> {
         stream
             .get_mut()
@@ -297,17 +142,49 @@ mod tests {
         line
     }
 
+    /// Answer the `VerifyCaller` a framed non-tool request posts — F1
+    /// gates every framed method on the coordinator's verdict before its
+    /// local answer is allowed out.
+    async fn answer_verify(rx: &mut mpsc::Receiver<Msg>) {
+        let Some(Msg::VerifyCaller { reply, .. }) = rx.recv().await else {
+            panic!("a framed non-tool request posts VerifyCaller");
+        };
+        reply.send(Ok(())).expect("the verdict reaches the task");
+    }
+
+    /// One verified leg: write `frame`, answer the `VerifyCaller` it
+    /// posts, return the reply line.
+    async fn verified_leg(
+        stream: &mut BufReader<UnixStream>,
+        rx: &mut mpsc::Receiver<Msg>,
+        frame: &[u8],
+    ) -> Vec<u8> {
+        stream
+            .get_mut()
+            .write_all(frame)
+            .await
+            .expect("frame write");
+        answer_verify(rx).await;
+        let mut line = Vec::new();
+        let read = stream
+            .read_until(b'\n', &mut line)
+            .await
+            .expect("reply read");
+        assert!(read > 0, "the server closed without a reply");
+        line
+    }
+
     /// One request, one reply, close: the reply is the v1-enveloped
     /// JSON-RPC answer and the next read hits EOF.
     #[tokio::test]
     async fn serve_closes_after_one_reply() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
-        let (tx, _rx) = mpsc::channel::<Msg>(8);
+        let (tx, mut rx) = mpsc::channel::<Msg>(8);
         let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
         let rpc = json!({"jsonrpc": "2.0", "id": 7, "method": "ping"});
-        let line = leg(&mut client, &encode_request(&caller(), &rpc)).await;
+        let line = verified_leg(&mut client, &mut rx, &encode_request(&caller(), &rpc)).await;
         let reply = decode_reply(&line).expect("a v1 reply frame");
         assert_eq!(reply["id"], 7);
         assert_eq!(reply["result"], json!({}), "ping answers an empty result");
@@ -327,12 +204,12 @@ mod tests {
     #[tokio::test]
     async fn serve_refuses_second_frame_on_a_connection() {
         let (server, client_stream) = UnixStream::pair().expect("pair");
-        let (tx, _rx) = mpsc::channel::<Msg>(8);
+        let (tx, mut rx) = mpsc::channel::<Msg>(8);
         let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
         let mut client = BufReader::new(client_stream);
 
         let first = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
-        let line = leg(&mut client, &encode_request(&caller(), &first)).await;
+        let line = verified_leg(&mut client, &mut rx, &encode_request(&caller(), &first)).await;
         assert_eq!(decode_reply(&line).expect("reply")["id"], 1);
 
         let second = json!({"jsonrpc": "2.0", "id": 2, "method": "ping"});
@@ -348,6 +225,59 @@ mod tests {
             .await
             .expect("trailing read");
         assert_eq!(trailing, 0, "no second reply — the connection refused");
+        task.await.expect("conn task joins");
+    }
+
+    /// F1 — a framed non-tool request whose `VerifyCaller` refuses answers
+    /// a `-32000` JSON-RPC error carrying the typed refusal code as the
+    /// message: `initialize`, `ping` and `tools/list` have no tool-result
+    /// channel for `isError` to ride. The envelope and the request-time
+    /// evidence post verbatim to the coordinator.
+    #[tokio::test]
+    async fn serve_maps_a_refused_verify_to_a_typed_server_error() {
+        let (server, client_stream) = UnixStream::pair().expect("pair");
+        let (tx, mut rx) = mpsc::channel::<Msg>(8);
+        let task = tokio::spawn(conn(server, tx, client(), TIMEOUT));
+        let mut client = BufReader::new(client_stream);
+
+        let rpc = json!({"jsonrpc": "2.0", "id": "p1", "method": "ping"});
+        client
+            .get_mut()
+            .write_all(&encode_request(&caller(), &rpc))
+            .await
+            .expect("frame write");
+        let Some(Msg::VerifyCaller {
+            caller: seen,
+            snapshot,
+            reply,
+            ..
+        }) = rx.recv().await
+        else {
+            panic!("the framed ping posts VerifyCaller");
+        };
+        assert_eq!(seen.pane_id.0, "w6:pKQ", "the envelope rides verbatim");
+        assert!(
+            snapshot.is_err(),
+            "the request-time snapshot failure rides as evidence"
+        );
+        reply
+            .send(Err(ToolError::new(
+                "CALLER_IDENTITY_MISMATCH",
+                "the pane's occupant changed",
+            )))
+            .expect("the verdict reaches the task");
+
+        let mut line = Vec::new();
+        client
+            .read_until(b'\n', &mut line)
+            .await
+            .expect("reply read");
+        let wire = decode_reply(&line).expect("a v1 reply frame");
+        assert_eq!(wire["error"]["code"], -32000);
+        assert_eq!(
+            wire["error"]["message"], "CALLER_IDENTITY_MISMATCH",
+            "the typed refusal code is the error message"
+        );
         task.await.expect("conn task joins");
     }
 
@@ -426,7 +356,8 @@ mod tests {
     }
 
     /// The §4.3 lock-probe's dialect: a bare JSON-RPC `ping` gets a bare
-    /// `{}` reply — no v1 envelope — then the close.
+    /// `{}` reply — no v1 envelope, no `VerifyCaller`, the unauthenticated
+    /// path F1 leaves alone — then the close.
     #[tokio::test]
     async fn serve_answers_the_bare_lock_probe() {
         let (server, client_stream) = UnixStream::pair().expect("pair");

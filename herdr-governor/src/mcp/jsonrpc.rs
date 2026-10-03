@@ -21,9 +21,10 @@ const METHOD_NOT_FOUND: i64 = -32601;
 pub const INVALID_PARAMS: i64 = -32602;
 /// `-32603` — the handler itself failed.
 pub const INTERNAL_ERROR: i64 = -32603;
-/// `-32000` — the server-defined code shared by `RESULT_TOO_LARGE` and
-/// `DAEMON_UNAVAILABLE` (plan §4.11, N5/N7).
-const SERVER_ERROR: i64 = -32000;
+/// `-32000` — the server-defined code shared by `RESULT_TOO_LARGE`,
+/// `DAEMON_UNAVAILABLE` and the framed-request caller refusals (plan
+/// §4.11, N5/N7); `serve` maps a refused caller verdict onto it.
+pub const SERVER_ERROR: i64 = -32000;
 
 /// N5/§4.12 — a serialized `result` member over 60,000 bytes is refused,
 /// never truncated. Handlers page under the §4.12 byte budget so this

@@ -144,6 +144,65 @@ async fn f1_replaced_occupant_same_pane_is_mismatch() {
     );
 }
 
+/// F1/S5 — the binding rides the first FRAMED request, not the first
+/// `tools/call`: a relay whose `initialize` bound while occupant A held
+/// the pane must refuse `CALLER_IDENTITY_MISMATCH` once B replaces it —
+/// binding at the first tool call would silently re-register it to B.
+/// A refused non-tool method answers a `-32000` JSON-RPC error carrying
+/// the typed code: `initialize`/`ping` have no tool-result channel.
+#[tokio::test]
+async fn f1_first_framed_request_binds_replaced_occupant_refuses() {
+    let tmp = tempdir().expect("tmp");
+    let fake = FakeHerdr::start(occupied_topology());
+    let (state, config) = fixture(tmp.path(), fake.socket_path());
+    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let cwd = tmp.path().join("project");
+    fs::create_dir_all(&cwd).expect("project dir");
+
+    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
+    let init = exchange_on(
+        &mut relay,
+        &request(1, "initialize", &json!({"protocolVersion": "2025-06-18"})),
+    )
+    .await;
+    assert_eq!(
+        init["result"]["protocolVersion"], "2025-06-18",
+        "initialize answered — and bound the relay"
+    );
+
+    let new_session = fake.replace_occupant("w1:p1");
+    assert_ne!(
+        new_session, "sess-1",
+        "the replacement minted a new native session"
+    );
+
+    let refused = exchange_on(&mut relay, &status_call(2)).await;
+    assert_eq!(
+        tool_code(&refused),
+        "CALLER_IDENTITY_MISMATCH",
+        "initialize's binding refuses the replaced occupant"
+    );
+    let pong = exchange_on(&mut relay, &request(3, "ping", &json!({}))).await;
+    assert_eq!(pong["error"]["code"], -32000);
+    assert_eq!(
+        pong["error"]["message"], "CALLER_IDENTITY_MISMATCH",
+        "a non-tool refusal is a JSON-RPC error carrying the code: {pong}"
+    );
+
+    stop_daemon(stop, daemon).await;
+    let bound = bindings(&state);
+    assert_eq!(bound.len(), 1, "one binding — journaled by initialize");
+    assert_eq!(
+        bound[0].3, "sess-1",
+        "the binding still names the first occupant"
+    );
+    let (status, stderr) = close_relay(relay.take().expect("relay")).await;
+    assert!(
+        status.success(),
+        "relay exits on stdin EOF: {status} {stderr}"
+    );
+}
+
 /// F1 — the resolution refusals, each through its own real relay:
 /// a pane no snapshot row claims is `CALLER_IDENTITY_MISSING`, two
 /// rows claiming one pane is `CALLER_IDENTITY_DUPLICATE`, an occupant
@@ -195,6 +254,8 @@ async fn f1_missing_duplicate_sessionless_refused() {
 /// `canonicalize` cannot produce the envelope's root; and no
 /// `HERDR_PANE_ID` at all, where the relay honestly ships `paneId:""`
 /// — it never fabricates a pane — and the daemon refuses the envelope.
+/// The live `ping` in between binds honestly — F1's first-framed-request
+/// rule — while every refused leg journals nothing.
 #[tokio::test]
 async fn f1_invalid_project_root_refused_never_reanchored() {
     let tmp = tempdir().expect("tmp");
@@ -202,8 +263,9 @@ async fn f1_invalid_project_root_refused_never_reanchored() {
     let (state, config) = fixture(tmp.path(), fake.socket_path());
     let (sock, stop, daemon) = start_daemon(&state, &config).await;
 
-    // The relay derives projectRoot at start — a ping proves it ran —
-    // then the derived root disappears: the daemon's realpath fails.
+    // The relay derives projectRoot at start — a ping proves it ran and,
+    // under F1, binds the relay to the occupant it resolves — then the
+    // derived root disappears: the daemon's realpath fails.
     let project = tmp.path().join("project");
     fs::create_dir_all(&project).expect("project dir");
     let mut relay = Some(spawn_relay(&sock, &project, Some("w1:p1")));
@@ -239,8 +301,11 @@ async fn f1_invalid_project_root_refused_never_reanchored() {
     );
 
     stop_daemon(stop, daemon).await;
-    assert!(
-        bindings(&state).is_empty(),
-        "invalid envelopes journal no bindings"
+    let bound = bindings(&state);
+    assert_eq!(
+        bound.len(),
+        1,
+        "only the verified ping journaled — refused legs mint nothing"
     );
+    assert_eq!(bound[0].3, "sess-1");
 }

@@ -15,17 +15,14 @@ use std::process::{Child, Command, Stdio};
 use tempfile::tempdir;
 
 use crate::support::e2e::{BIN, await_for, catalog, signal, stderr_of};
+use crate::support::fake_herdr::{FakeHerdr, Topology};
 
 /// Write the `[daemon]` fixture (`catalog.toml` + `0600` credentials) at
 /// `dir` — the same fixture `support::e2e::fixture` lays out, placed at
 /// an explicit path because this test controls the env defaults.
-fn fixture_at(dir: &Path) {
+fn fixture_at(dir: &Path, herdr_socket: &Path) {
     fs::create_dir_all(dir).expect("config dir");
-    fs::write(
-        dir.join("catalog.toml"),
-        catalog(Path::new("/nonexistent/herdr.sock"), 60),
-    )
-    .expect("catalog");
+    fs::write(dir.join("catalog.toml"), catalog(herdr_socket, 60)).expect("catalog");
     let credentials = dir.join("credentials");
     fs::write(&credentials, "test-token\n").expect("credentials");
     fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600)).expect("chmod");
@@ -69,8 +66,9 @@ async fn default_socket_is_home_based_for_daemon_and_relay() {
     // A valid catalog under BOTH derivations: whichever the child reads,
     // startup can proceed — the verdict is WHERE the socket lands, never
     // a missing fixture.
-    fixture_at(&home.join(".config/herdr-governor"));
-    fixture_at(&xdg_config.join("herdr-governor"));
+    let fake = FakeHerdr::start(Topology::single_shell());
+    fixture_at(&home.join(".config/herdr-governor"), fake.socket_path());
+    fixture_at(&xdg_config.join("herdr-governor"), fake.socket_path());
 
     let mut daemon = spawn(&["daemon"], &home, &xdg_state, &xdg_config);
     let stderr = stderr_of(&mut daemon);
@@ -86,7 +84,12 @@ async fn default_socket_is_home_based_for_daemon_and_relay() {
     );
 
     // The relay under the same env and no --socket: one `ping` line
-    // round-trips only when it dialed the daemon's own default.
+    // round-trips only when it dialed the daemon's own default. F1
+    // verifies the framed request first — with `HERDR_PANE_ID` scrubbed
+    // the relay ships `paneId:""` and the daemon's verify refuses
+    // `CALLER_IDENTITY_INVALID`, a verdict only the daemon itself
+    // produces (a relay that missed the socket fabricates
+    // `DAEMON_UNAVAILABLE` instead).
     let mut relay = spawn(&["relay"], &home, &xdg_state, &xdg_config);
     relay
         .stdin
@@ -106,8 +109,8 @@ async fn default_socket_is_home_based_for_daemon_and_relay() {
     .expect("relay exchange joins");
     let (mut relay_child, reply) = exchange;
     assert!(
-        reply.contains("\"result\""),
-        "the relay reached the daemon on the shared default: {reply}"
+        reply.contains("CALLER_IDENTITY_INVALID"),
+        "the daemon's own refusal proves the relay reached it: {reply}"
     );
 
     drop(relay_child.stdin.take());

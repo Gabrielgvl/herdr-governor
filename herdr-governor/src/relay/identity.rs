@@ -93,17 +93,20 @@ fn git_toplevel(cwd: &Path) -> Option<PathBuf> {
 
 /// `fs::canonicalize` — the realpath form the daemon's `projectRoot`
 /// check pins. A path it cannot resolve goes out literal for the daemon
-/// to refuse.
+/// to refuse, and a root the wire cannot represent (a non-UTF-8 name)
+/// goes out `""` — the refused caller, never a lossy substitute that
+/// could canonicalize onto a different real directory (H#3).
 fn realpath(path: &Path) -> String {
     fs::canonicalize(path)
         .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .into_owned()
+        .to_str()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::mint;
+    use super::{mint, realpath};
 
     /// The mint is random and shaped exactly as the daemon validates.
     #[test]
@@ -119,5 +122,23 @@ mod tests {
             );
         }
         assert_ne!(first, second, "each mint is independent");
+    }
+
+    /// F1/H#3 — a root the wire cannot represent is refused, never
+    /// substituted: a non-UTF-8 directory name goes out as `""` for the
+    /// daemon to refuse `CALLER_IDENTITY_INVALID` — a lossy spelling
+    /// could canonicalize onto a different real directory and attach it.
+    #[test]
+    fn realpath_refuses_a_non_utf8_root() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt as _;
+        let dir = tempfile::tempdir().expect("tmp");
+        let raw = dir.path().join(OsStr::from_bytes(b"root-\xff"));
+        std::fs::create_dir_all(&raw).expect("non-utf8 dir");
+        assert_eq!(
+            realpath(&raw),
+            "",
+            "an unrepresentable root derives as refused — never lossy"
+        );
     }
 }

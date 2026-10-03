@@ -18,7 +18,8 @@ use governor_core::task::{Launch, LaunchPhase, Task};
 
 use crate::adapters::config::{DaemonSettings, LoadedConfig};
 use crate::daemon::clock::Clock;
-use crate::daemon::coordinator::{ApplyOutcome, Coordinator, CoordinatorArgs, apply_with_retry};
+use crate::daemon::coordinator::apply::{ApplyOutcome, apply_with_retry};
+use crate::daemon::coordinator::{Coordinator, CoordinatorArgs};
 use crate::store::Store;
 
 const NOW: Timestamp = Timestamp(1_790_812_800_000);

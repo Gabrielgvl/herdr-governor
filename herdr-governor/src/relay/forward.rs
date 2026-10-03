@@ -1,8 +1,10 @@
 //! `relay/forward` — the v1 relay↔daemon framing and the per-request
 //! round trip (p5-plan §4.11): `{"v":1,"caller":…,"rpc":<request>}` out
 //! on a fresh `UnixStream`, the `{"v":1,"rpc":<response>}` line back,
-//! close. Notifications (no `id`) are classified out, never forwarded;
-//! every failure of the leg maps to `DAEMON_UNAVAILABLE` per method (N7).
+//! close. Valid notifications (no `id`) are classified out, never
+//! forwarded; protocol faults are answered locally with the daemon's
+//! own `-32700`/`-32600`; every failure of the leg maps to
+//! `DAEMON_UNAVAILABLE` per method (N7).
 
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
@@ -14,53 +16,51 @@ use thiserror::Error;
 
 use super::identity::Identity;
 use crate::adapters::herdr::codec::LineAccumulator;
-use crate::mcp::framing;
+use crate::mcp::{framing, jsonrpc};
 
-/// One stdin line, classified by the members the loop needs.
+/// One stdin line, classified by the loop's needs.
 #[derive(Debug)]
 pub(super) enum Inbound {
-    /// No `id` member — a JSON-RPC notification. Never forwarded, never
-    /// answered.
+    /// A valid request object with no `id` member — a JSON-RPC
+    /// notification. Never forwarded, never answered.
     Notification,
-    /// `id` present (any JSON-RPC-legal value): forwarded verbatim as
-    /// the envelope's `rpc`; the `id` and `method` survive for the
-    /// failure map.
+    /// A request object: forwarded verbatim as the envelope's `rpc`;
+    /// the `id` and `method` survive for the failure map.
     Request {
         /// The request's `id`, echoed into every reply shape.
         id: Value,
-        /// The request's `method` ("" when absent or not a string) —
-        /// only `tools/call` changes the `DAEMON_UNAVAILABLE` shape.
+        /// The request's `method` — only `tools/call` changes the
+        /// `DAEMON_UNAVAILABLE` shape.
         method: String,
         /// The whole request object, forwarded as `rpc`.
         request: Value,
     },
-    /// Not a decodable JSON object — a protocol fault answered locally
-    /// with `-32700`, never forwarded.
-    Malformed,
+    /// A protocol fault `jsonrpc::parse` already typed — `-32700` when
+    /// the line is not JSON, `-32600` when it is JSON but not a request
+    /// object (non-objects, `id`-less objects failing the request rules,
+    /// a non-scalar `id`). Answered locally, never forwarded.
+    Fault(jsonrpc::Response),
 }
 
-/// Classify one stdin line. Anything the relay cannot see an `id`/`method`
-/// in is either a notification to drop or a parse fault to answer — it is
-/// never wrapped into an envelope it does not describe.
+/// Classify one stdin line through the daemon's own envelope rules
+/// (`mcp::jsonrpc::parse`): a valid `id`-less request drops, a `Call`
+/// forwards verbatim, and every violation is the typed fault the daemon
+/// would answer — the same `-32700`/`-32600`, never a silent drop.
 pub(super) fn classify(line: &[u8]) -> Inbound {
-    let Ok(value) = serde_json::from_slice::<Value>(line) else {
-        return Inbound::Malformed;
-    };
-    let Value::Object(map) = value else {
-        return Inbound::Malformed;
-    };
-    let Some(id) = map.get("id").cloned() else {
-        return Inbound::Notification;
-    };
-    let method = map
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    Inbound::Request {
-        id,
-        method,
-        request: Value::Object(map),
+    match jsonrpc::parse(line) {
+        Err(response) => Inbound::Fault(response),
+        Ok(jsonrpc::Request::Notification { .. }) => Inbound::Notification,
+        Ok(jsonrpc::Request::Call { id, method, .. }) => {
+            // `parse` proved the line a request object — the verbatim
+            // `Value` forwards as `rpc`: unknown members must ride to
+            // the daemon, which re-decodes them itself.
+            let request = serde_json::from_slice(line).unwrap_or(Value::Null);
+            Inbound::Request {
+                id,
+                method,
+                request,
+            }
+        }
     }
 }
 
@@ -169,6 +169,7 @@ mod tests {
 
     use super::{ForwardError, Inbound, classify, envelope, exchange, unavailable_reply};
     use crate::mcp::framing::encode_request;
+    use crate::mcp::jsonrpc;
     use crate::relay::identity::Identity;
 
     fn identity() -> Identity {
@@ -203,9 +204,10 @@ mod tests {
         );
     }
 
-    /// Notifications are dropped: no `id` member means no connection and
-    /// no reply. An explicit `id: null` is a request — the member is
-    /// present — and a non-object line is a local parse fault.
+    /// Only a VALID request object without `id` drops as a notification —
+    /// every other failure is the typed fault `jsonrpc::parse` assigns:
+    /// `id`-less objects failing the request rules, non-scalar ids and
+    /// JSON non-objects are `-32600`; non-JSON bytes are `-32700`.
     #[test]
     fn relay_drops_notifications() {
         assert!(
@@ -213,7 +215,7 @@ mod tests {
                 classify(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"),
                 Inbound::Notification
             ),
-            "a line without id is a notification",
+            "a valid request without id is a notification",
         );
         assert!(
             matches!(
@@ -222,25 +224,25 @@ mod tests {
             ),
             "a notification with params is still a notification",
         );
-        assert!(
-            matches!(
-                classify(b"{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}"),
-                Inbound::Request { .. }
+        for (line, code) in [
+            (b"{}".as_slice(), -32600_i64),
+            (b"{\"jsonrpc\":\"2.0\",\"method\":7}".as_slice(), -32600_i64),
+            (
+                b"{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}".as_slice(),
+                -32600_i64,
             ),
-            "an explicit null id is a request, not a notification",
-        );
-        assert!(
-            matches!(classify(b"not json"), Inbound::Malformed),
-            "a non-JSON line is a parse fault",
-        );
-        assert!(
-            matches!(classify(b"[1,2,3]"), Inbound::Malformed),
-            "a JSON non-object is a parse fault",
-        );
-        assert!(
-            matches!(classify(b""), Inbound::Malformed),
-            "an empty line is a parse fault",
-        );
+            (b"42".as_slice(), -32600_i64),
+            (b"[1,2,3]".as_slice(), -32600_i64),
+            (b"not json".as_slice(), -32700_i64),
+            (b"".as_slice(), -32700_i64),
+        ] {
+            let Inbound::Fault(jsonrpc::Response::Error { code: got, id, .. }) = classify(line)
+            else {
+                panic!("{line:?} must classify as a {code} fault");
+            };
+            assert_eq!(got, code, "{line:?} is a {code} fault");
+            assert!(id.is_null(), "{line:?} has no usable id to echo");
+        }
     }
 
     /// The shared codec's strictness now binds the relay: a reply frame

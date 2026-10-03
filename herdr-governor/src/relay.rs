@@ -14,6 +14,7 @@ use std::process::ExitCode;
 use thiserror::Error;
 
 use crate::adapters::herdr::codec::LineAccumulator;
+use crate::mcp::jsonrpc;
 
 use forward::Inbound;
 
@@ -141,11 +142,17 @@ fn pump(
 }
 
 /// Classify, then forward or answer locally. `None` means nothing is
-/// owed on stdio — the dropped notification.
+/// owed on stdio — the dropped notification. A `Fault` is the typed
+/// error envelope `jsonrpc::parse` built (`-32700`/`-32600`), answered
+/// verbatim.
 fn respond(socket: &Path, identity: &identity::Identity, line: &[u8]) -> Option<Vec<u8>> {
     match forward::classify(line) {
         Inbound::Notification => None,
-        Inbound::Malformed => Some(PARSE_ERROR.to_vec()),
+        Inbound::Fault(response) => {
+            let mut reply = jsonrpc::serialize(&response);
+            reply.push(b'\n');
+            Some(reply)
+        }
         Inbound::Request {
             id,
             method,
@@ -259,6 +266,51 @@ mod tests {
             replies[1]["id"], 7,
             "the ping after the oversized line is answered"
         );
+    }
+
+    /// F3 — `id`-less objects that are not valid requests are refused
+    /// `-32600` with a null id, never dropped: only a *valid* request
+    /// object without `id` is a notification. The daemon's `parse`
+    /// assigns the same refusal; the stdin boundary must too.
+    #[test]
+    fn invalid_id_less_objects_answer_32600_not_silence() {
+        for line in [
+            b"{}\n".as_slice(),
+            b"{\"jsonrpc\":\"2.0\",\"method\":7}\n".as_slice(),
+            b"{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}\n".as_slice(),
+        ] {
+            let replies = run(&mut Cursor::new(line));
+            assert_eq!(
+                replies.len(),
+                1,
+                "an invalid id-less request is refused, never dropped: {replies:?}"
+            );
+            assert_eq!(replies[0]["id"], Value::Null, "no usable id echoes");
+            assert_eq!(
+                replies[0]["error"]["code"], -32600,
+                "the invalid-request fault is -32600"
+            );
+        }
+    }
+
+    /// F3 — valid-JSON non-objects (`42`, `[]`) are `-32600` invalid
+    /// requests, not `-32700` parse faults; only bytes that are not JSON
+    /// at all earn `-32700`.
+    #[test]
+    fn invalid_jsonrpc_values_answer_32600_not_32700() {
+        for (line, code) in [
+            ("42\n", -32600_i64),
+            ("[1,2,3]\n", -32600_i64),
+            ("not json\n", -32700_i64),
+        ] {
+            let replies = run(&mut Cursor::new(line.as_bytes()));
+            assert_eq!(replies.len(), 1, "{line} gets one reply: {replies:?}");
+            assert_eq!(replies[0]["id"], Value::Null);
+            assert_eq!(
+                replies[0]["error"]["code"], code,
+                "{line} classifies to {code}"
+            );
+        }
     }
 
     /// F4 — a line that crosses the bound while still pending is drained
