@@ -18,14 +18,15 @@ governor-core = { path = "../governor-core", version = "0.1.0" }
 # see the P4.D0 report for the residual windows-sys conflict.
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider", "json"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
-rustix = { version = "1.1.5", features = ["fs", "process"] }
+rustix = { version = "1.1.5", features = ["fs", "process", "time"] }
 rustls = { version = "0.23.45", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = { version = "0.11.0", default-features = false }
 thiserror = "2.0.21"
-tokio = { version = "1.53.1", features = ["rt", "macros", "net", "io-util", "time", "sync", "process", "fs"] }
+tokio = { version = "1.53.1", features = ["rt", "macros", "net", "io-util", "time", "sync", "process", "fs", "signal"] }
 toml = "1.1.6"
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
