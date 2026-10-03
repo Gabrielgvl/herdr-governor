@@ -223,3 +223,71 @@ async fn f29_sigterm_order_no_herdr_writes_after_admission_stops() {
         "relay exits on stdin EOF: {exit} {relay_err}"
     );
 }
+
+/// F11 — a SIGHUP whose catalog adopted with CHANGED `[daemon]` settings
+/// logs what actually happened: the catalog was adopted (`config.valid`
+/// stays true, the digest moves) and the new daemon settings take effect
+/// on restart — never the false WARN "config reload retained previous
+/// catalog" a operator would misread as a refusal.
+#[tokio::test]
+async fn f27_sighup_adopted_daemon_change_logs_adopted_not_retained() {
+    let tmp = tempdir().expect("tmp");
+    let fake = FakeHerdr::start(occupied_topology());
+    let (state, config) = fixture(tmp.path(), fake.socket_path());
+    let sock = state.join("governor.sock");
+    let catalog_path = config.join("catalog.toml");
+    let cwd = tmp.path().join("project");
+    fs::create_dir_all(&cwd).expect("project dir");
+
+    let mut daemon = spawn_daemon(&state, &config);
+    let stderr = stderr_of(&mut daemon);
+    await_for("the listener bind", || sock.exists()).await;
+
+    let mut relay = Some(spawn_relay(&sock, &cwd, Some("w1:p1")));
+    let first = exchange_on(&mut relay, &status_call(1)).await;
+    let v0 = status_page(&first)["config"]["version"]
+        .as_str()
+        .expect("config version")
+        .to_owned();
+
+    // Same policy/catalog, a different `[daemon]` key — an adopt whose
+    // daemon settings changed (they take effect on restart).
+    let baseline = catalog(fake.socket_path(), 60);
+    let changed = baseline.replace("reconcile_secs = 3600", "reconcile_secs = 3601");
+    assert_ne!(changed, baseline, "the rewrite moves a daemon setting");
+    fs::write(&catalog_path, changed).expect("rewrite catalog");
+    signal(&daemon, "-HUP");
+    let adopted = poll_config(&mut relay, &status_call(2), |cfg| {
+        cfg["version"].as_str() != Some(v0.as_str())
+    })
+    .await
+    .expect("the changed catalog adopted");
+    assert_eq!(adopted["valid"], true, "an adopted reload stays valid");
+    assert!(adopted["lastError"].is_null(), "no refused attempt rides");
+
+    signal(&daemon, "-TERM");
+    let (status, daemon_err) = tokio::task::spawn_blocking(move || {
+        let code = daemon.wait().expect("wait on daemon");
+        (code, stderr.join().expect("stderr thread"))
+    })
+    .await
+    .expect("blocking wait joins");
+    assert!(
+        status.success(),
+        "SIGTERM exits cleanly: {status}\n{daemon_err}"
+    );
+    assert!(
+        !daemon_err.contains("retained previous catalog"),
+        "an adopted reload never logs the retained refusal: {daemon_err}"
+    );
+    assert!(
+        daemon_err.contains("daemon settings take effect on restart"),
+        "the deferred-effect note is logged honestly: {daemon_err}"
+    );
+
+    let (exit, relay_err) = close_relay(relay.take().expect("relay")).await;
+    assert!(
+        exit.success(),
+        "relay exits on stdin EOF: {exit} {relay_err}"
+    );
+}

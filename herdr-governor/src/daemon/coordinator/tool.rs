@@ -68,6 +68,17 @@ impl Coordinator {
         }
     }
 
+    /// The last good snapshot's record — test-only: `herdr_seen` is
+    /// written by the Tick arm and every tool call's request-time read,
+    /// and a status page always renders the latter, so the tick arm's
+    /// own write is observable only through this read (F13).
+    #[cfg(test)]
+    pub(in crate::daemon) fn herdr_seen(
+        &self,
+    ) -> Option<(Timestamp, governor_core::identity::HerdrIncarnation)> {
+        self.herdr_seen.clone()
+    }
+
     /// F7 — what `status::page` needs of coordinator state, as values.
     fn status_view(&self, now: Timestamp) -> status::StatusView {
         status::StatusView {

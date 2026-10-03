@@ -439,8 +439,8 @@ impl Coordinator {
     /// `config.valid`/`lastError`/`lastGoodAt` track the same outcomes.
     async fn reload(&mut self) {
         match config::reload(&self.loaded, &self.catalog_path).await {
-            config::ReloadOutcome::Adopted(loaded) => match loaded.daemon.clone() {
-                Some(daemon) => {
+            config::ReloadOutcome::Adopted(loaded) => {
+                if let Some(daemon) = loaded.daemon.clone() {
                     let settings_changed = self.daemon != daemon;
                     log::config_adopted(&loaded.version.0);
                     self.daemon = daemon;
@@ -450,12 +450,17 @@ impl Coordinator {
                     if settings_changed {
                         // The spawned tasks captured their intervals at
                         // startup; a `[daemon]` change takes effect at
-                        // the next restart (documented limitation).
-                        log::config_retained("daemon-settings-changed");
+                        // the next restart (documented limitation) — the
+                        // log says so rather than the false "retained".
+                        log::config_daemon_deferred();
                     }
+                } else {
+                    // A daemonless catalog is a refused INVALID attempt —
+                    // last-good stays live; F7 reports `invalid` (F5).
+                    self.config_last_error = Some("invalid");
+                    log::config_retained("missing-daemon");
                 }
-                None => log::config_retained("missing-daemon"),
-            },
+            }
             config::ReloadOutcome::Retained { error, .. } => {
                 let class = match error {
                     ConfigLoadError::Read(_) => "read",

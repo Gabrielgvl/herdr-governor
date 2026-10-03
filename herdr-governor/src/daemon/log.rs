@@ -179,6 +179,13 @@ pub(super) fn config_adopted(version: &str) {
     tracing::info!(config_version = version, "config reload adopted");
 }
 
+/// The adopted catalog changed `[daemon]` settings — the spawned tasks
+/// keep the startup table until restart, so the line says the settings
+/// are deferred rather than the false "retained previous catalog".
+pub(super) fn config_daemon_deferred() {
+    tracing::info!("config reload adopted; daemon settings take effect on restart");
+}
+
 /// One tick: whether the Herdr snapshot answered, and how many panes the
 /// snapshot carries — a size, never pane contents.
 pub(super) fn tick(answered: bool, panes: usize) {

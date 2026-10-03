@@ -2,10 +2,13 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use crate::identity::AgentKind;
+
 use super::{
-    Catalog, Config, ConfigError, ConfigVersion, DEFAULT_EXPLORATION_RATE, DEFAULT_IDLE_WINDOW,
-    DEFAULT_JUDGMENT_WINDOW, DEFAULT_MAX_AGE, DEFAULT_RECOVERY_EXPIRY, DEFAULT_REPAIR_WINDOW,
-    MAX_POLICY_WINDOW, Policy, Tier,
+    Catalog, Config, ConfigError, ConfigVersion, CostClass, DEFAULT_EXPLORATION_RATE,
+    DEFAULT_IDLE_WINDOW, DEFAULT_JUDGMENT_WINDOW, DEFAULT_MAX_AGE, DEFAULT_RECOVERY_EXPIRY,
+    DEFAULT_REPAIR_WINDOW, MAX_POLICY_WINDOW, OperatingPoint, OperatingPointId,
+    PROVIDER_NAME_MAX_BYTES, Policy, Provider, Tier,
 };
 
 /// A config that is valid but for the one policy window a test perturbs;
@@ -75,6 +78,57 @@ fn f27_duration_above_the_cap_is_refused() {
             "one second over the cap reports DurationTooLong on {field}"
         );
     }
+}
+
+/// An operating point on tier `standard` with `provider` — the catalog half
+/// of a valid config, for the provider-name bound.
+fn point(provider: &str) -> OperatingPoint {
+    OperatingPoint {
+        id: OperatingPointId("op-1".into()),
+        harness: AgentKind("kind-1".into()),
+        args: Vec::new(),
+        tier: Tier("standard".into()),
+        capabilities: Vec::new(),
+        cost_class: CostClass(0),
+        provider: Provider(provider.into()),
+    }
+}
+
+#[test]
+fn f27_provider_name_bounded_at_64_bytes() {
+    assert_eq!(
+        PROVIDER_NAME_MAX_BYTES, 64,
+        "provider names are bounded at 64 bytes so the status cooldowns list fits its page budget (F7)"
+    );
+    let mut at = valid_config();
+    at.catalog.operating_points = Vec::from([point(&"p".repeat(64))]);
+    assert_eq!(at.validate(), Ok(()), "a 64-byte provider name is legal");
+    let mut over = valid_config();
+    over.catalog.operating_points = Vec::from([point(&"p".repeat(65))]);
+    assert_eq!(
+        over.validate().unwrap_err(),
+        Vec::from([ConfigError::NameTooLong {
+            field: "catalog.operating_points[op-1].provider".into(),
+        }]),
+        "65 bytes reports NameTooLong on the provider field"
+    );
+    // The bound is bytes, not characters.
+    let mut wide = valid_config();
+    wide.catalog.operating_points = Vec::from([point(&"é".repeat(33))]);
+    assert_eq!(
+        wide.validate().unwrap_err(),
+        Vec::from([ConfigError::NameTooLong {
+            field: "catalog.operating_points[op-1].provider".into(),
+        }]),
+        "33 two-byte characters exceed the byte bound"
+    );
+    let mut wide_ok = valid_config();
+    wide_ok.catalog.operating_points = Vec::from([point(&"é".repeat(32))]);
+    assert_eq!(
+        wide_ok.validate(),
+        Ok(()),
+        "32 two-byte characters are exactly 64 bytes"
+    );
 }
 
 #[test]

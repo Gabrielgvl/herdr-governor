@@ -30,28 +30,24 @@ fn ensure_dir(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, permissions)
 }
 
-/// The default state dir (OQ-F/G decided): `$XDG_STATE_HOME/herdr-governor`
-/// or `~/.local/state/herdr-governor`. `None` when neither env names a home.
+/// The default state dir (OQ-F/G decided, ADR-0004's relay parity):
+/// `~/.local/state/herdr-governor` — HOME only. `XDG_STATE_HOME` never
+/// applies: the daemon and the relay must resolve the same default
+/// socket, and the relay reads HOME alone. `None` without a HOME.
 pub(super) fn default_state_dir() -> Option<PathBuf> {
-    match std::env::var_os("XDG_STATE_HOME") {
-        Some(xdg) if !xdg.is_empty() => Some(PathBuf::from(xdg).join("herdr-governor")),
-        _ => std::env::var_os("HOME").map(|home| {
-            PathBuf::from(home)
-                .join(".local")
-                .join("state")
-                .join("herdr-governor")
-        }),
-    }
+    std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("herdr-governor")
+    })
 }
 
-/// The default config dir (§4.15): `$XDG_CONFIG_HOME/herdr-governor` or
-/// `~/.config/herdr-governor`.
+/// The default config dir (§4.15): `~/.config/herdr-governor` — HOME
+/// only, for the same daemon/relay parity; `XDG_CONFIG_HOME` never
+/// applies.
 pub(super) fn default_config_dir() -> Option<PathBuf> {
-    match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(xdg) if !xdg.is_empty() => Some(PathBuf::from(xdg).join("herdr-governor")),
-        _ => std::env::var_os("HOME")
-            .map(|home| PathBuf::from(home).join(".config").join("herdr-governor")),
-    }
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("herdr-governor"))
 }
 
 impl Paths {
@@ -140,9 +136,10 @@ mod tests {
         assert_eq!(FILE_MODE, 0o600);
     }
 
-    /// Defaults resolve under XDG or the `~/.local/state` + `~/.config`
-    /// fallbacks — the functions read env, so assert the shape that holds
-    /// for every value of HOME/XDG.
+    /// Defaults resolve under `~/.local/state` + `~/.config` — the
+    /// functions read HOME only, so assert the shape that holds for
+    /// every value of HOME (the XDG-isolation leg is e2e's, where the
+    /// child process's env is honest).
     #[test]
     fn paths_defaults_end_in_herdr_governor() {
         for dir in [default_state_dir(), default_config_dir()]

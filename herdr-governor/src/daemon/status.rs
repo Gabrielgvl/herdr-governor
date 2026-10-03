@@ -12,8 +12,6 @@ use std::fmt::Write as _;
 
 use governor_core::config::ConfigVersion;
 use governor_core::identity::{CallerKey, EventId, RunId, Timestamp};
-use governor_core::lifecycle::Run;
-use governor_core::recovery::RecoveryObligation;
 use governor_core::task::Refusal;
 
 use serde_json::{Map, Value, json};
@@ -148,91 +146,6 @@ fn page_limit() -> u32 {
     u32::try_from(PAGE.saturating_add(1)).unwrap_or(u32::MAX)
 }
 
-/// §4.12 — the health block: `herdr.freshSecsAgo`/`incarnation` are
-/// `null` until the first good snapshot.
-fn health(view: &StatusView) -> Value {
-    let herdr = view.herdr.as_ref().map_or_else(
-        || json!({"freshSecsAgo": null, "incarnation": null}),
-        |herdr| {
-            json!({
-                "freshSecsAgo": u64::try_from(view.now.0.saturating_sub(herdr.at.0))
-                    .unwrap_or(0)
-                    .saturating_div(1_000),
-                "incarnation": herdr.incarnation,
-            })
-        },
-    );
-    json!({
-        "daemon": {"pid": view.pid, "uptimeSecs": view.uptime_secs, "version": view.version},
-        "herdr": herdr,
-    })
-}
-
-/// §4.12 — the config block: the live config's validity, content
-/// version, adopt stamp; `lastError` rides while a refused reload is
-/// the latest attempt.
-fn config(view: &StatusView) -> Value {
-    let mut config = Map::new();
-    config.insert("valid".into(), Value::Bool(view.config.valid));
-    config.insert(
-        "version".into(),
-        Value::String(view.config.version.0.clone()),
-    );
-    config.insert("lastGoodAt".into(), json!(view.config.last_good_at.0));
-    if let Some(error) = &view.config.last_error {
-        config.insert("lastError".into(), Value::String(error.clone()));
-    }
-    Value::Object(config)
-}
-
-/// One runs-section item (§4.12): every deadline the caller could wait
-/// on, plus `settlement` once settled. `accepted`-but-tracked runs
-/// appear with `state: "settled"`, `settlement: "accepted"` — there is
-/// no separate `retirements` table yet (C7), so nothing more to report.
-fn run_item(run: &Run) -> Value {
-    let mut deadlines = Map::new();
-    deadlines.insert("maxAgeDeadline".into(), json!(run.max_age_deadline.0));
-    if let Some(deadline) = run.idle_deadline {
-        deadlines.insert("idleDeadline".into(), json!(deadline.0));
-    }
-    if let Some(deadline) = run.repair_deadline {
-        deadlines.insert("repairDeadline".into(), json!(deadline.0));
-    }
-    if let Some(deadline) = run.judgment_deadline {
-        deadlines.insert("judgmentDeadline".into(), json!(deadline.0));
-    }
-    let mut item = Map::new();
-    item.insert("runId".into(), Value::String(run.id.0.clone()));
-    item.insert("state".into(), Value::String(run.state.as_str().into()));
-    if let Some(settlement) = &run.settlement {
-        item.insert(
-            "settlement".into(),
-            Value::String(settlement.as_str().into()),
-        );
-    }
-    item.insert("deadlines".into(), Value::Object(deadlines));
-    Value::Object(item)
-}
-
-/// One recoveries-section item — the pending obligation (origin,
-/// expiry, the reason once classified).
-fn recovery_item(recovery: &RecoveryObligation) -> Value {
-    let mut item = Map::new();
-    item.insert(
-        "predecessor".into(),
-        Value::String(recovery.predecessor.0.clone()),
-    );
-    item.insert(
-        "origin".into(),
-        Value::String(recovery.origin.as_str().into()),
-    );
-    item.insert("expiresAt".into(), json!(recovery.expires_at.0));
-    if let Some(reason) = &recovery.reason {
-        item.insert("reason".into(), Value::String(reason.clone()));
-    }
-    Value::Object(item)
-}
-
 /// Serialized length of one item — a value that cannot serialize counts
 /// as over-budget rather than under-counted.
 fn item_len(item: &Value) -> usize {
@@ -246,14 +159,29 @@ fn cursor_cost(section: Section, key: &str) -> usize {
     encode_cursor(section, key).len().saturating_add(16)
 }
 
+/// What `fill` did with one section's items.
+enum Fill {
+    /// Every fetched item emitted — `Some` is the last emitted key, kept
+    /// so a later section's budget refusal can emit `nextCursor` at the
+    /// section boundary: resuming inside THIS section after that key
+    /// lands on the same next rows the cut hid.
+    Done(Option<String>),
+    /// The budget cut mid-section — resume inside this section strictly
+    /// after this key.
+    Cut(String),
+    /// The section's first item cannot fit the remaining budget and the
+    /// page already carries items: emit `nextCursor` at the boundary
+    /// (the previous section's last emitted key) — never the
+    /// over-budget item (F2).
+    Boundary,
+}
+
 /// Push `(item, key)` pairs into `out` under `budget`, updating `size`;
 /// the per-item cost is its serialized length plus one byte of JSON
 /// punctuation once `out` is non-empty, plus `key`'s `nextCursor`
-/// reservation. Returns the resume key when the traversal must stop —
-/// the last emitted key on a budget cut, or on a fully emitted section
-/// that still has rows behind it — `None` when the section is done. A
-/// section's very first item emits even over-budget: the traversal must
-/// always advance (§4.12).
+/// reservation. The byte budget is HARD (§4.12): a section's first item
+/// emits over-budget only while the whole page is still empty — the one
+/// case where no boundary cursor could ever resume past it.
 fn fill(
     out: &mut Vec<Value>,
     section: Section,
@@ -261,7 +189,8 @@ fn fill(
     has_more: bool,
     size: &mut usize,
     budget: usize,
-) -> Option<String> {
+    page_empty: bool,
+) -> Fill {
     let mut last_key = None;
     for (item, key) in items {
         let extra = item_len(&item).saturating_add(usize::from(!out.is_empty()));
@@ -270,20 +199,32 @@ fn fill(
             .saturating_add(cursor_cost(section, &key))
             > budget
         {
-            // A section's first item emits even over-budget — the
-            // traversal must always advance (§4.12); the cursor then
-            // resumes strictly after it.
             if out.is_empty() {
-                out.push(item);
-                return Some(key);
+                // A page that has emitted nothing yet must still advance:
+                // the oversized item emits with its own cursor (§4.12).
+                // Once the page carries items, a new section's first
+                // item waits — the boundary cursor resumes to it.
+                if page_empty {
+                    *size = size.saturating_add(extra);
+                    out.push(item);
+                    return Fill::Cut(key);
+                }
+                return Fill::Boundary;
             }
-            return last_key;
+            return match last_key {
+                Some(cut) => Fill::Cut(cut),
+                // `out` is non-empty here, so a key was recorded.
+                None => Fill::Boundary,
+            };
         }
         *size = size.saturating_add(extra);
         last_key = Some(key);
         out.push(item);
     }
-    if has_more { last_key } else { None }
+    match last_key {
+        Some(cut) if has_more => Fill::Cut(cut),
+        last => Fill::Done(last),
+    }
 }
 
 /// The `event` head — one mailbox body for its destination only: the
@@ -314,6 +255,7 @@ fn section_items(
     caller: &CallerKey,
     section: Section,
     after: Option<String>,
+    now: Timestamp,
 ) -> Result<(Vec<(Value, String)>, bool), ToolError> {
     let take = |rows: Vec<(Value, String)>| rows.into_iter().take(PAGE).collect();
     match section {
@@ -325,7 +267,7 @@ fn section_items(
             let items = fetched
                 .iter()
                 .take(PAGE)
-                .map(|run| (run_item(run), run.id.0.clone()))
+                .map(|run| (render::run_item(run), run.id.0.clone()))
                 .collect();
             Ok((items, has_more))
         }
@@ -337,7 +279,12 @@ fn section_items(
             let items = fetched
                 .iter()
                 .take(PAGE)
-                .map(|recovery| (recovery_item(recovery), recovery.predecessor.0.clone()))
+                .map(|recovery| {
+                    (
+                        render::recovery_item(recovery),
+                        recovery.predecessor.0.clone(),
+                    )
+                })
                 .collect();
             Ok((items, has_more))
         }
@@ -358,6 +305,10 @@ fn section_items(
             let all = store.cooldowns().map_err(|_err| store_error())?;
             let rest: Vec<_> = all
                 .iter()
+                // Live only — the same `until > now` boundary
+                // `routing::cooling_down` draws: cooldown rows persist
+                // past expiry, an expired one is not an active exclusion.
+                .filter(|cooldown| cooldown.until > now)
                 .filter(|cooldown| after.as_ref().is_none_or(|key| cooldown.provider.0 > *key))
                 .collect();
             let has_more = rest.len() > PAGE;
@@ -383,8 +334,10 @@ fn section_items(
 /// - runs → recoveries → unreadEventIds → cooldowns traverse under the
 ///   one cursor: a resume picks up inside the recorded section strictly
 ///   after the recorded key, each later section emits exactly once;
-/// - the byte budget gates every emit: a page never exceeds it, and a
-///   cut emits `nextCursor` at the last emitted key.
+/// - the byte budget gates every emit: a page never exceeds it — a cut
+///   emits `nextCursor` at the last emitted key, a section that cannot
+///   open emits it at the boundary (the previous section's last key),
+///   and only a wholly empty page carries an oversized first item.
 pub fn page(
     store: &Store,
     caller: &CallerKey,
@@ -402,8 +355,8 @@ pub fn page(
     };
     let mut page = Map::new();
     page.extend([
-        ("health".into(), health(view)),
-        ("config".into(), config(view)),
+        ("health".into(), render::health(view)),
+        ("config".into(), render::config(view)),
     ]);
     if let Some(id) = event {
         page.extend([("event".into(), event_head(store, caller, id)?)]);
@@ -423,6 +376,11 @@ pub fn page(
     let mut events = Vec::new();
     let mut cooldowns = Vec::new();
     let mut next: Option<(Section, String)> = None;
+    // The last emitted (section, key) pair — a later section's budget
+    // refusal emits `nextCursor` at this boundary: the resume drains the
+    // remainder of that section (none — it completed) and lands on the
+    // section the page had no room to open.
+    let mut boundary: Option<(Section, String)> = None;
     for (index, section) in SECTIONS.into_iter().enumerate() {
         if let Some((resume_at, _)) = &resume {
             let resume_index = SECTIONS
@@ -437,16 +395,37 @@ pub fn page(
             Some((resume_at, key)) if *resume_at == section => Some(key.clone()),
             _ => None,
         };
-        let (items, has_more) = section_items(store, caller, section, after)?;
+        let (items, has_more) = section_items(store, caller, section, after, view.now)?;
         let out = match section {
             Section::Runs => &mut runs,
             Section::Recoveries => &mut recoveries,
             Section::Events => &mut events,
             Section::Cooldowns => &mut cooldowns,
         };
-        if let Some(key) = fill(out, section, items, has_more, &mut size, budget) {
-            next = Some((section, key));
-            break;
+        // The first-item exception applies only while the whole page is
+        // still empty — `boundary` is unset exactly then.
+        match fill(
+            out,
+            section,
+            items,
+            has_more,
+            &mut size,
+            budget,
+            boundary.is_none(),
+        ) {
+            Fill::Done(last_key) => {
+                if let Some(key) = last_key {
+                    boundary = Some((section, key));
+                }
+            }
+            Fill::Cut(key) => {
+                next = Some((section, key));
+                break;
+            }
+            Fill::Boundary => {
+                next = boundary;
+                break;
+            }
         }
     }
     page.extend([
@@ -463,6 +442,8 @@ pub fn page(
     }
     Ok(Value::Object(page))
 }
+
+mod render;
 
 #[cfg(test)]
 mod tests;

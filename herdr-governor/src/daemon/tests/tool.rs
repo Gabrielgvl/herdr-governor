@@ -20,7 +20,7 @@ use crate::adapters::herdr::{
 };
 use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolRequest};
 use crate::daemon::clock::Clock;
-use crate::daemon::coordinator::{Coordinator, CoordinatorArgs, Msg};
+use crate::daemon::coordinator::{Coordinator, CoordinatorArgs, Msg, Signal};
 use crate::store::Store;
 
 const RELAY: &str = "abababababababababababababababab";
@@ -141,7 +141,7 @@ fn daemon_settings() -> DaemonSettings {
     }
 }
 
-fn coordinator_with(store: Store) -> Coordinator {
+fn coordinator_at(store: Store, catalog_path: &Path) -> Coordinator {
     Coordinator::new(
         store,
         CoordinatorArgs {
@@ -157,11 +157,15 @@ fn coordinator_with(store: Store) -> Coordinator {
                 daemon: Some(daemon_settings()),
             },
             daemon: daemon_settings(),
-            catalog_path: PathBuf::from("/nonexistent/catalog.toml"),
+            catalog_path: catalog_path.to_path_buf(),
             clock: Clock::new(),
             seam: None,
         },
     )
+}
+
+fn coordinator_with(store: Store) -> Coordinator {
+    coordinator_at(store, Path::new("/nonexistent/catalog.toml"))
 }
 
 fn store_in(dir: &Path) -> Store {
@@ -228,9 +232,68 @@ fn tool_status_resolves_binds_and_pages() {
     );
 }
 
-/// A tick's good snapshot feeds `health.herdr` — the next status page
-/// reports the incarnation the tick read under (the same evidence the
-/// request-time read records).
+/// F5 — a SIGHUP whose catalog lost its `[daemon]` table is a REFUSED
+/// reload: `config.valid` flips false and `lastError` records the
+/// refusal, while the last-good version and stamp stay put — the page
+/// can never claim a file `check-config` rejects is the live config.
+#[tokio::test]
+async fn reload_without_daemon_table_records_the_refusal() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let root = canonical(tmp.path());
+    // Decodes and core-validates; the `[daemon]` table is absent.
+    let catalog_path = tmp.path().join("catalog.toml");
+    std::fs::write(
+        &catalog_path,
+        "[policy]\ntiers = [\"fast\"]\nprovider_limit_threshold = 0.6\ncooldown_secs = 60\n\n\
+         [catalog]\noperating_points = []\n",
+    )
+    .expect("catalog");
+    let mut coordinator = coordinator_at(store_in(tmp.path()), &catalog_path);
+    let request = status_request(&envelope("w1:p1", &root));
+    let agents = || vec![agent("w1:p1", Some("sess-1"))];
+
+    let before = coordinator
+        .tool(
+            request.clone(),
+            Ok(observed(snapshot(agents()))),
+            Some(&root),
+        )
+        .expect("the startup page answers");
+    assert_eq!(
+        before["config"]["valid"], true,
+        "the startup config is valid"
+    );
+    let last_good_at = before["config"]["lastGoodAt"].clone();
+    let last_good_version = before["config"]["version"].clone();
+
+    coordinator.handle(Msg::Signal(Signal::Reload)).await;
+
+    let after = coordinator
+        .tool(request, Ok(observed(snapshot(agents()))), Some(&root))
+        .expect("the page still answers on the last-good config");
+    assert_eq!(
+        after["config"]["valid"], false,
+        "a daemonless catalog is a refused reload"
+    );
+    assert_eq!(
+        after["config"]["lastError"], "invalid",
+        "the refused attempt records its class"
+    );
+    assert_eq!(
+        after["config"]["version"], last_good_version,
+        "the last-good version stays live"
+    );
+    assert_eq!(
+        after["config"]["lastGoodAt"], last_good_at,
+        "the last-good stamp is preserved"
+    );
+}
+
+/// A tick's good snapshot feeds `health.herdr` — the tick arm's own
+/// write is observed BEFORE a tool call's request-time read replaces it
+/// (the F13 repair: the tool call always records its own snapshot, so a
+/// page alone can never prove the tick arm wrote anything). A failed
+/// tick keeps the last good evidence.
 #[tokio::test(start_paused = true)]
 async fn tool_status_reports_tick_health() {
     let tmp = tempfile::tempdir().expect("tmp");
@@ -242,17 +305,42 @@ async fn tool_status_reports_tick_health() {
         })
         .await;
 
-    let request = status_request(&envelope("w1:p1", &root));
+    // The tick's own write — the evidence a page alone cannot isolate.
+    let (at, incarnation) = coordinator
+        .herdr_seen()
+        .expect("the tick arm records the good snapshot");
+    assert_eq!(
+        incarnation.0, "7:1790000000.000000005",
+        "the tick's epoch records the incarnation"
+    );
+    assert!(at.0 > 0, "the tick's stamp is a real timestamp");
+
+    // A failed tick keeps the last good evidence — never erases it.
+    coordinator
+        .handle(Msg::Tick {
+            snapshot: Err(HerdrError::FrameTooLarge),
+        })
+        .await;
+    assert_eq!(
+        coordinator.herdr_seen().map(|(_, seen)| seen.0).as_deref(),
+        Some("7:1790000000.000000005"),
+        "a failed tick never erases the last good"
+    );
+
+    // The request-time read then reports on the page — a different epoch
+    // proves the tool call's own snapshot is what renders.
+    let mut later = observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]));
+    later.epoch.socket_inode = 8;
     let page = coordinator
         .tool(
-            request,
-            Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
+            status_request(&envelope("w1:p1", &root)),
+            Ok(later),
             Some(&root),
         )
         .expect("a status page answers");
     assert_eq!(
-        page["health"]["herdr"]["incarnation"], "7:1790000000.000000005",
-        "the tick's incarnation reports"
+        page["health"]["herdr"]["incarnation"], "8:1790000000.000000005",
+        "the request-time snapshot's epoch reports"
     );
     assert_eq!(
         page["health"]["herdr"]["freshSecsAgo"], 0,

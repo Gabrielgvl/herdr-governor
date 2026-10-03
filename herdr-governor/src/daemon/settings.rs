@@ -130,12 +130,12 @@ pub(super) fn parse_daemon_args(args: &[String]) -> Result<Invocation, DaemonErr
     }
     let Some(state_dir) = state_dir_opt.or_else(default_state_dir) else {
         return Err(DaemonError::usage(
-            "no --state-dir and no XDG_STATE_HOME/HOME to default it from",
+            "no --state-dir and no HOME to default it from",
         ));
     };
     let Some(config_dir) = config_dir_opt.or_else(default_config_dir) else {
         return Err(DaemonError::usage(
-            "no --config-dir and no XDG_CONFIG_HOME/HOME to default it from",
+            "no --config-dir and no HOME to default it from",
         ));
     };
     Ok(Invocation {
@@ -167,7 +167,7 @@ pub(super) fn parse_check_config_args(args: &[String]) -> Result<PathBuf, Daemon
     match config_dir_opt.or_else(default_config_dir) {
         Some(dir) => Ok(dir),
         None => Err(DaemonError::usage(
-            "no --config-dir and no XDG_CONFIG_HOME/HOME to default it from",
+            "no --config-dir and no HOME to default it from",
         )),
     }
 }

@@ -13,6 +13,8 @@
 #[cfg(test)]
 mod caller;
 #[cfg(test)]
+mod defaults;
+#[cfg(test)]
 mod identity;
 #[cfg(test)]
 mod relay;

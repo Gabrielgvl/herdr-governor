@@ -190,11 +190,15 @@ fn seed_event(store: &mut Store, event: &str, run: &str) {
 }
 
 fn seed_cooldown(store: &mut Store, provider: &str) {
+    seed_cooldown_until(store, provider, Timestamp(NOW.0 + 3_600_000));
+}
+
+fn seed_cooldown_until(store: &mut Store, provider: &str, until: Timestamp) {
     seed(
         store,
         vec![StateChange::SetCooldown(Cooldown {
             provider: Provider(provider.into()),
-            until: Timestamp(NOW.0 + 3_600_000),
+            until,
             reason: "provider_limited".into(),
             source_run: None,
         })],
@@ -367,6 +371,90 @@ fn status_page_never_exceeds_byte_budget() {
         totals,
         (200, 1, 200, 64),
         "the maximal load traversed losslessly"
+    );
+}
+
+/// F3 — the cooldowns section lists only LIVE cooldowns: a persisted row
+/// whose `until` is at or before `now` has expired — the same
+/// `until > now` boundary `routing::cooling_down` draws — and must not
+/// render as an active exclusion.
+#[test]
+fn status_cooldowns_drop_expired_rows() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let mut store = Store::open(&tmp.path().join("governor.db")).expect("store");
+    let caller = bind(&mut store);
+    seed_cooldown(&mut store, "prov-live");
+    seed_cooldown_until(&mut store, "prov-edge", NOW);
+    seed_cooldown_until(&mut store, "prov-stale", Timestamp(NOW.0 - 1));
+
+    let page = status::page(&store, &caller, None, None, BYTE_BUDGET, &view()).expect("page");
+    let providers: Vec<&str> = page["cooldowns"]
+        .as_array()
+        .expect("cooldowns array")
+        .iter()
+        .map(|item| item["provider"].as_str().expect("provider"))
+        .collect();
+    assert_eq!(
+        providers,
+        ["prov-live"],
+        "expired cooldowns never list — `until > now` is the live boundary"
+    );
+}
+
+/// F2/F10 — a new section's first item that cannot fit emits
+/// `nextCursor` at the previous section's last key; only a wholly
+/// empty page carries an item that cannot fit.
+#[test]
+fn status_page_emits_boundary_cursor_at_section_edges() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let mut store = Store::open(&tmp.path().join("governor.db")).expect("store");
+    let caller = bind(&mut store);
+    seed_run(&mut store, &caller, "r-1", "l-1");
+    seed_run(&mut store, &caller, "r-2", "l-2");
+    seed_recovery(&mut store, "r-1");
+
+    // ~274-byte skeleton, ~128 bytes per run with its cursor reservation,
+    // ~118 for the recovery: 520 holds the runs page but not the crossing
+    // into `recoveries`.
+    let first = status::page(&store, &caller, None, None, 520, &view()).expect("page");
+    assert!(
+        page_len(&first) <= 520,
+        "the cut page stays under budget (was {})",
+        page_len(&first)
+    );
+    assert_eq!(
+        first["runs"].as_array().map_or(0, Vec::len),
+        2,
+        "both runs emitted"
+    );
+    assert_eq!(
+        first["recoveries"].as_array().map_or(0, Vec::len),
+        0,
+        "the recovery never emits over-budget at the boundary"
+    );
+    assert_eq!(
+        first["nextCursor"]
+            .as_str()
+            .expect("a cut carries a cursor"),
+        status::encode_cursor(Section::Runs, "r-2"),
+        "the boundary cursor resumes in the previous section, after its last key"
+    );
+
+    let resume = first["nextCursor"].as_str().expect("cursor");
+    let second =
+        status::page(&store, &caller, None, Some(resume), 520, &view()).expect("resume page");
+    assert!(
+        page_len(&second) <= 520,
+        "the resume page stays under budget (was {})",
+        page_len(&second)
+    );
+    assert_eq!(
+        second["recoveries"][0]["predecessor"], "r-1",
+        "the held item lands on the next page"
+    );
+    assert!(
+        second.get("nextCursor").is_none(),
+        "the traversal completes"
     );
 }
 
