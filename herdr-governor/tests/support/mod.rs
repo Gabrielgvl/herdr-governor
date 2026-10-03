@@ -3,4 +3,5 @@
 //! Each test crate pulls this in with `#[cfg(test)] pub mod support;`.
 
 pub mod crash;
+pub mod e2e;
 pub mod fake_herdr;
