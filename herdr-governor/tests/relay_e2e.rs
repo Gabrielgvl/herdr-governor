@@ -403,7 +403,11 @@ mod tests {
 
         // The completed case: the oversized line's newline and a ping
         // ride one write together. `request` supplies its own newline.
-        relay.send(&format!("{}\n{}", "x".repeat(1024 * 1024 + 64), request(7, "ping")));
+        relay.send(&format!(
+            "{}\n{}",
+            "x".repeat(1024 * 1024 + 64),
+            request(7, "ping")
+        ));
         // The pending-overflow case: the bound is crossed before any
         // newline arrives, so the line's tail must drain, not re-parse.
         relay.send(&format!(
