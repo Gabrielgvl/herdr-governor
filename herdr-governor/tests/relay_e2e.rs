@@ -1,11 +1,11 @@
 //! P5.R1 — the stdio relay end to end (p5-plan §4.11, S30; F1, N4, N7):
-//! a child `relay_probe` runs `relay::run` in a real process so the F1
-//! identity derivation, the per-request fresh connection, notification
-//! dropping, the daemon-down failure map, the stdin-EOF exit and the 8 MB
-//! RSS bound are exercised over real pipes and a real unix socket — the
-//! `store_probe` precedent for a child-process suite. `relay_probe` calls
-//! the same `relay::run` the `relay` subcommand dispatches to; wiring that
-//! subcommand is sibling lane A1's.
+//! a child `herdr-governor relay` runs `relay::run` in a real process so
+//! the F1 identity derivation, the per-request fresh connection,
+//! notification dropping, the daemon-down failure map, the stdin-EOF exit
+//! and the 8 MB RSS bound are exercised over real pipes and a real unix
+//! socket — the `store_probe` precedent for a child-process suite. I1
+//! wired the `relay` subcommand to `relay::run`, so the suite runs the
+//! real binary the harness itself would spawn.
 
 #[cfg(test)]
 mod tests {
@@ -22,9 +22,9 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::tempdir;
 
-    /// The test-support bin that calls `relay::run` (auto-discovered, the
-    /// `store_probe` precedent). `herdr-governor relay` itself is A1's.
-    const RELAY: &str = env!("CARGO_BIN_EXE_relay_probe");
+    /// The shipped binary — the `relay` subcommand dispatches to
+    /// `relay::run`, which is what the harness itself spawns per session.
+    const BIN: &str = env!("CARGO_BIN_EXE_herdr-governor");
     /// N4: one stateless relay stays at or under 8 MB RSS.
     const RSS_LIMIT_KB: u64 = 8 * 1024;
 
@@ -145,7 +145,7 @@ mod tests {
         let _ignored = conn.write_all(&bytes);
     }
 
-    /// A spawned `relay_probe` with piped stdin/stdout.
+    /// A spawned `herdr-governor relay` with piped stdin/stdout.
     struct RelayChild {
         child: Child,
         stdout: BufReader<ChildStdout>,
@@ -188,8 +188,9 @@ mod tests {
     }
 
     fn spawn_relay(socket: &Path, cwd: &Path, pane_id: Option<&str>) -> RelayChild {
-        let mut command = Command::new(RELAY);
+        let mut command = Command::new(BIN);
         command
+            .arg("relay")
             .arg("--socket")
             .arg(socket)
             .current_dir(cwd)
@@ -202,7 +203,7 @@ mod tests {
         if let Some(pane) = pane_id {
             command.env("HERDR_PANE_ID", pane);
         }
-        let mut child = command.spawn().expect("spawn relay_probe");
+        let mut child = command.spawn().expect("spawn herdr-governor relay");
         let stdout = BufReader::new(child.stdout.take().expect("relay stdout"));
         RelayChild { child, stdout }
     }
@@ -342,8 +343,9 @@ mod tests {
     #[test]
     fn relay_exits_zero_on_stdin_eof() {
         let tmp = tempdir().expect("tempdir");
-        let mut command = Command::new(RELAY);
+        let mut command = Command::new(BIN);
         command
+            .arg("relay")
             .arg("--socket")
             .arg(tmp.path().join("absent.sock"))
             .current_dir(tmp.path())
@@ -351,7 +353,7 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let mut child = command.spawn().expect("spawn relay_probe");
+        let mut child = command.spawn().expect("spawn herdr-governor relay");
         let status = child.wait().expect("wait on relay");
         assert!(status.success(), "stdin EOF exits 0: {status}");
     }

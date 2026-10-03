@@ -1,7 +1,7 @@
 //! `herdr-governor` — the hand-rolled subcommand entry (spec §9: no
 //! CLI-parsing crate). `daemon` and `check-config` are A1's; the `relay`
-//! arm is the P5.R1 integration point (the sibling lane owns
-//! `src/relay.rs` and the `relay::run` this arm will call).
+//! arm dispatches to `relay::run`, the per-session stdio transport the
+//! caller's own harness spawns as its MCP server (ADR-0004).
 
 use std::env;
 use std::io::{self, Write as _};
@@ -22,7 +22,7 @@ async fn cli(argv: Vec<String>) -> ExitCode {
         Some("check-config") => {
             herdr_governor::daemon::check_cli(argv.get(1..).unwrap_or_default()).await
         }
-        Some("relay") => relay(argv.get(1..).unwrap_or_default()),
+        Some("relay") => herdr_governor::relay::run(argv.get(1..).unwrap_or_default()),
         Some("-h" | "--help" | "help") | None => {
             drop(writeln!(io::stdout().lock(), "{USAGE}"));
             ExitCode::SUCCESS
@@ -34,17 +34,6 @@ async fn cli(argv: Vec<String>) -> ExitCode {
     }
 }
 
-/// `herdr-governor relay …` — P5.R1 lands `crate::relay::run`; until the
-/// module exists the arm refuses with one fixed line (the subcommand is
-/// declared in the usage, it is never "unknown").
-fn relay(_args: &[String]) -> ExitCode {
-    drop(writeln!(
-        io::stderr().lock(),
-        "relay: not yet available in this build"
-    ));
-    ExitCode::from(2)
-}
-
 #[cfg(test)]
 mod tests {
     use std::process::ExitCode;
@@ -53,7 +42,9 @@ mod tests {
 
     /// `cli` is the `main` body under the argv the OS hands it: a bare or
     /// `--help` invocation prints usage and exits 0; an unknown subcommand
-    /// and the unwired `relay` arm both exit 2.
+    /// exits 2, and a `relay` argv the subcommand itself refuses exits 2
+    /// through `relay::run`'s usage error (the real loop's stdin EOF and
+    /// socket paths are the e2e suite's).
     #[test]
     fn main_returns_success() {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -72,9 +63,9 @@ mod tests {
             "unknown subcommand"
         );
         assert_eq!(
-            rt.block_on(cli(vec!["relay".to_string()])),
+            rt.block_on(cli(vec!["relay".to_string(), "--bogus".to_string()])),
             ExitCode::from(2),
-            "relay is declared but not yet available"
+            "relay dispatches; a bad argv is the subcommand's usage error"
         );
     }
 }
