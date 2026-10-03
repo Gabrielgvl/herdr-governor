@@ -13,7 +13,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use governor_core::identity::{CallerEnvelope, PaneId, ProjectRoot, RelayInstanceId};
-use herdr_governor::adapters::herdr::SessionKind;
+use herdr_governor::adapters::herdr::{MAX_FRAME_BYTES, SessionKind};
 use herdr_governor::daemon::{self, DaemonError, Settings};
 use herdr_governor::mcp::framing::{decode_reply, encode_request};
 use serde_json::{Value, json};
@@ -243,4 +243,47 @@ async fn transport_herdr_status_serves_over_the_real_socket() {
     let code = daemon.await.expect("join").expect("run exits ok");
     assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
     assert!(!sock.exists(), "teardown removed the socket");
+}
+
+/// §4.11/M1 — the socket's 1 MiB frame bound counts payload bytes
+/// before the `\n`, same as the codec: a frame whose payload is exactly
+/// `MAX_FRAME_BYTES` is legal and answered, one byte over is refused by
+/// the close. `params.pad` sizes the payload to the byte.
+#[tokio::test]
+async fn transport_frame_bound_counts_payload_before_newline() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (state, config) = fixture(tmp.path(), Path::new("/nonexistent/herdr.sock"));
+    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+
+    let rpc = |pad: usize| json!({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {"pad": "x".repeat(pad)}});
+    let base = encode_request(&caller(), &rpc(0)).len() - 1;
+    let maxed = rpc(MAX_FRAME_BYTES - base);
+    assert_eq!(
+        encode_request(&caller(), &maxed).len() - 1,
+        MAX_FRAME_BYTES,
+        "the frame payload is exactly the bound"
+    );
+    let reply = round_trip(&sock, &caller(), &maxed).await;
+    assert_eq!(reply["id"], 9);
+    assert_eq!(reply["result"], json!({}), "the max-size frame is served");
+
+    // One payload byte over: the newline lands past the take bound and
+    // the connection closes without a reply.
+    let stream = UnixStream::connect(&sock).await.expect("connect");
+    let mut reader = tokio::io::BufReader::new(stream);
+    reader
+        .get_mut()
+        .write_all(&encode_request(&caller(), &rpc(MAX_FRAME_BYTES - base + 1)))
+        .await
+        .expect("frame write");
+    let mut line = Vec::new();
+    let read = reader
+        .read_until(b'\n', &mut line)
+        .await
+        .expect("reply read");
+    assert_eq!(read, 0, "an over-bound frame is refused by the close");
+
+    stop.send(()).expect("stop");
+    let code = daemon.await.expect("join").expect("run exits ok");
+    assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
 }

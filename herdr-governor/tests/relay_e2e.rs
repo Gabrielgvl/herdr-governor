@@ -389,6 +389,57 @@ mod tests {
         assert!(status.success(), "relay exit: {status} {stderr}");
     }
 
+    /// F4 — an oversized stdin line earns its one `-32700` and nothing
+    /// more: a valid request written behind it in the same `send` still
+    /// forwards and gets its reply, and a line that crosses the bound
+    /// while still pending drains through its newline instead of
+    /// re-parsing its tail as a second fault. Replies arrive in wire
+    /// order; the fourth read must hit the post-EOF silence.
+    #[test]
+    fn f4_oversized_line_never_loses_the_next_request() {
+        let tmp = tempdir().expect("tempdir");
+        let absent = tmp.path().join("absent.sock");
+        let mut relay = spawn_relay(&absent, tmp.path(), Some("w-test:r1"));
+
+        // The completed case: the oversized line's newline and a ping
+        // ride one write together. `request` supplies its own newline.
+        relay.send(&format!("{}\n{}", "x".repeat(1024 * 1024 + 64), request(7, "ping")));
+        // The pending-overflow case: the bound is crossed before any
+        // newline arrives, so the line's tail must drain, not re-parse.
+        relay.send(&format!(
+            "{}\n{}",
+            "x".repeat(1024 * 1024 + 9_000),
+            request(9, "ping")
+        ));
+        drop(relay.child.stdin.take());
+        let mut raw = String::new();
+        relay.stdout.read_to_string(&mut raw).expect("read");
+        let replies: Vec<Value> = raw
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("relay reply is json"))
+            .collect();
+        assert_eq!(
+            replies.len(),
+            4,
+            "exactly four replies — one fault and one answer per pair"
+        );
+        assert_eq!(replies[0]["id"], Value::Null);
+        assert_eq!(replies[0]["error"]["code"], -32700);
+        assert_eq!(
+            replies[1]["id"], 7,
+            "the ping behind the completed oversized line answers"
+        );
+        assert_eq!(replies[2]["id"], Value::Null);
+        assert_eq!(replies[2]["error"]["code"], -32700);
+        assert_eq!(
+            replies[3]["id"], 9,
+            "the ping behind the pending overflow answers"
+        );
+
+        let (status, stderr) = relay.close_and_wait();
+        assert!(status.success(), "relay exit: {status} {stderr}");
+    }
+
     /// N4 — the relay holds no state: after a hundred round trips its RSS
     /// is still under the 8 MB bound, read off `/proc/<pid>/status` while
     /// the child is alive.

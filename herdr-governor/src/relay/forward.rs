@@ -8,12 +8,13 @@ use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use serde::Serialize;
+use governor_core::identity::{CallerEnvelope, PaneId, ProjectRoot, RelayInstanceId};
 use serde_json::{Value, json};
 use thiserror::Error;
 
 use super::identity::Identity;
 use crate::adapters::herdr::codec::LineAccumulator;
+use crate::mcp::framing;
 
 /// One stdin line, classified by the members the loop needs.
 #[derive(Debug)]
@@ -63,42 +64,14 @@ pub(super) fn classify(line: &[u8]) -> Inbound {
     }
 }
 
-/// The relay→daemon frame (§4.11): the v1 envelope carrying the F1
-/// caller and the request verbatim.
-#[derive(Serialize)]
-struct Frame<'a> {
-    v: u8,
-    caller: Caller<'a>,
-    rpc: &'a Value,
-}
-
-/// The F1 caller envelope: relay-attached framing, never a tool
-/// argument.
-#[derive(Serialize)]
-struct Caller<'a> {
-    #[serde(rename = "paneId")]
-    pane_id: &'a str,
-    #[serde(rename = "projectRoot")]
-    project_root: &'a str,
-    #[serde(rename = "relayInstanceId")]
-    relay_instance_id: &'a str,
-}
-
-/// One request's newline-terminated v1 frame. `None` where the envelope
-/// itself cannot serialize — handled like a failed leg by the caller.
-pub(super) fn frame(identity: &Identity, request: &Value) -> Option<Vec<u8>> {
-    let mut bytes = serde_json::to_vec(&Frame {
-        v: 1,
-        caller: Caller {
-            pane_id: &identity.pane_id,
-            project_root: &identity.project_root,
-            relay_instance_id: &identity.relay_instance_id,
-        },
-        rpc: request,
-    })
-    .ok()?;
-    bytes.push(b'\n');
-    Some(bytes)
+/// The derived identity as the frame codec's caller envelope — three
+/// small clones per request on a cold leg.
+fn envelope(identity: &Identity) -> CallerEnvelope {
+    CallerEnvelope {
+        pane_id: PaneId(identity.pane_id.clone()),
+        project_root: ProjectRoot(identity.project_root.clone()),
+        relay_instance_id: RelayInstanceId(identity.relay_instance_id.clone()),
+    }
 }
 
 /// Every way the daemon leg can fail; the caller maps all of them to
@@ -123,11 +96,12 @@ pub(super) fn exchange(
     identity: &Identity,
     request: &Value,
 ) -> Result<Vec<u8>, ForwardError> {
-    let frame = frame(identity, request).ok_or(ForwardError::BadReply)?;
+    let frame = framing::encode_request(&envelope(identity), request);
     let mut stream = UnixStream::connect(socket)?;
     stream.write_all(&frame)?;
     let mut conn = BufReader::new(stream);
-    unwrap_rpc(&read_line(&mut conn)?)
+    let rpc = framing::decode_reply(&read_line(&mut conn)?).map_err(|_e| ForwardError::BadReply)?;
+    Ok(reply_line(&rpc))
 }
 
 /// Read one bounded line off the daemon connection; a clean EOF before
@@ -150,19 +124,6 @@ fn read_line(conn: &mut BufReader<UnixStream>) -> Result<Vec<u8>, ForwardError> 
         let used = chunk.len();
         conn.consume(used);
     }
-}
-
-/// Unwrap `{"v":1,"rpc":<response>}` and re-serialize `<response>` — the
-/// only part the harness ever sees.
-fn unwrap_rpc(line: &[u8]) -> Result<Vec<u8>, ForwardError> {
-    let value: Value = serde_json::from_slice(line).map_err(|_e| ForwardError::BadReply)?;
-    if value.get("v") != Some(&json!(1)) {
-        return Err(ForwardError::BadReply);
-    }
-    let rpc = value.get("rpc").ok_or(ForwardError::BadReply)?;
-    let mut bytes = serde_json::to_vec(rpc).map_err(|_e| ForwardError::BadReply)?;
-    bytes.push(b'\n');
-    Ok(bytes)
 }
 
 /// Serialize a reply value plus its newline; a `Value` always
@@ -200,9 +161,14 @@ pub(super) fn unavailable_reply(id: &Value, method: &str) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{BufRead as _, BufReader, Write as _};
+    use std::os::unix::net::UnixListener;
+    use std::thread;
+
     use serde_json::{Value, json};
 
-    use super::{Inbound, classify, frame, unavailable_reply};
+    use super::{ForwardError, Inbound, classify, envelope, exchange, unavailable_reply};
+    use crate::mcp::framing::encode_request;
     use crate::relay::identity::Identity;
 
     fn identity() -> Identity {
@@ -218,7 +184,7 @@ mod tests {
     #[test]
     fn relay_frame_shape() {
         let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {}});
-        let bytes = frame(&identity(), &request).expect("frame serializes");
+        let bytes = encode_request(&envelope(&identity()), &request);
         assert!(bytes.ends_with(b"\n"), "frames are newline-terminated");
         let decoded: Value =
             serde_json::from_slice(&bytes[..bytes.len() - 1]).expect("frame is json");
@@ -275,6 +241,29 @@ mod tests {
             matches!(classify(b""), Inbound::Malformed),
             "an empty line is a parse fault",
         );
+    }
+
+    /// The shared codec's strictness now binds the relay: a reply frame
+    /// carrying a member outside `{v, rpc}` is `BadReply` — which
+    /// `respond` maps to `DAEMON_UNAVAILABLE` — never unwrapped.
+    #[test]
+    fn exchange_refuses_a_reply_with_unknown_members() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let socket = dir.path().join("d.sock");
+        let listener = UnixListener::bind(&socket).expect("bind");
+        let server = thread::spawn(move || {
+            let (mut conn, _) = listener.accept().expect("accept");
+            let mut line = Vec::new();
+            BufReader::new(&mut conn)
+                .read_until(b'\n', &mut line)
+                .expect("frame read");
+            conn.write_all(b"{\"v\":1,\"rpc\":{\"id\":1},\"extra\":true}\n")
+                .expect("reply write");
+        });
+        let err = exchange(&socket, &identity(), &json!({"id": 1}))
+            .expect_err("a reply with an unknown member is refused");
+        assert!(matches!(err, ForwardError::BadReply));
+        server.join().expect("server joins");
     }
 
     /// N7 — the daemon-down answer keeps the request's `id` and shapes

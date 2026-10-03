@@ -103,11 +103,16 @@ async fn conn(stream: UnixStream, tx: mpsc::Sender<Msg>, herdr: Client, op_timeo
         Ok(n) if n > 0 && line.last() == Some(&b'\n') => {}
         _ => return,
     }
-    let reply = match framing::decode_request(&line) {
+    // The bound counts payload bytes before the `\n` (§4.11): `line`
+    // still carries its terminator, so the decode sees it stripped.
+    let Some(payload) = line.strip_suffix(b"\n") else {
+        return;
+    };
+    let reply = match framing::decode_request(payload) {
         Ok(inbound) => answer_frame(inbound, &tx, &herdr, op_timeout)
             .await
             .map(|rpc| framing::encode_reply(&rpc)),
-        Err(_) => answer_bare(&line).map(|response| {
+        Err(_) => answer_bare(payload).map(|response| {
             let mut bytes = jsonrpc::serialize(&response);
             bytes.push(b'\n');
             bytes
