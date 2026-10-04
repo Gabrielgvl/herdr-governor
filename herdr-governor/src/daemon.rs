@@ -10,9 +10,11 @@
 //! (F1's caller resolution + binding, F7's paged status), `settings`/`seam`
 //! (argv + the fault seam), `paths`/`lock` (state dir + single instance),
 //! `clock`/`ids` (one epoch read + all entropy), `log` (the safe tracing
-//! surface), `startup`/`serve`/`shutdown` (bring-up, the reconcile tick,
-//! teardown — the MCP listener is `mcp::serve`) and `coordinator` (the
-//! store owner).
+//! surface), `startup`/`serve`/`shutdown` (bring-up incl. the §4.3
+//! steps-6–7 pass, the reconcile tick, teardown — the MCP listener is
+//! `mcp::serve`), `reconcile` (the §4.7 machinery — convergence,
+//! observations, deadlines, the subscription maintainer, `HerdrHealth`)
+//! and `coordinator` (the store owner).
 
 pub mod api;
 pub mod identity;
@@ -21,9 +23,13 @@ pub mod status;
 
 mod clock;
 mod coordinator;
+mod launch;
 mod lock;
 mod log;
 mod paths;
+mod questions;
+mod reconcile;
+mod runner;
 mod seam;
 mod serve;
 mod settings;
@@ -44,6 +50,9 @@ pub use settings::Settings;
 /// `mcp::serve`'s connection tasks post `Msg::Tool` here — the mailbox
 /// itself stays `mod coordinator`-private.
 pub(crate) use coordinator::Msg;
+/// The runner types `Msg`'s dispatch variants carry — re-exported at the
+/// same reach as `Msg` (they appear in its fields).
+pub(crate) use runner::{CommitVerdict, FileRef, FollowUpBody, RenderContext, TopologyTarget};
 
 use settings::{parse_check_config_args, parse_daemon_args};
 
@@ -90,6 +99,10 @@ pub enum DaemonError {
     /// The `credentials` file failed `load_credentials` (spec §19).
     #[error("credential unreadable: {0}")]
     Credential(#[from] JevError),
+    /// The Jev client failed construction (a `jev_base_url` the adapter
+    /// refuses) at runner arm.
+    #[error("jev client: {0}")]
+    Jev(JevError),
     /// A second daemon holds the state-dir lock — `answers` reports
     /// whether the probe found a live listener behind it.
     #[error("another daemon holds the state-dir lock (socket answers: {answers})")]
@@ -128,6 +141,7 @@ impl DaemonError {
             | Self::Config(_)
             | Self::NoDaemonTable
             | Self::Credential(_)
+            | Self::Jev(_)
             | Self::Seam(_) => Code::from(2),
             Self::Locked { .. } => Code::from(3),
             Self::Store(_) | Self::Apply(_) | Self::Io(_) => Code::from(1),
@@ -212,7 +226,7 @@ pub async fn run(
         loaded,
         daemon,
         resolved,
-        api_key: _api_key,
+        api_key,
         catalog_path,
     } = startup::prepare(&settings).await?;
 
@@ -224,7 +238,7 @@ pub async fn run(
     if let Some(armed) = &armed_seam {
         log::seam_armed(
             &armed.suffix,
-            boundary_name(armed.boundary),
+            armed.boundary.as_str(),
             action_name(armed.action),
         );
     }
@@ -236,16 +250,42 @@ pub async fn run(
             daemon: daemon.clone(),
             catalog_path,
             clock,
-            seam: armed_seam,
+            seam: armed_seam.clone(),
+            paths: paths.clone(),
         },
     );
     coordinator.mark_restart(now)?;
+
+    // §4.14 — the signal bridges go up before the first blocking leg:
+    // a SIGTERM landing anywhere in reconcile/bind/runner-arm queues
+    // `Signal::Shutdown` on the mailbox and `serve` stops cleanly,
+    // rather than the default disposition killing mid-init.
+    let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
+    let mut tasks = shutdown::spawn_signals(&tx);
+
+    // §4.3 steps 6–7 — convergence, classification (with the revised
+    // identity-less rule), the elapsed-deadline sweep and the sessionless
+    // foreign-incarnation settlement on one fresh snapshot, strictly
+    // before the bind (H#5).
+    startup::reconcile_pass(&mut coordinator, &resolved, daemon.herdr_op_timeout).await?;
 
     // §4.3 step 8 — the bind happens strictly after restart marking (H#5).
     let listener = startup::bind(&paths)?;
     log::bound(&paths.sock());
 
-    let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
+    // §4.4 — the runner pool's environment: adapter handles, the
+    // configured deadlines, the mailbox, the shutdown watch and the seam.
+    coordinator.arm_runner(runner::RunnerEnv {
+        herdr: crate::adapters::herdr::Client::new(resolved.herdr_socket.clone()),
+        herdr_op: daemon.herdr_op_timeout,
+        agent_start: daemon.agent_start_timeout,
+        jev: crate::adapters::jev::Client::new(&daemon.jev_base_url).map_err(DaemonError::Jev)?,
+        jev_key: api_key,
+        jev_timeout: daemon.jev_timeout,
+        tx: tx.clone(),
+        shutdown: coordinator.shutdown_receiver(),
+        seam: armed_seam,
+    });
     let accept = crate::mcp::serve::spawn(
         listener,
         tx.clone(),
@@ -254,8 +294,13 @@ pub async fn run(
         daemon.herdr_op_timeout,
     );
     let tick = serve::spawn_tick(&resolved, daemon.herdr_op_timeout, tx.clone());
-    let mut tasks = shutdown::spawn_signals(&tx);
-    tasks.extend([accept, tick]);
+    let (sub_feed, sub) = reconcile::spawn_subscriptions(
+        resolved.herdr_socket.clone(),
+        daemon.herdr_op_timeout,
+        tx.clone(),
+    );
+    coordinator.arm_subscriptions(sub_feed);
+    tasks.extend([accept, tick, sub]);
     drop(tx);
 
     let (_coordinator, _stop) = coordinator.serve(rx, shutdown).await;
@@ -304,16 +349,6 @@ fn refuse(err: &DaemonError) -> ExitCode {
         sanitize(&err.to_string())
     ));
     err.code()
-}
-
-/// The seam boundary's spec spelling (for `log::seam_armed`).
-fn boundary_name(boundary: Boundary) -> &'static str {
-    match boundary {
-        Boundary::PreDispatch => "pre_dispatch",
-        Boundary::DispatchCommitted => "dispatch_committed",
-        Boundary::WireReturned => "wire_returned",
-        Boundary::ResultCommitted => "result_committed",
-    }
 }
 
 /// The seam action's spec spelling.

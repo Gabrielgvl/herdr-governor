@@ -4,9 +4,10 @@
 //! moment.
 
 use alloc::collections::BTreeSet;
+use alloc::format;
 
 use crate::config::Capability;
-use crate::identity::{ChildStatus, EffectId};
+use crate::identity::{ChildStatus, EffectId, EffectKey};
 use crate::lifecycle::{
     Effect, EffectKind, EffectState, EffectTarget, PromptCertainty, Run, State,
 };
@@ -21,6 +22,39 @@ fn prompt_in_flight(state: EffectState) -> bool {
         EffectState::Planned | EffectState::Dispatching => true,
         EffectState::Acknowledged | EffectState::Failed | EffectState::Unconfirmed => false,
     }
+}
+
+/// F9 — whether `effect` is a `prompt` journaled for this Run and addressed
+/// to its captured `Child` identity — the only rows the per-identity
+/// pipeline counts. A hint addresses the *owner's* pane
+/// (`EffectTarget::CallerContext`), a different captured identity, and
+/// never serializes behind the child's queue.
+fn prompts_to_child(run: &Run, effect: &Effect) -> bool {
+    effect.kind == EffectKind::Prompt
+        && effect.subject_run.as_ref() == Some(&run.id)
+        && matches!(effect.target, Some(EffectTarget::Child(_)))
+}
+
+/// F9 — the ordering barrier: the Task prompt's `prompt_certainty`, or a
+/// journaled `unconfirmed` prompt to the child, bars everything behind it
+/// until transcript evidence or settlement resolves it. A journaled
+/// `unconfirmed` prompt effect that an outbox entry of this Run links
+/// (`effect_id`) is unbarred once that entry is `submitted` — the outbox
+/// row is the source of truth for the lift while the journal row keeps its
+/// wire fact. The lifted set is built once per call, so the two unbounded
+/// histories are each scanned once.
+fn barrier(run: &Run, outbox: &[OutboxMessage], prompt_effects: &[Effect]) -> bool {
+    let lifted: BTreeSet<&EffectId> = outbox
+        .iter()
+        .filter(|m| m.run == run.id && m.state == OutboxState::Submitted)
+        .filter_map(|m| m.effect.as_ref())
+        .collect();
+    run.prompt_certainty == Some(PromptCertainty::Unconfirmed)
+        || prompt_effects.iter().any(|effect| {
+            prompts_to_child(run, effect)
+                && effect.state == EffectState::Unconfirmed
+                && !lifted.contains(&effect.id)
+        })
 }
 
 /// F9/F17 — which queued follow-up, if any, may dispatch to the Run's
@@ -66,36 +100,12 @@ pub fn next_dispatchable_follow_up<'a>(
         State::Active | State::Judging | State::Repair => {}
         State::Reserved | State::Starting | State::Prompting | State::Settled => return None,
     }
-    let prompts_to_child = |effect: &Effect| {
-        effect.kind == EffectKind::Prompt
-            && effect.subject_run.as_ref() == Some(&run.id)
-            && match &effect.target {
-                Some(EffectTarget::Child(_)) => true,
-                Some(
-                    EffectTarget::ExistingTab(_)
-                    | EffectTarget::CallerContext(_)
-                    | EffectTarget::AgentPane(_),
-                )
-                | None => false,
-            }
-    };
-    let lifted: BTreeSet<&EffectId> = outbox
-        .iter()
-        .filter(|m| m.run == run.id && m.state == OutboxState::Submitted)
-        .filter_map(|m| m.effect.as_ref())
-        .collect();
-    let barrier = run.prompt_certainty == Some(PromptCertainty::Unconfirmed)
-        || prompt_effects.iter().any(|effect| {
-            prompts_to_child(effect)
-                && effect.state == EffectState::Unconfirmed
-                && !lifted.contains(&effect.id)
-        });
-    if barrier {
+    if barrier(run, outbox, prompt_effects) {
         return None;
     }
     let in_flight = prompt_effects
         .iter()
-        .any(|effect| prompts_to_child(effect) && prompt_in_flight(effect.state));
+        .any(|effect| prompts_to_child(run, effect) && prompt_in_flight(effect.state));
     if in_flight {
         return None;
     }
@@ -123,4 +133,58 @@ pub fn next_dispatchable_follow_up<'a>(
         Some(ChildStatus::Idle | ChildStatus::Done) => Some(head),
         Some(ChildStatus::Working | ChildStatus::Blocked) | None => None,
     }
+}
+
+/// F9 — the dispatch-commit revalidation: may this one journaled prompt to
+/// the Run's `Child` identity dispatch now? The candidate must be present
+/// in `journal` and `planned`. `journal` is the Run's effect slice in plan
+/// order (`ORDER BY planned_at, effect_id` — `Effect` carries no
+/// `planned_at`, so position is the order). Unlike
+/// `next_dispatchable_follow_up`, which picks the queue's head, the
+/// candidate is itself `planned`: it is excluded from its own slot check,
+/// while ordering against its siblings is preserved — no *other* `planned`
+/// child prompt may precede it and no other child prompt may be
+/// `dispatching`.
+///
+/// The remaining gates are the shared ordering `barrier`, never while
+/// `blocked` (F17/H#17), and the state lane: `prompt:task` dispatches only
+/// in `prompting`, every other child prompt only in
+/// `active`/`judging`/`repair`.
+#[must_use]
+pub fn prompt_dispatchable(
+    run: &Run,
+    outbox: &[OutboxMessage],
+    journal: &[Effect],
+    candidate: &EffectKey,
+) -> bool {
+    let Some((position, candidate_effect)) = journal
+        .iter()
+        .enumerate()
+        .find(|(_, effect)| effect.key == *candidate)
+    else {
+        return false;
+    };
+    if candidate_effect.state != EffectState::Planned || !prompts_to_child(run, candidate_effect) {
+        return false;
+    }
+    let task_prompt = candidate.0 == format!("run:{}:prompt:task", run.id.0);
+    let state_allows = match run.state {
+        State::Prompting => task_prompt,
+        State::Active | State::Judging | State::Repair => !task_prompt,
+        State::Reserved | State::Starting | State::Settled => false,
+    };
+    if !state_allows || barrier(run, outbox, journal) {
+        return false;
+    }
+    if run.child_status == Some(ChildStatus::Blocked) {
+        return false;
+    }
+    let earlier_planned = journal
+        .iter()
+        .take(position)
+        .any(|e| prompts_to_child(run, e) && e.state == EffectState::Planned);
+    let other_dispatching = journal.iter().any(|e| {
+        e.key != *candidate && prompts_to_child(run, e) && e.state == EffectState::Dispatching
+    });
+    !(earlier_planned || other_dispatching)
 }

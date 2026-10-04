@@ -20,13 +20,14 @@ use crate::adapters::config::{DaemonSettings, LoadedConfig};
 use crate::daemon::clock::Clock;
 use crate::daemon::coordinator::apply::{ApplyOutcome, apply_with_retry};
 use crate::daemon::coordinator::{Coordinator, CoordinatorArgs};
+use crate::daemon::paths::Paths;
 use crate::store::Store;
 
-const NOW: Timestamp = Timestamp(1_790_812_800_000);
+pub(super) const NOW: Timestamp = Timestamp(1_790_812_800_000);
 
 // — Fixture builders (constructed inputs, no I/O beyond tempfiles) ———————
 
-fn caller(n: u8) -> CallerKey {
+pub(super) fn caller(n: u8) -> CallerKey {
     CallerKey {
         agent_kind: AgentKind("kind-a".into()),
         native_session: NativeSession(format!("sess-{n}")),
@@ -34,7 +35,7 @@ fn caller(n: u8) -> CallerKey {
 }
 
 /// Rows are rejected while the caller is unbound — bind `caller(n)` first.
-fn binding(n: u8) -> StateChange {
+pub(super) fn binding(n: u8) -> StateChange {
     StateChange::BindCaller(CallerBinding {
         caller: caller(n),
         relay_instance: RelayInstanceId(format!("relay-{n}")),
@@ -42,11 +43,11 @@ fn binding(n: u8) -> StateChange {
     })
 }
 
-fn run_row(id: &str) -> Run {
+pub(super) fn run_row(id: &str) -> Run {
     run_row_on(id, "l-1")
 }
 
-fn run_row_on(id: &str, launch: &str) -> Run {
+pub(super) fn run_row_on(id: &str, launch: &str) -> Run {
     Run {
         id: RunId(id.into()),
         launch: LaunchId(launch.into()),
@@ -81,7 +82,12 @@ fn run_row_on(id: &str, launch: &str) -> Run {
     }
 }
 
-fn effect(key: &str, kind: EffectKind, run: Option<&str>, launch: Option<&str>) -> Effect {
+pub(super) fn effect(
+    key: &str,
+    kind: EffectKind,
+    run: Option<&str>,
+    launch: Option<&str>,
+) -> Effect {
     Effect {
         id: EffectId(format!("eff:{key}")),
         key: EffectKey(key.into()),
@@ -97,7 +103,7 @@ fn effect(key: &str, kind: EffectKind, run: Option<&str>, launch: Option<&str>) 
     }
 }
 
-fn launch_row(id: &str, phase: LaunchPhase) -> Launch {
+pub(super) fn launch_row(id: &str, phase: LaunchPhase) -> Launch {
     Launch {
         id: LaunchId(id.into()),
         caller: caller(1),
@@ -122,7 +128,7 @@ fn launch_row(id: &str, phase: LaunchPhase) -> Launch {
     }
 }
 
-fn changes(changes: Vec<StateChange>) -> Transition {
+pub(super) fn changes(changes: Vec<StateChange>) -> Transition {
     Transition {
         state_changes: changes,
         events: Vec::new(),
@@ -130,7 +136,7 @@ fn changes(changes: Vec<StateChange>) -> Transition {
     }
 }
 
-fn plan(effect: Effect) -> Transition {
+pub(super) fn plan(effect: Effect) -> Transition {
     Transition {
         state_changes: Vec::new(),
         events: Vec::new(),
@@ -138,7 +144,7 @@ fn plan(effect: Effect) -> Transition {
     }
 }
 
-fn policy() -> Policy {
+pub(super) fn policy() -> Policy {
     Policy {
         tiers: vec![Tier("standard".into())],
         no_change_cap: None,
@@ -155,7 +161,7 @@ fn policy() -> Policy {
     }
 }
 
-fn daemon_settings() -> DaemonSettings {
+pub(super) fn daemon_settings() -> DaemonSettings {
     DaemonSettings {
         herdr_socket: PathBuf::from("/nonexistent/herdr.sock"),
         jev_base_url: "http://127.0.0.1:9".into(),
@@ -175,7 +181,7 @@ fn daemon_settings() -> DaemonSettings {
     }
 }
 
-fn loaded(daemon: DaemonSettings) -> LoadedConfig {
+pub(super) fn loaded(daemon: DaemonSettings) -> LoadedConfig {
     LoadedConfig {
         config: Config {
             version: ConfigVersion("v".into()),
@@ -189,7 +195,7 @@ fn loaded(daemon: DaemonSettings) -> LoadedConfig {
     }
 }
 
-fn coordinator_with(store: Store) -> Coordinator {
+pub(super) fn coordinator_with(store: Store, dir: &Path) -> Coordinator {
     Coordinator::new(
         store,
         CoordinatorArgs {
@@ -198,12 +204,24 @@ fn coordinator_with(store: Store) -> Coordinator {
             catalog_path: PathBuf::from("/nonexistent/catalog.toml"),
             clock: Clock::new(),
             seam: None,
+            paths: Paths::create(&dir.join("state")).expect("paths"),
         },
     )
 }
 
-fn store_in(dir: &Path) -> Store {
+pub(super) fn store_in(dir: &Path) -> Store {
     Store::open(&dir.join("governor.db")).expect("store opens")
+}
+
+/// A real 0600 credentials file under `dir` — `ApiKey::read_0600` is
+/// the only constructor and it verifies ownership, mode and a non-empty
+/// body, so a `RunnerEnv` needs the genuine path.
+pub(super) fn credentials_file(dir: &Path) -> PathBuf {
+    let path = dir.join("credentials");
+    std::fs::write(&path, "test-token").expect("credentials");
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .expect("0600");
+    path
 }
 
 // — `apply_with_retry` —————————————————————————————————————————————————
@@ -261,7 +279,7 @@ fn apply_retry_bounded_to_three() {
 // — `Coordinator::mark_restart` (§4.3 step 5) ———————————————————————————
 
 /// Bind `caller(1)` — once per store; a second `BindCaller` conflicts.
-fn bind_caller(store: &mut Store) {
+pub(super) fn bind_caller(store: &mut Store) {
     store
         .apply(&changes(vec![binding(1)]), NOW)
         .expect("bind caller");
@@ -270,7 +288,7 @@ fn bind_caller(store: &mut Store) {
 /// The canonical seed (store_apply/support.rs's order): record the launch
 /// `evaluating`, then `routed` + `ReserveRun` — the `runs.launch_id` FK
 /// demands the row exists first. Caller must already be bound.
-fn seed_run(store: &mut Store, run: &Run) {
+pub(super) fn seed_run(store: &mut Store, run: &Run) {
     let launch = run.launch.0.clone();
     store
         .apply(
@@ -293,7 +311,7 @@ fn seed_run(store: &mut Store, run: &Run) {
 }
 
 /// Seed `store` with `run`, plus `key`'s effect in `dispatching`.
-fn seed_dispatching(store: &mut Store, run: &Run, key: &str, kind: EffectKind) {
+pub(super) fn seed_dispatching(store: &mut Store, run: &Run, key: &str, kind: EffectKind) {
     seed_run(store, run);
     store
         .apply(&plan(effect(key, kind, Some(&run.id.0), None)), NOW)
@@ -353,7 +371,7 @@ fn restart_marks_dispatching_unconfirmed_including_settled_runs() {
         )
         .expect("dispatch close");
 
-    let mut coordinator = coordinator_with(store);
+    let mut coordinator = coordinator_with(store, tmp.path());
     let marks = coordinator.mark_restart(NOW).expect("mark");
     assert_eq!(
         (marks.effects, marks.runs, marks.evals),
@@ -419,7 +437,7 @@ fn restart_abstains_stranded_eval_with_unknown_certainty() {
         )
         .expect("dispatch eval");
 
-    let mut coordinator = coordinator_with(store);
+    let mut coordinator = coordinator_with(store, tmp.path());
     let marks = coordinator.mark_restart(NOW).expect("mark");
     assert_eq!(
         (marks.effects, marks.runs, marks.evals),

@@ -3,5 +3,7 @@
 //! Each test crate pulls this in with `#[cfg(test)] pub mod support;`.
 
 pub mod crash;
-pub mod e2e;
+pub mod daemon;
 pub mod fake_herdr;
+pub mod fake_jev;
+pub mod mcp_client;

@@ -6,36 +6,20 @@
 //! `transport_herdr_status_serves_over_the_real_socket` (P5.M2's
 //! listener).
 
-use std::path::Path;
-
 use governor_core::identity::{
-    AgentKind, AgentName, CallerBinding, CallerEnvelope, CallerKey, ChildStatus, NativeSession,
-    PaneId, ProjectRoot, RelayInstanceId, TerminalId, Timestamp,
+    AgentKind, AgentName, CallerBinding, CallerKey, ChildStatus, NativeSession, PaneId, TerminalId,
+    Timestamp,
 };
 use governor_core::lifecycle::{StateChange, Transition};
 use herdr_governor::daemon::identity::{self, AgentRow};
 use herdr_governor::store::Store;
 use tempfile::{TempDir, tempdir};
 
+use crate::support::mcp_client::{caller_envelope as envelope, canonical};
+
 /// A well-formed `relayInstanceId` (128-bit lowercase hex).
 const RELAY: &str = "abababababababababababababababab";
 const NOW: Timestamp = Timestamp(1_790_812_800_000);
-
-fn canonical(dir: &Path) -> String {
-    std::fs::canonicalize(dir)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
-
-fn envelope(pane: &str, root: &str, relay: &str) -> CallerEnvelope {
-    CallerEnvelope {
-        pane_id: PaneId(pane.into()),
-        project_root: ProjectRoot(root.into()),
-        relay_instance_id: RelayInstanceId(relay.into()),
-    }
-}
 
 /// One occupied pane row — the shape `resolve` consumes.
 fn row(pane: &str, terminal: &str, session: Option<&str>) -> AgentRow {

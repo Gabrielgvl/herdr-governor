@@ -2,160 +2,51 @@
 //! the daemon's real `0600` socket driven by `daemon::run` in-process,
 //! speaking the v1 relay frame
 //! (`{"v":1,"caller":…,"rpc":<request>}` → `{"v":1,"rpc":<response>}`),
-//! `herdr_status` answered through the A2 `Msg::Tool` arm. The in-file
-//! client/fixture duplicates `startup.rs`'s shape on purpose —
-//! T1 promotes a shared `mcp_client`/`TestDaemon` later (the A2 precedent).
+//! `herdr_status` answered through the A2 `Msg::Tool` arm. The client,
+//! fixture and daemon legs are the shared `support` harness (P5.T1).
 
-use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-use std::time::Duration;
-
-use governor_core::identity::{CallerEnvelope, PaneId, ProjectRoot, RelayInstanceId};
-use herdr_governor::adapters::herdr::{MAX_FRAME_BYTES, SessionKind};
-use herdr_governor::daemon::{self, DaemonError, Settings};
-use herdr_governor::mcp::framing::{decode_reply, encode_request};
-use serde_json::{Value, json};
+use herdr_governor::adapters::herdr::MAX_FRAME_BYTES;
+use herdr_governor::mcp::framing::encode_request;
+use serde_json::json;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 use tokio::net::UnixStream;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
-use crate::support::fake_herdr::topology::{Occupant, SessionRef};
-use crate::support::fake_herdr::{FakeHerdr, Topology};
+use crate::support::daemon::{Catalog, DaemonDirs, TestDaemon, fixture};
+use crate::support::fake_herdr::FakeHerdr;
+use crate::support::fake_herdr::topology::occupied_topology;
+use crate::support::mcp_client::{McpClient, caller_envelope, canonical, status_call, status_page};
 
-/// A valid fixture: `[daemon]` + a `0600` credential, `herdr_socket`
-/// naming the Herdr session the daemon's client dials — a nowhere path
-/// for the plumbing tests (the tick's snapshot fails and is logged,
-/// which is what A1 does with Herdr liveness), the `FakeHerdr` socket
-/// for the status leg. Same shape as `startup.rs`'s.
-fn fixture(root: &Path, herdr_socket: &Path) -> (PathBuf, PathBuf) {
-    let state = root.join("state");
-    let config = root.join("config");
-    fs::create_dir_all(&state).expect("state dir");
-    fs::create_dir_all(&config).expect("config dir");
-    fs::write(
-        config.join("catalog.toml"),
-        format!(
-            "[policy]\ntiers = [\"fast\"]\nprovider_limit_threshold = 0.6\ncooldown_secs = 60\n\n\
-             [catalog]\noperating_points = []\n\n\
-             [daemon]\nherdr_socket = \"{}\"\n\
-             jev_base_url = \"http://127.0.0.1:9\"\njev_model = \"m\"\nreconcile_secs = 3600\n",
-            herdr_socket.display()
-        ),
-    )
-    .expect("catalog");
-    let credentials = config.join("credentials");
-    fs::write(&credentials, "test-token\n").expect("credentials");
-    fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600)).expect("chmod");
-    (state, config)
+/// The caller's 32-hex `relayInstanceId` (the validator's pinned shape).
+const RELAY: &str = "0123456789abcdef0123456789abcdef";
+
+/// A fixture daemon against `fake`: the inert catalog points the
+/// daemon's Herdr client at the fake's socket, so the request-time
+/// `session.snapshot` F1 verifies against answers.
+fn dirs_for(fake: &FakeHerdr) -> DaemonDirs {
+    fixture(&Catalog::inert(fake.socket_path(), "http://127.0.0.1:9"))
 }
 
-/// A `FakeHerdr` whose one pane `w1:p1` holds a native session, plus the
-/// caller envelope F1 resolves to it — `projectRoot` is `tmp`'s own
-/// canonical path so the connection task's realpath read agrees. A
-/// framed non-tool request (`ping`, `tools/list`) verifies against this
-/// occupant before its local answer is allowed out.
-fn occupied(tmp: &Path) -> (FakeHerdr, CallerEnvelope) {
-    let mut topology = Topology::single_shell();
-    topology.panes[0].agent = Some(Occupant {
-        name: "gov-caller".into(),
-        kind: "harness-x".into(),
-        status: "idle".into(),
-        session: Some(SessionRef {
-            kind: SessionKind::Id,
-            value: "caller-session".into(),
-        }),
-    });
-    let root = tmp
-        .canonicalize()
-        .expect("canonical tmp")
-        .to_str()
-        .expect("utf8")
-        .to_owned();
-    (
-        FakeHerdr::start(topology),
-        CallerEnvelope {
-            pane_id: PaneId("w1:p1".into()),
-            project_root: ProjectRoot(root),
-            relay_instance_id: RelayInstanceId("0123456789abcdef0123456789abcdef".into()),
-        },
-    )
+/// The caller envelope the occupied `w1:p1` resolves to — `projectRoot`
+/// is `dirs.root()`'s canonical path so the connection task's realpath
+/// read agrees.
+fn caller(dirs: &DaemonDirs) -> governor_core::identity::CallerEnvelope {
+    caller_envelope("w1:p1", &canonical(dirs.root()), RELAY)
 }
 
-/// Spawn the daemon in-process and poll for the bound socket — bounded,
-/// never a fixed sleep.
-async fn start_daemon(
-    state: &Path,
-    config: &Path,
-) -> (
-    PathBuf,
-    oneshot::Sender<()>,
-    JoinHandle<Result<ExitCode, DaemonError>>,
-) {
-    let settings = Settings {
-        state_dir: state.to_path_buf(),
-        config_dir: config.to_path_buf(),
-        herdr_socket: None,
-        reconcile_secs: None,
-    };
-    let (stop, stop_rx) = oneshot::channel::<()>();
-    let daemon = tokio::spawn(daemon::run(settings, None, Some(stop_rx)));
-    let sock = state.join("governor.sock");
-    for _ in 0..400 {
-        if sock.exists() {
-            return (sock, stop, daemon);
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    panic!("the listener never bound");
-}
-
-/// One request's whole leg on a fresh connection: v1 frame out, the
-/// `{"v":1,"rpc":…}` line back, EOF behind it.
-async fn round_trip(sock: &Path, caller: &CallerEnvelope, rpc: &Value) -> Value {
-    let stream = UnixStream::connect(sock).await.expect("connect");
-    let mut reader = tokio::io::BufReader::new(stream);
-    reader
-        .get_mut()
-        .write_all(&encode_request(caller, rpc))
-        .await
-        .expect("frame write");
-    let mut line = Vec::new();
-    let read = reader
-        .read_until(b'\n', &mut line)
-        .await
-        .expect("reply read");
-    assert!(read > 0, "the daemon closed without a reply");
-    let rpc_reply = decode_reply(&line).expect("a v1 reply frame");
-    // One reply, then the server closes — no second line ever arrives.
-    let mut extra = Vec::new();
-    let trailing = reader
-        .read_until(b'\n', &mut extra)
-        .await
-        .expect("trailing read");
-    assert_eq!(trailing, 0, "the connection closes after its one reply");
-    rpc_reply
-}
-
-/// PR A's surface (OQ-S): `tools/list` over the real socket serves exactly
-/// `herdr_status` — `herdr_launch`/`herdr_run` stay unlisted until B2/C4.
-/// F1 gates the framed request first: `Msg::VerifyCaller` resolves and
-/// binds the caller before the list is allowed out.
+/// The served surface (OQ-S): `tools/list` over the real socket serves
+/// exactly `herdr_status` + `herdr_launch` — `herdr_run` stays unlisted
+/// until C4. F1 gates the framed request first: `Msg::VerifyCaller`
+/// resolves and binds the caller before the list is allowed out.
 #[tokio::test]
 async fn transport_tools_list_exposes_status_only_in_pr_a() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    let (fake, caller) = occupied(tmp.path());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let fake = FakeHerdr::start(occupied_topology());
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let client = McpClient::new(&daemon.socket_path(), caller(&dirs));
 
-    let reply = round_trip(
-        &sock,
-        &caller,
-        &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
-    )
-    .await;
+    let reply = client
+        .call(&json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}))
+        .await;
     assert_eq!(reply["id"], 1, "the request id echoes verbatim");
     let names: Vec<&str> = reply["result"]["tools"]
         .as_array()
@@ -163,11 +54,14 @@ async fn transport_tools_list_exposes_status_only_in_pr_a() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name is a string"))
         .collect();
-    assert_eq!(names, ["herdr_status"], "PR A lists exactly one tool");
+    assert_eq!(
+        names,
+        ["herdr_status", "herdr_launch"],
+        "B2 lists status + launch"
+    );
 
-    stop.send(()).expect("stop");
-    let code = daemon.await.expect("join").expect("run exits ok");
-    assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
+    let sock = daemon.socket_path();
+    daemon.shutdown().await;
     assert!(!sock.exists(), "teardown removed the socket");
 }
 
@@ -178,18 +72,17 @@ async fn transport_tools_list_exposes_status_only_in_pr_a() {
 /// the rest verify against the same occupant.
 #[tokio::test]
 async fn transport_concurrent_connections_are_independent() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    let (fake, caller) = occupied(tmp.path());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let fake = FakeHerdr::start(occupied_topology());
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let caller = caller(&dirs);
 
     let mut legs = Vec::new();
     for id in 0..8u64 {
-        let leg_sock = sock.clone();
-        let leg_caller = caller.clone();
+        let leg = McpClient::new(&daemon.socket_path(), caller.clone());
         legs.push(tokio::spawn(async move {
             let request = json!({"jsonrpc": "2.0", "id": id, "method": "ping"});
-            (id, round_trip(&leg_sock, &leg_caller, &request).await)
+            (id, leg.call(&request).await)
         }));
     }
     for leg in legs {
@@ -198,9 +91,7 @@ async fn transport_concurrent_connections_are_independent() {
         assert_eq!(reply["result"], json!({}), "ping answers an empty result");
     }
 
-    stop.send(()).expect("stop");
-    let code = daemon.await.expect("join").expect("run exits ok");
-    assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
+    daemon.shutdown().await;
 }
 
 /// The A2×M2 seam pinned end to end: a v1 `tools/call` frame for
@@ -210,31 +101,15 @@ async fn transport_concurrent_connections_are_independent() {
 /// (F1) and answers the §4.12 status page.
 #[tokio::test]
 async fn transport_herdr_status_serves_over_the_real_socket() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    // The caller occupies `w1:p1` with a native session — the snapshot's
-    // one agent row F1 resolves the envelope's `paneId` to — and
-    // `projectRoot` is the tempdir's canonical path so the connection
-    // task's realpath read agrees.
-    let (fake, caller) = occupied(tmp.path());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let fake = FakeHerdr::start(occupied_topology());
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let client = McpClient::new(&daemon.socket_path(), caller(&dirs));
 
-    let reply = round_trip(
-        &sock,
-        &caller,
-        &json!({
-            "jsonrpc": "2.0", "id": "s1", "method": "tools/call",
-            "params": {"name": "herdr_status", "arguments": {}},
-        }),
-    )
-    .await;
+    let reply = client.call(&status_call("s1")).await;
 
     assert_eq!(reply["id"], "s1", "the request id echoes verbatim");
-    assert_eq!(reply["result"]["isError"], false, "the status tool serves");
-    let text = reply["result"]["content"][0]["text"]
-        .as_str()
-        .expect("tool text");
-    let page: Value = serde_json::from_str(text).expect("a status page body");
+    let page = status_page(&reply);
     assert!(
         page["health"]["daemon"]["pid"].is_u64(),
         "the health section emits unconditionally"
@@ -247,9 +122,8 @@ async fn transport_herdr_status_serves_over_the_real_socket() {
     assert_eq!(page["runs"], json!([]), "a fresh caller owns no runs");
     assert_eq!(page["unreadEventIds"], json!([]));
 
-    stop.send(()).expect("stop");
-    let code = daemon.await.expect("join").expect("run exits ok");
-    assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
+    let sock = daemon.socket_path();
+    daemon.shutdown().await;
     assert!(!sock.exists(), "teardown removed the socket");
 }
 
@@ -259,10 +133,11 @@ async fn transport_herdr_status_serves_over_the_real_socket() {
 /// the close. `params.pad` sizes the payload to the byte.
 #[tokio::test]
 async fn transport_frame_bound_counts_payload_before_newline() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    let (fake, caller) = occupied(tmp.path());
-    let (state, config) = fixture(tmp.path(), fake.socket_path());
-    let (sock, stop, daemon) = start_daemon(&state, &config).await;
+    let fake = FakeHerdr::start(occupied_topology());
+    let dirs = dirs_for(&fake);
+    let daemon = TestDaemon::start_in_process(&dirs.settings(), None).await;
+    let caller = caller(&dirs);
+    let client = McpClient::new(&daemon.socket_path(), caller.clone());
 
     let rpc = |pad: usize| json!({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {"pad": "x".repeat(pad)}});
     let base = encode_request(&caller, &rpc(0)).len() - 1;
@@ -272,13 +147,15 @@ async fn transport_frame_bound_counts_payload_before_newline() {
         MAX_FRAME_BYTES,
         "the frame payload is exactly the bound"
     );
-    let reply = round_trip(&sock, &caller, &maxed).await;
+    let reply = client.call(&maxed).await;
     assert_eq!(reply["id"], 9);
     assert_eq!(reply["result"], json!({}), "the max-size frame is served");
 
     // One payload byte over: the newline lands past the take bound and
     // the connection closes without a reply.
-    let stream = UnixStream::connect(&sock).await.expect("connect");
+    let stream = UnixStream::connect(daemon.socket_path())
+        .await
+        .expect("connect");
     let mut reader = tokio::io::BufReader::new(stream);
     reader
         .get_mut()
@@ -292,7 +169,5 @@ async fn transport_frame_bound_counts_payload_before_newline() {
         .expect("reply read");
     assert_eq!(read, 0, "an over-bound frame is refused by the close");
 
-    stop.send(()).expect("stop");
-    let code = daemon.await.expect("join").expect("run exits ok");
-    assert_eq!(code, ExitCode::SUCCESS, "clean stop after serving");
+    daemon.shutdown().await;
 }

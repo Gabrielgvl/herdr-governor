@@ -35,7 +35,7 @@ pub type AgentRow = (
 /// §4.6 — the wire `AgentStatus` to `ChildStatus`: the four real states
 /// map 1:1 and `unknown` is `None` (already dropped by
 /// `SessionSnapshot::agent_rows`, kept total here anyway).
-fn child_status(status: AgentStatus) -> Option<ChildStatus> {
+pub(in crate::daemon) fn child_status(status: AgentStatus) -> Option<ChildStatus> {
     match status {
         AgentStatus::Idle => Some(ChildStatus::Idle),
         AgentStatus::Working => Some(ChildStatus::Working),
@@ -67,7 +67,11 @@ pub fn agent_rows(snapshot: &SessionSnapshot) -> Vec<AgentRow> {
 
 /// F2/OQ-8 — protocol 22 proves no incarnation, so the daemon derives
 /// `HerdrIncarnation` from the `ConnEpoch`: the socket's inode and mtime
-/// identify the serving Herdr process.
+/// identify the serving Herdr process. §4.3's spelling —
+/// `<socket_inode>:<mtime_secs>.<mtime_nsecs zero-padded to 9 digits>` —
+/// is the one mint every reader shares: the status page's
+/// `health.herdr.incarnation`, the reconcile view's foreign-incarnation
+/// comparison and B1's `agent.start` ack receipt.
 #[must_use]
 pub fn incarnation(epoch: &ConnEpoch) -> HerdrIncarnation {
     HerdrIncarnation(format!(

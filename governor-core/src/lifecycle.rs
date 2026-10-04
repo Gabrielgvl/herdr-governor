@@ -33,7 +33,7 @@ pub use record::{CreatedTopology, OwnerChange, Run, RunUpdate};
 pub use rules::TRANSITION_RULES;
 pub use settle::settle;
 pub use state::{DeadlineKind, PromptCertainty, Settlement, State, UnresolvedReason};
-pub use supervision::periodic_review;
+pub use supervision::{acceptance_retry, periodic_review};
 pub use transition::transition;
 
 /// The empty transition — losing transitions and no-op events commit nothing

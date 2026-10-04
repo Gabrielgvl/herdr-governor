@@ -400,3 +400,55 @@ fn str_param<'a>(p: &'a Map<String, Value>, key: &str) -> Result<&'a str, WireEr
         .and_then(Value::as_str)
         .ok_or_else(|| invalid("api request params are malformed"))
 }
+
+/// An `Occupant` row the suites script onto `w1:p1` — `kind`/`status`
+/// are opaque to the assertions; `session` is the `native_session`
+/// caller binding reads back.
+#[must_use]
+pub fn occupant(name: &str, session: &str) -> Occupant {
+    Occupant {
+        name: name.to_owned(),
+        kind: "harness-x".to_owned(),
+        status: "idle".to_owned(),
+        session: Some(SessionRef {
+            kind: SessionKind::Id,
+            value: session.to_owned(),
+        }),
+    }
+}
+
+/// `Topology::single_shell` with `w1:p1` occupied — the world the
+/// status/identity suites assert against.
+#[must_use]
+pub fn occupied_topology() -> Topology {
+    let mut topology = Topology::single_shell();
+    if let Some(pane) = topology.panes.first_mut() {
+        pane.agent = Some(occupant("gov-caller", "sess-1"));
+    }
+    topology
+}
+
+/// `single_shell` with `w1:p1` occupied by `name` on `session`,
+/// returning `(topology, terminal_id)` — the launch suites seed the
+/// run's captured identity against the terminal.
+#[must_use]
+pub fn agent_topology(name: &str, session: Option<&str>) -> (Topology, String) {
+    let mut topology = Topology::single_shell();
+    let terminal = topology
+        .panes
+        .first()
+        .map(|pane| pane.terminal_id.clone())
+        .unwrap_or_default();
+    if let Some(pane) = topology.panes.first_mut() {
+        pane.agent = Some(Occupant {
+            name: name.to_owned(),
+            kind: "kind-a".to_owned(),
+            status: "working".to_owned(),
+            session: session.map(|value| SessionRef {
+                kind: SessionKind::Id,
+                value: value.to_owned(),
+            }),
+        });
+    }
+    (topology, terminal)
+}

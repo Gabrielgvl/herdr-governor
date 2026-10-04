@@ -1,11 +1,12 @@
 //! P5.R1 — the stdio relay end to end (p5-plan §4.11, S30; F1, N4, N7):
-//! a child `herdr-governor relay` runs `relay::run` in a real process so
+//! a child `herdr-relay` runs `relay::run` in a real process so
 //! the F1 identity derivation, the per-request fresh connection,
 //! notification dropping, the daemon-down failure map, the stdin-EOF exit
 //! and the 8 MB RSS bound are exercised over real pipes and a real unix
-//! socket — the `store_probe` precedent for a child-process suite. I1
-//! wired the `relay` subcommand to `relay::run`, so the suite runs the
-//! real binary the harness itself would spawn.
+//! socket — the `store_probe` precedent for a child-process suite. The
+//! suite spawns the standalone `herdr-relay` binary the OQ-R split
+//! registers with the harness (ADR-0004's PR B amendment), not the
+//! `herdr-governor relay` compatibility subcommand.
 
 #[cfg(test)]
 mod tests {
@@ -22,9 +23,9 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::tempdir;
 
-    /// The shipped binary — the `relay` subcommand dispatches to
-    /// `relay::run`, which is what the harness itself spawns per session.
-    const BIN: &str = env!("CARGO_BIN_EXE_herdr-governor");
+    /// The shipped relay binary — the OQ-R split keeps the std-only
+    /// transport under the N4 bound with the daemon's deps GC'd.
+    const BIN: &str = env!("CARGO_BIN_EXE_herdr-relay");
     /// N4: one stateless relay stays at or under 8 MB RSS.
     const RSS_LIMIT_KB: u64 = 8 * 1024;
 
@@ -190,7 +191,6 @@ mod tests {
     fn spawn_relay(socket: &Path, cwd: &Path, pane_id: Option<&str>) -> RelayChild {
         let mut command = Command::new(BIN);
         command
-            .arg("relay")
             .arg("--socket")
             .arg(socket)
             .current_dir(cwd)
@@ -345,7 +345,6 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let mut command = Command::new(BIN);
         command
-            .arg("relay")
             .arg("--socket")
             .arg(tmp.path().join("absent.sock"))
             .current_dir(tmp.path())

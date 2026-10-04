@@ -145,6 +145,50 @@ impl FakeHerdr {
     pub fn requests_since(&self, n: usize) -> Vec<(String, Value)> {
         self.state().requests.get(n..).unwrap_or(&[]).to_vec()
     }
+
+    /// Whether any accepted request was `method` — the dispatch suites'
+    /// "the wire op ran / never ran" check.
+    #[must_use]
+    pub fn saw(&self, method: &str) -> bool {
+        self.requests().iter().any(|(m, _)| m == method)
+    }
+
+    /// The `text` param of the most recent `agent.prompt` to `pane` —
+    /// the wire copy a dispatch test reads back.
+    #[must_use]
+    pub fn prompt_text(&self, pane: &str) -> String {
+        self.requests()
+            .iter()
+            .rev()
+            .find(|(method, params)| {
+                method == "agent.prompt"
+                    && params.get("target").and_then(Value::as_str) == Some(pane)
+            })
+            .and_then(|(_, params)| {
+                params
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .expect("an agent.prompt reached the wire")
+    }
+
+    /// The `text` param of the `n`th `agent.prompt` (0-based) — the
+    /// multi-prompt tests' ordering read.
+    #[must_use]
+    pub fn prompt_text_at(&self, n: usize) -> String {
+        self.requests()
+            .iter()
+            .filter(|(method, _)| method == "agent.prompt")
+            .nth(n)
+            .and_then(|(_, params)| {
+                params
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .expect("the nth agent.prompt reached the wire")
+    }
 }
 
 /// Create a `kind:"path"` session's transcript file — empty and only

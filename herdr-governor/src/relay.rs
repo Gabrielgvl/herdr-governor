@@ -1,6 +1,6 @@
 //! `relay` — the per-session stdio transport (ADR-0004, spec F1/N4/N7,
-//! p5-plan §4.11). A caller's own harness spawns `herdr-governor relay`
-//! as its MCP server, once per session. The relay derives the F1 caller
+//! p5-plan §4.11). A caller's own harness spawns `herdr-relay` as its
+//! MCP server, once per session. The relay derives the F1 caller
 //! envelope once at start, then forwards every JSON-RPC request to the
 //! daemon's unix socket on a fresh connection inside the v1 framing —
 //! stateless, so a harness crash-respawn and a daemon restart are both
@@ -26,7 +26,7 @@ mod identity;
 const PARSE_ERROR: &[u8] =
     b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}\n";
 
-const USAGE: &str = "usage: herdr-governor relay [--socket PATH]";
+const USAGE: &str = "usage: herdr-relay|herdr-governor relay [--socket PATH]";
 
 /// The default governor socket under the state dir (p5-plan §4.15);
 /// `--socket` overrides. `HOME` is the relay's one env read beyond
