@@ -271,7 +271,12 @@ PKG_ROOTS = discover_pkg_roots()
 # that move a test path (or a file carrying test markers) off the compiled
 # surface — a rename is a deletion of the old path in disguise. The compiled
 # surface is each member's tests/** plus src/**; a 'tests/' dir anywhere else
-# (docs/tests/, vendor/tests/) compiles nothing.
+# (docs/tests/, vendor/tests/) compiles nothing. One deletion is exempt: a
+# .rs under a member's tests/support/ whose old blob carried no test marker —
+# a helper module retiring with its tests is not a deleted test, and R1 still
+# judges the conditional path. Hunk side, a removed #[test]/#[tokio::test]
+# line is forgiven when every function name marked in the file's old blob
+# still carries a marker on the new side (unmarked_tests below).
 def test_path(p):
     for r in PKG_ROOTS:
         pre = "" if r == "." else r + "/"
@@ -294,11 +299,28 @@ def compiled_rs(p):
     return False
 
 
+def support_rs(p):
+    """A .rs file under a member's tests/support/ — the one test-surface
+    directory whose marker-free helpers may retire without an R3 fail."""
+    if not p.endswith(".rs"):
+        return False
+    for r in PKG_ROOTS:
+        pre = "" if r == "." else r + "/"
+        if p.startswith(pre + "tests/support/"):
+            return True
+    return False
+
+
 test_mark = re.compile(
     r"#!?\[(?:tokio::)?test\b|#!?\[\s*cfg\s*\(\s*test\s*\)\s*\]|\bfn\s+(?:test_|should_)")
 
 for st, p in changes:
     if st in ("D", "T") and test_path(p):
+        if st == "D" and support_rs(p):
+            old_blob = git_or_none("show", "%s:%s" % (old_ref, p))
+            if old_blob is not None and not test_mark.search(old_blob):
+                report("R3", "marker-free tests/support module deleted: %s" % p)
+                continue
         fail("R3", "test file %s: %s" % ("deleted" if st == "D" else "typechanged", p))
 
 for st, src, dst in renames:
@@ -466,6 +488,33 @@ def lint_scan(path, new_text, old_text=None):
 
 old_of = {dst: src for _st, src, dst in renames}  # R/C: new path -> old path
 
+
+def marked_fns(text):
+    """Names of functions carrying a #[test]/#[tokio::test] marker, on the
+    comment-stripped literal-blanked view: the marker attaches to the next
+    fn item, so a marker plus the fn line that follows it names a test."""
+    names = set()
+    pending = False
+    for ln in S.strip(text, blank_literals=True).splitlines():
+        if re.search(r"#!?\[(?:tokio::)?test\b", ln):
+            pending = True
+        m = re.search(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)", ln)
+        if pending and m:
+            names.add(m.group(1))
+            pending = False
+    return names
+
+
+def unmarked_tests(path):
+    """Names marked with #[test]/#[tokio::test] in the file's old-side blob
+    that carry neither marker on the new side — an empty set means every
+    marked test kept a marker and a removed marker line is a conversion."""
+    old_names = marked_fns(old_side_text(path) or "")
+    new_text = new_side_text(path)
+    new_names = marked_fns(new_text) if new_text is not None else set()
+    return old_names - new_names
+
+
 cur, cur_cls, old_ln, new_ln = None, None, 0, 0
 for line in diff_text.split("\n"):
     if line.startswith("diff --git "):
@@ -505,12 +554,18 @@ for line in diff_text.split("\n"):
             cargo_classify(cur, sec, introduced=sec not in cm["old_secs"])
         new_ln += 1
     elif sign == "-":
-        if is_rs and (
-            re.search(r"#!?\[(tokio::)?test\b", text)
-            or re.search(r"#!?\[\s*cfg\s*\(\s*test\s*\)\s*\]", text)
-            or re.search(r"\bfn\s+(test_|should_)", text)
-        ):
-            fail("R3", "%s: test code removed: %s" % (cur, text.strip()[:100]))
+        if is_rs:
+            # removed #[cfg(test)] and fn test_*/should_* lines are still
+            # deletions; a removed test-attribute line is forgiven only when
+            # every name marked in the old blob keeps a marker in the new blob
+            if (re.search(r"#!?\[\s*cfg\s*\(\s*test\s*\)\s*\]", text)
+                    or re.search(r"\bfn\s+(test_|should_)", text)):
+                fail("R3", "%s: test code removed: %s" % (cur, text.strip()[:100]))
+            elif re.search(r"#!?\[(tokio::)?test\b", text):
+                lost = sorted(unmarked_tests(cur))
+                if lost:
+                    fail("R3", "%s: test marker removed: %s (%s now unmarked)"
+                         % (cur, text.strip()[:100], ", ".join(lost)))
         if is_cargo:
             cargo_classify(cur, cargo_maps_for(cur)["old"].get(old_ln))
         old_ln += 1

@@ -177,7 +177,15 @@ Verdicts are FAIL or REPORT:
   surface, and renames that move a test path or a `.rs` file carrying test
   markers off it. The surface is member-aware: `<member>/tests/**` plus
   `<member>/src/**` test paths for every top-level member (the virtual root
-  compiles nothing). FAIL — invisible to path rules.
+  compiles nothing). FAIL — invisible to path rules. Two narrow exemptions:
+  a deleted `<member>/tests/support/*.rs` whose old blob carried no test
+  marker is a retiring helper, not a deleted test — R1 still judges the
+  conditional path, and the deletion is reported; and a removed
+  `#[test]`/`#[tokio::test]` line is forgiven when every function name that
+  carried one of those markers in the file's old blob still carries one in
+  the new blob — a same-name `#[test]` → `#[tokio::test]` conversion is a
+  refactor, while a renamed, unmarked or moved-to-another-file test still
+  fails, as do removed `#[cfg(test)]` and `fn test_*`/`fn should_*` lines.
 - **R4 / R4b** — `Cargo.toml` hunks in protected sections (`[features]`
   included — membership and feature changes are owner-only): FAIL; in
   dependency sections: REPORT — dep changes are always listed for review
