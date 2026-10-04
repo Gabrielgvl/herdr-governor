@@ -6,6 +6,8 @@
 
 mod claude_jsonl;
 mod devin_atif;
+mod devin_composer;
+mod devin_log;
 mod error;
 mod pi_jsonl;
 mod pointer;

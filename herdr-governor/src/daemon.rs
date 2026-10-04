@@ -33,6 +33,8 @@ mod log;
 mod paths;
 mod questions;
 mod reconcile;
+mod recovery;
+mod retire;
 mod run_tool;
 mod runner;
 mod seam;
