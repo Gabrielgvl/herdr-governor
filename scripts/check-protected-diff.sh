@@ -272,11 +272,13 @@ PKG_ROOTS = discover_pkg_roots()
 # surface — a rename is a deletion of the old path in disguise. The compiled
 # surface is each member's tests/** plus src/**; a 'tests/' dir anywhere else
 # (docs/tests/, vendor/tests/) compiles nothing. One deletion is exempt: a
-# .rs under a member's tests/support/ whose old blob carried no test marker —
-# a helper module retiring with its tests is not a deleted test, and R1 still
-# judges the conditional path. Hunk side, a removed #[test]/#[tokio::test]
-# line is forgiven when every function name marked in the file's old blob
-# still carries a marker on the new side (unmarked_tests below).
+# .rs under a member's tests/support/ whose old blob carried no test marker
+# on the code-only view (a marker quoted inside a comment or string is not
+# a marker) — a helper module retiring with its tests is not a deleted
+# test: its removed lines skip the hunk-side raw scan, and R1 still judges
+# the conditional path. Hunk side, a removed #[test]/#[tokio::test] line is
+# forgiven when every old-blob marker attaches to a nameable fn and each
+# marked name keeps its count on the new side (unmarked_tests below).
 def test_path(p):
     for r in PKG_ROOTS:
         pre = "" if r == "." else r + "/"
@@ -314,12 +316,19 @@ def support_rs(p):
 test_mark = re.compile(
     r"#!?\[(?:tokio::)?test\b|#!?\[\s*cfg\s*\(\s*test\s*\)\s*\]|\bfn\s+(?:test_|should_)")
 
+# Support .rs deletions the file side already judged marker-free on the
+# code-only view: the hunk-side raw-line checks would re-match marker text
+# inside their comments and strings, so they are skipped per path.
+exempt_deletions = set()
+
 for st, p in changes:
     if st in ("D", "T") and test_path(p):
         if st == "D" and support_rs(p):
             old_blob = git_or_none("show", "%s:%s" % (old_ref, p))
-            if old_blob is not None and not test_mark.search(old_blob):
+            if old_blob is not None and not test_mark.search(
+                    S.strip(old_blob, blank_literals=True)):
                 report("R3", "marker-free tests/support module deleted: %s" % p)
+                exempt_deletions.add(p)
                 continue
         fail("R3", "test file %s: %s" % ("deleted" if st == "D" else "typechanged", p))
 
@@ -490,29 +499,57 @@ old_of = {dst: src for _st, src, dst in renames}  # R/C: new path -> old path
 
 
 def marked_fns(text):
-    """Names of functions carrying a #[test]/#[tokio::test] marker, on the
-    comment-stripped literal-blanked view: the marker attaches to the next
-    fn item, so a marker plus the fn line that follows it names a test."""
-    names = set()
-    pending = False
+    """(names, stray): the multiset of fn names a #[test]/#[tokio::test]
+    marker attaches to — a multiset, so two same-named tests in one file
+    count twice — and the count of markers no named fn claims. A marker is
+    attributable to the next `fn <ident>` line: a `fn $name()` inside a
+    macro_rules! arm is not a name, so markers attached to it count stray —
+    a marker the gate cannot name is no proof of conversion. Runs on the
+    comment-stripped literal-blanked view."""
+    names = Counter()
+    stray = 0
+    pending = 0
     for ln in S.strip(text, blank_literals=True).splitlines():
         if re.search(r"#!?\[(?:tokio::)?test\b", ln):
-            pending = True
+            pending += 1
         m = re.search(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)", ln)
         if pending and m:
-            names.add(m.group(1))
-            pending = False
-    return names
+            names[m.group(1)] += pending
+            pending = 0
+        elif pending and re.search(r"\bfn\b", ln):
+            stray += pending
+            pending = 0
+    return names, stray + pending
+
+
+marker_scans = {}  # path -> (lost names, unverifiable reason)
 
 
 def unmarked_tests(path):
-    """Names marked with #[test]/#[tokio::test] in the file's old-side blob
-    that carry neither marker on the new side — an empty set means every
-    marked test kept a marker and a removed marker line is a conversion."""
-    old_names = marked_fns(old_side_text(path) or "")
-    new_text = new_side_text(path)
-    new_names = marked_fns(new_text) if new_text is not None else set()
-    return old_names - new_names
+    """(lost, why) for the removed-marker exemption: `lost` is the sorted
+    list of fn names whose #[test]/#[tokio::test] mark count drops from the
+    file's old blob to its new side — a multiset difference, so deleting
+    one of two same-named tests still loses a name. `why` is the reason the
+    exemption cannot be proven — the old blob is unreadable, or an old-side
+    marker attaches to no nameable fn (a `fn $name()` inside a macro arm is
+    not a name) — and the removed marker fails either way."""
+    if path in marker_scans:
+        return marker_scans[path]
+    old_text = old_side_text(path)
+    if old_text is None:
+        verdict = ([], "old-side blob unreadable")
+    else:
+        old_names, stray = marked_fns(old_text)
+        if stray:
+            verdict = ([], "%d marker(s) attach to no named fn" % stray)
+        else:
+            new_text = new_side_text(path)
+            new_names = (
+                marked_fns(new_text)[0]
+                if new_text is not None else Counter())
+            verdict = (sorted(old_names - new_names), None)
+    marker_scans[path] = verdict
+    return verdict
 
 
 cur, cur_cls, old_ln, new_ln = None, None, 0, 0
@@ -554,16 +591,20 @@ for line in diff_text.split("\n"):
             cargo_classify(cur, sec, introduced=sec not in cm["old_secs"])
         new_ln += 1
     elif sign == "-":
-        if is_rs:
+        if is_rs and cur not in exempt_deletions:
             # removed #[cfg(test)] and fn test_*/should_* lines are still
             # deletions; a removed test-attribute line is forgiven only when
-            # every name marked in the old blob keeps a marker in the new blob
+            # every old-blob marker attaches to a named fn and each marked
+            # name keeps its marker count on the new side
             if (re.search(r"#!?\[\s*cfg\s*\(\s*test\s*\)\s*\]", text)
                     or re.search(r"\bfn\s+(test_|should_)", text)):
                 fail("R3", "%s: test code removed: %s" % (cur, text.strip()[:100]))
             elif re.search(r"#!?\[(tokio::)?test\b", text):
-                lost = sorted(unmarked_tests(cur))
-                if lost:
+                lost, why = unmarked_tests(cur)
+                if why is not None:
+                    fail("R3", "%s: test marker removed: %s (unverifiable: %s)"
+                         % (cur, text.strip()[:100], why))
+                elif lost:
                     fail("R3", "%s: test marker removed: %s (%s now unmarked)"
                          % (cur, text.strip()[:100], ", ".join(lost)))
         if is_cargo:
