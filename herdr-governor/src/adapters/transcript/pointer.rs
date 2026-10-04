@@ -27,7 +27,7 @@ pub(super) enum Format {
 /// Which harness family a pointer names — parsed from the catalog id in
 /// `SessionPointer::new`, the only place the names exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(super) enum Kind {
     /// `pi` — the locator is the session file's path.
     Pi,
     /// `devin` — the locator is the session id under a data root.
@@ -72,6 +72,13 @@ impl SessionPointer {
             native_session: native_session.to_owned(),
             cwd: cwd.map(str::to_owned),
         }
+    }
+
+    /// The limit-record probe's inputs (F31): the harness family, the
+    /// native session locator, and the session cwd — `resolve` keeps the
+    /// full pointer.
+    pub(super) fn limit_probe(&self) -> (Kind, &str, Option<&str>) {
+        (self.kind, self.native_session.as_str(), self.cwd.as_deref())
     }
 }
 

@@ -11,18 +11,22 @@ use std::time::Duration;
 use governor_core::config::{OperatingPointId, Policy, Provider, Tier};
 use governor_core::delivery::MailboxEventKind;
 use governor_core::identity::{
-    AgentKind, CallerBinding, CallerKey, NativeSession, PaneId, RelayInstanceId, RunId,
+    AgentKind, AgentName, CallerBinding, CallerKey, ChildIdentity, HerdrIncarnation, NativeSession,
+    PaneId, RelayInstanceId, RunId, TerminalId,
 };
 use governor_core::lifecycle::{
     CreatedTopology, EffectCertainty, Settlement, State, StateChange, UnresolvedReason, settle,
 };
-use governor_core::recovery::RecoveryStatus;
+use governor_core::recovery::{RecoveryObligation, RecoveryOrigin, RecoveryStatus};
 use governor_core::task::{Launch, LaunchOutcome, LaunchPhase};
 use herdr_governor::store::Store;
 use serde_json::{Value, json};
 
+use crate::support::daemon::{await_for, socket_incarnation};
+use crate::support::fake_herdr::topology::{Occupant, SessionRef};
 use crate::support::fake_jev::{Answer, Fault};
 use crate::support::mcp_client::{McpClient, caller_envelope};
+use herdr_governor::adapters::herdr::SessionKind;
 
 use super::*;
 
@@ -80,8 +84,22 @@ fn seed_predecessor(
     launch: &str,
     settlement: Option<Settlement>,
 ) {
+    seed_predecessor_with_identity(store, owner, run, launch, settlement, None);
+}
+
+/// `seed_predecessor` plus a captured `identity` — the child is still on
+/// the wire at seed time.
+fn seed_predecessor_with_identity(
+    store: &mut Store,
+    owner: &CallerKey,
+    run: &str,
+    launch: &str,
+    settlement: Option<Settlement>,
+    identity: Option<ChildIdentity>,
+) {
     let mut row = run_row(run, launch, State::Starting);
     row.owner = owner.clone();
+    row.identity = identity;
     row.tier_start = Some(Tier("standard".into()));
     row.provider = Some(Provider("vendor-a".into()));
     let mut done = done_launch(launch, run);
@@ -357,27 +375,88 @@ async fn f13_recovery_minimum_and_exclusion() {
 /// scope, is the recovery's identity.
 #[tokio::test]
 async fn f21_second_recovery_in_another_scope_is_recovery_exists() {
-    let mut world = World::build(caller_topology(), |catalog| {
+    let mut topology = caller_topology();
+    // The predecessor's child still occupies `w1:p2` at boot: every §4.10
+    // sweep before the exit below classifies it `unique` — never
+    // dispatch-ready — so the claimable obligation is never auto-admitted.
+    let (_tab, child_pane) = topology.create_tab("w1");
+    let child = topology.panes.last_mut().expect("the child pane");
+    child.agent = Some(Occupant {
+        name: "gov-run-pred".to_owned(),
+        kind: "kind-a".to_owned(),
+        status: "working".to_owned(),
+        session: Some(SessionRef {
+            kind: SessionKind::Id,
+            value: "pred-session".to_owned(),
+        }),
+    });
+    let child_terminal = child.terminal_id.clone();
+    let mut world = World::build(topology, |catalog| {
         catalog.tiers = vec!["standard".to_owned(), "high".to_owned()];
         catalog.points_toml = point_at("op-hi-b", "high", 0, "vendor-b", "--hi-b");
         catalog.daemon_extra = "launch_wait_secs = 1\n".to_owned();
+        // Inert past the boot tick: post-exit, the same `absent`
+        // classification that lets the claim proceed is the sweep's
+        // dispatch gate, so no later tick may run.
+        catalog.reconcile_secs = 3600;
     });
     // The successor's evaluation never answers — the Launch holds
     // `evaluating` and the claimed obligation `pending` for the window.
     world.jev().push_fault(Fault::Silent);
-    world.start().await;
     {
         let mut store = world.store();
         bind_caller(&mut store);
-        seed_predecessor(
+        seed_predecessor_with_identity(
             &mut store,
             &caller_key(),
             "run-pred",
             "l-pred",
             Some(Settlement::ProviderLimited),
+            Some(ChildIdentity {
+                herdr_incarnation: HerdrIncarnation(socket_incarnation(world.fake().socket_path())),
+                terminal_id: TerminalId(child_terminal),
+                agent_kind: AgentKind("kind-a".into()),
+                agent_name: AgentName("gov-run-pred".into()),
+                native_session: Some(NativeSession("pred-session".into())),
+                pane_id: PaneId(child_pane.clone()),
+            }),
         );
+        // `settle` wrote `expires_at` against the seed clock (NOW + 24h,
+        // already past under the daemon's real clock): re-record the
+        // claimable row through the pending-only upsert with a year-long
+        // window, so no sweep order can expire it.
+        store
+            .apply(
+                &changes(vec![StateChange::RecordRecovery(
+                    RecoveryObligation::pending(
+                        RunId("run-pred".into()),
+                        RecoveryOrigin::ProviderLimit,
+                        NOW,
+                        Duration::from_hours(24 * 365),
+                    ),
+                )]),
+                NOW,
+            )
+            .expect("re-record the claimable obligation");
         qualify_start(&mut store, "op-hi-b", &["--hi-b"]);
     }
+    world.start().await;
+    // The exit must postdate every sweep that can see the `pending`
+    // obligation: the startup pass ran pre-bind and the boot tick is the
+    // only other one. A `session.snapshot` is served under the fake's
+    // state lock, so a second logged request means the boot snapshot's
+    // contents are frozen — its sweep already read the child `unique`.
+    await_for("the startup and boot-tick snapshots", || {
+        world
+            .fake()
+            .requests()
+            .iter()
+            .filter(|(method, _)| method == "session.snapshot")
+            .count()
+            >= 2
+    })
+    .await;
+    world.fake().agent_exit(&child_pane);
 
     let first = world.spawn_launch(&recovery_args("run-pred", "k1"));
     wait_store(&world.state(), "the successor launch", |store| {

@@ -1,14 +1,17 @@
 //! Test fixtures for the recovery module — constructed inputs, no I/O.
 
+use alloc::format;
 use alloc::vec::Vec;
 use core::time::Duration;
 
 use crate::config::{Policy, Tier};
 use crate::identity::{
-    AgentKind, CallerKey, ChildStatus, LaunchId, NativeSession, Observation, PaneId, RunId,
-    Timestamp,
+    AgentKind, AgentName, CallerKey, ChildIdentity, ChildStatus, Digest, EffectId, EffectKey,
+    HerdrIncarnation, LaunchId, NativeSession, Observation, PaneId, RunId, TerminalId, Timestamp,
 };
-use crate::lifecycle::{Run, Settlement, State};
+use crate::lifecycle::{
+    Effect, EffectKind, EffectReceipt, EffectState, EffectTarget, Run, Settlement, State,
+};
 use crate::recovery::{RecoveryObligation, RecoveryOrigin, RecoveryStatus};
 use crate::task::{Refusal, Task};
 
@@ -113,5 +116,49 @@ pub(super) fn admitted(result: Result<RecoveryObligation, Refusal>) -> RecoveryO
     match result {
         Ok(obligation) => obligation,
         Err(refusal) => panic!("expected the recovery to be admitted, not {refusal:?}"),
+    }
+}
+
+/// A captured child identity (`agent.start` receipt / `runs.child_identity`).
+pub(super) fn child(marker: &str) -> ChildIdentity {
+    ChildIdentity {
+        herdr_incarnation: HerdrIncarnation("inc".into()),
+        terminal_id: TerminalId(format!("term-{marker}")),
+        agent_kind: AgentKind("kind-a".into()),
+        agent_name: AgentName(format!("gov-{marker}")),
+        native_session: Some(NativeSession(format!("sess-{marker}"))),
+        pane_id: PaneId(format!("w6:{marker}")),
+    }
+}
+
+/// A journaled `agent.start` row: `applied`, receipt present — the shape
+/// the §17 orphan scan reads.
+pub(super) fn started(run: &RunId, key: &str, identity: &ChildIdentity) -> Effect {
+    Effect {
+        id: EffectId(format!("eff-{key}")),
+        key: EffectKey(format!("run:{}:{key}", run.0)),
+        kind: EffectKind::AgentStart,
+        subject_launch: Some(LaunchId("launch-1".into())),
+        subject_run: Some(run.clone()),
+        target: None,
+        payload_digest: Some(Digest([7; 32])),
+        state: EffectState::Acknowledged,
+        certainty: None,
+        receipt: Some(EffectReceipt::AgentStarted {
+            identity: identity.clone(),
+        }),
+        dispatched_at: Some(Timestamp(1_000)),
+    }
+}
+
+/// A journaled `close` row aimed at `identity` — proof the orphan close
+/// already ran.
+pub(super) fn closed(run: &RunId, key: &str, identity: &ChildIdentity) -> Effect {
+    Effect {
+        key: EffectKey(format!("run:{}:{key}", run.0)),
+        kind: EffectKind::Close,
+        target: Some(EffectTarget::Child(identity.clone())),
+        receipt: None,
+        ..started(run, key, identity)
     }
 }

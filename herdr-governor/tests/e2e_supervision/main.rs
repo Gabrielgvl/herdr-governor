@@ -11,6 +11,8 @@ mod delivery;
 #[cfg(test)]
 mod evidence;
 #[cfg(test)]
+mod limit;
+#[cfg(test)]
 mod reconcile;
 #[cfg(test)]
 #[path = "../support/mod.rs"]

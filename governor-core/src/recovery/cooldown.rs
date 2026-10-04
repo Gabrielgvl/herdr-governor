@@ -39,10 +39,7 @@ impl Cooldown {
         let policy_until = now.after(duration);
         Self {
             provider,
-            until: match reset_at {
-                Some(reset) if reset > policy_until => reset,
-                Some(_) | None => policy_until,
-            },
+            until: reset_at.map_or(policy_until, |reset| reset.max(policy_until)),
             reason: Settlement::ProviderLimited.as_str().into(),
             source_run: Some(source_run),
         }

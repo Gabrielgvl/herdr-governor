@@ -12,7 +12,7 @@ use governor_core::identity::{ChildStatus, PaneId, RunId};
 
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::daemon::reconcile::{self, SnapshotView};
-use crate::daemon::{DaemonError, delivery, log};
+use crate::daemon::{DaemonError, delivery, log, recovery};
 
 use super::Coordinator;
 
@@ -51,6 +51,13 @@ impl Coordinator {
             &self.paths,
             now,
         ) {
+            log::apply_dropped(1, kind_of(&error));
+        }
+        // §4.10 — the recovery sweep on the same fresh snapshot: expire
+        // elapsed obligations (skipping any with an in-flight
+        // successor), admit the deterministic successor for a
+        // `dispatch_ready` one — still `pending` until routing moves it.
+        if let Err(error) = recovery::pass(&mut self.store, now, snapshot.as_ref().ok()) {
             log::apply_dropped(1, kind_of(&error));
         }
         self.drain_done_waiters();
@@ -103,7 +110,10 @@ impl Coordinator {
         // re-resolves the caller's pane against this read.
         self.converge_launches(snapshot.as_ref().ok());
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-        reconcile::pass(store, (policy, &self.paths), now, snapshot)
+        reconcile::pass(store, (policy, &self.paths), now, snapshot)?;
+        // §4.10 at startup too — an obligation that outlived a restart
+        // expires or admits against the one startup snapshot.
+        recovery::pass(&mut self.store, now, snapshot.as_ref().ok())
     }
 
     /// The feed setter — `daemon::run` hands the maintainer's `watch`

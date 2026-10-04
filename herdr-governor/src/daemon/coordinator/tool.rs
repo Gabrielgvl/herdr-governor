@@ -50,13 +50,23 @@ impl Coordinator {
                 let project_root = request.caller.project_root.clone();
                 self.launch_admit(&caller, &key, task, &project_root, prepared)
             }
-            ToolCall::Run(action) => Admission::Answer(run_tool::call(
+            ToolCall::Run(action) => run_tool::call(
                 &mut self.store,
                 &self.paths,
                 &caller,
                 action,
+                // The request-time snapshot `resolve_and_bind` just
+                // stored — handover's successor resolution and
+                // adoption's owner-liveness proof run F1 against it
+                // (never a cached view).
+                &self
+                    .latest_snapshot
+                    .as_ref()
+                    .map(|observed| identity::agent_rows(&observed.value))
+                    .unwrap_or_default(),
                 now,
-            )),
+                &self.loaded.config.policy,
+            ),
         }
     }
 

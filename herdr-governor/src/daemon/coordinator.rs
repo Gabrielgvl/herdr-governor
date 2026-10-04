@@ -159,6 +159,13 @@ pub(crate) enum Msg {
         /// The Launch whose wait expired.
         launch: LaunchId,
     },
+    /// F20 — a `closePane` waiter's bound elapsed: the parked `cancel`
+    /// reply resolves with the close row's state as it stands — `false`
+    /// confirmed while the close is still in flight, never a hang.
+    CloseWait {
+        /// The close effect key whose wait expired.
+        key: EffectKey,
+    },
     /// §4.5/F6 — a restart-lost admission `base_commit` pin, re-probed by
     /// a spawned task (the coordinator performs no I/O): the verdict
     /// resumes `on_evaluated` or abstains the Launch.
@@ -223,7 +230,7 @@ pub(super) struct CoordinatorArgs {
 /// shutdown.
 #[expect(
     clippy::partial_pub_fields,
-    reason = "the `launch` sibling module reaches `store`/`loaded`/`daemon`/`clock`/`runner`/`latest_snapshot`/`launch_waiters`/`launch_bases`; the seam/health/subs internals stay private"
+    reason = "the `launch`/`run_tool` sibling modules reach `store`/`loaded`/`daemon`/`clock`/`runner`/`latest_snapshot`/`launch_waiters`/`close_waiters`/`launch_bases`; the seam/health/subs internals stay private"
 )]
 pub(super) struct Coordinator {
     pub store: Store,
@@ -271,6 +278,10 @@ pub(super) struct Coordinator {
     /// §4.5 — parked `tools/call` replies per in-flight Launch; drained
     /// with the terminal outcome on `done`, or `pending` on `LaunchWait`.
     pub launch_waiters: BTreeMap<LaunchId, Vec<oneshot::Sender<ToolResponse>>>,
+    /// F20 — parked `cancel` replies per in-flight close effect key;
+    /// drained with the close's first committed result/refusal, or the
+    /// row's current state on `CloseWait`.
+    pub close_waiters: BTreeMap<EffectKey, Vec<oneshot::Sender<ToolResponse>>>,
     /// §4.5 — the admission-time `base_commit` per Launch (F6): held in
     /// memory because nothing durable names it until `decided` reserves
     /// the Run (a restart loses it → `BasePin::Probing` re-takes it);
@@ -315,6 +326,7 @@ impl Coordinator {
             in_flight: BTreeMap::new(),
             latest_snapshot: None,
             launch_waiters: BTreeMap::new(),
+            close_waiters: BTreeMap::new(),
             launch_bases: BTreeMap::new(),
             last_hint_at: BTreeMap::new(),
             followup_absent_since: BTreeMap::new(),
@@ -359,6 +371,9 @@ impl Coordinator {
                 crate::daemon::launch::Admission::Park(launch) => {
                     self.park_launch_waiter(&launch, reply);
                 }
+                crate::daemon::launch::Admission::ParkClose(key) => {
+                    self.park_close_waiter(&key, reply);
+                }
             },
             Msg::VerifyCaller {
                 caller,
@@ -386,6 +401,7 @@ impl Coordinator {
                 return false;
             }
             Msg::LaunchWait { launch } => self.launch_wait_expired(&launch),
+            Msg::CloseWait { key } => self.close_wait_expired(&key),
             Msg::LaunchBase { launch, base } => self.on_launch_base(&launch, base),
             Msg::Evidence(gathered) => self.on_evidence(*gathered),
             Msg::Signal(Signal::Reload) => self.reload().await,

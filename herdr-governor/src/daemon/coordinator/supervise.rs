@@ -6,10 +6,10 @@
 //! review, and stamps the bundle the asks render from. The acceptance
 //! retry rides the same tick.
 
-use governor_core::identity::RunId;
-use governor_core::lifecycle::Run;
+use governor_core::identity::{RunId, Timestamp};
+use governor_core::lifecycle::{LimitRecordKey, Run};
 
-use crate::adapters::transcript::{SessionPointer, TranscriptRoots};
+use crate::adapters::transcript::{SessionPointer, TranscriptRoots, devin_log_default_dir};
 use crate::daemon::evidence::{self, GatherRequest, Gathered};
 use crate::daemon::reconcile::SnapshotView;
 use crate::daemon::{log, supervision};
@@ -52,6 +52,8 @@ impl Coordinator {
                     cwd: run.cwd.clone(),
                     with_git: run.base_commit.is_some(),
                     herdr: (env.herdr.clone(), env.herdr_op),
+                    cycle_start: self.cycle_start(&run.id),
+                    log_dir: self.log_dir(),
                     owner_absent: view.is_some_and(|v| owner_absent(run, v)),
                 };
                 let tx = env.tx.clone();
@@ -87,11 +89,47 @@ impl Coordinator {
         ) {
             log::apply_dropped(1, super::tick::kind_of(&error));
         }
+        // F31 — the pass's typed provider-limit record plans its own
+        // once-per-lifetime ask (`limit:<record_id>`); a `blocked:<ep>`
+        // ask already in flight carries it and `limit_observed`
+        // suppresses this one — one ask per pass, never a double.
+        if let Some(record) = self
+            .evidence
+            .get(&run_id)
+            .and_then(|tail| tail.latest_limit())
+        {
+            let key = LimitRecordKey(record.record_id());
+            if let Err(error) = supervision::plan_limit(&mut self.store, now, &run_id, &key) {
+                log::apply_dropped(1, super::tick::kind_of(&error));
+            }
+        }
         if let (Some(tail), Ok(Some(run))) =
             (self.evidence.get_mut(&run_id), self.store.run(&run_id))
         {
             tail.stamp(&run);
         }
+    }
+
+    /// F31/F34 — the limit probe's anchor: the task prompt's
+    /// `dispatched_at`, the first-cycle boundary (`run:<id>:prompt:task`
+    /// — nudges and follow-ups never move it). `None` — the probe fails
+    /// closed — when the row or its dispatch stamp is absent.
+    fn cycle_start(&self, run: &RunId) -> Option<Timestamp> {
+        let task = format!("run:{}:prompt:task", run.0);
+        self.store
+            .journal(run)
+            .ok()?
+            .iter()
+            .find(|effect| effect.key.0 == task)
+            .and_then(|effect| effect.dispatched_at)
+    }
+
+    /// The `[daemon] devin_log_dir` override, else the harness data dir.
+    fn log_dir(&self) -> Option<std::path::PathBuf> {
+        self.daemon
+            .devin_log_dir
+            .clone()
+            .or_else(devin_log_default_dir)
     }
 
     /// The transcript roots: `[daemon]`'s overrides, else the harnesses'

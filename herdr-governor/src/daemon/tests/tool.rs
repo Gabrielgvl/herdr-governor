@@ -208,7 +208,7 @@ fn tool_reply(
         },
     ) {
         Admission::Answer(response) => response,
-        Admission::Park(_launch) => panic!("a status call never parks"),
+        Admission::Park(_) | Admission::ParkClose(_) => panic!("a status call never parks"),
     }
 }
 
@@ -437,21 +437,24 @@ fn tool_refusals_are_typed() {
         "an internal fault is never an identity verdict"
     );
 
-    // Every `ToolCall` variant is served — the unserved probe moved to
-    // the action level: `herdr_run` answers, an action C4 owns refuses.
+    // Every `ToolCall` variant and every `herdr_run` action is served —
+    // the probe now exercises the served lane's own refusal: an adopt
+    // naming a Run that does not exist is `NOT_OWNER`, never an
+    // existence oracle (F4).
     let unserved = tool_reply(
         &mut coordinator,
         ToolRequest {
             caller: envelope("w1:p1", &root),
-            call: ToolCall::Run(RunAction::Adopt { runs: Vec::new() }),
+            call: ToolCall::Run(RunAction::Adopt {
+                runs: Vec::from([governor_core::identity::RunId("run-gone".into())]),
+            }),
         },
         Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
         Some(&root),
     )
-    .expect_err("an action C4 owns refuses as unserved");
+    .expect_err("an adopt of an unknown Run refuses");
     assert_eq!(
-        unserved.code,
-        ToolError::REQUEST_INVALID,
-        "herdr_run is served; its C4 actions are not yet"
+        unserved.code, "NOT_OWNER",
+        "herdr_run is served; its refusal vocabulary answers"
     );
 }

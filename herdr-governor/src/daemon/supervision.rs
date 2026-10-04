@@ -13,15 +13,16 @@ use std::collections::BTreeMap;
 use governor_core::config::Policy;
 use governor_core::identity::{Digest, EffectKey, JudgmentSetId, RunId, Timestamp};
 use governor_core::lifecycle::{
-    Effect, EffectKind, Event, Run, State, Transition, VersionTriple, acceptance_retry,
-    periodic_review, transition,
+    Effect, EffectKind, Event, LimitRecordKey, Run, State, Transition, VersionTriple,
+    acceptance_retry, limit_observed, periodic_review, transition,
 };
 use governor_core::routing::{JudgmentOutcome, JudgmentPurpose, JudgmentSet, QuestionVersion};
 use sha2::Digest as _;
 
 use crate::adapters::config::{DaemonSettings, LoadedConfig};
 use crate::adapters::jev::{
-    AcceptanceState, BlockedState, QuestionSpec, ReviewState, State as JevState, TaskDigest,
+    AcceptanceState, BlockedState, LimitRecordState, QuestionSpec, ReviewState, State as JevState,
+    TaskDigest,
 };
 use crate::store::Store;
 
@@ -39,9 +40,11 @@ pub(super) fn supervised(state: State) -> bool {
 
 /// A Run-bound ask's generation check: the ask key's `family:gens` must
 /// still match the Run's live numbers — `accept:<wg>:<eg>`, `review:<eg>`,
-/// `blocked:<ep>`, `limit:<wg>` (attempt suffixes are ignored). The
-/// commit gate and the context builder share it: a stale ask never
-/// renders, so it never spins the hand-off.
+/// `blocked:<ep>` (attempt suffixes are ignored). `limit:<record_id>`
+/// carries no generation (F34) — the record names itself, and the Run's
+/// supervised-state gate is the currency check. The commit gate and the
+/// context builder share it: a stale ask never renders, so it never
+/// spins the hand-off.
 pub(super) fn ask_current(run: &Run, key: &EffectKey) -> bool {
     let suffix = suffix_of(key);
     let mut parts = suffix.split(':');
@@ -53,7 +56,7 @@ pub(super) fn ask_current(run: &Run, key: &EffectKey) -> bool {
         }
         Some("review") => number() == Some(run.evidence_generation),
         Some("blocked") => number() == Some(run.blocked_episode),
-        Some("limit") => number() == Some(run.work_generation),
+        Some("limit") => true,
         _ => false,
     }
 }
@@ -86,7 +89,8 @@ pub(super) fn ask_context(
         return None;
     }
     let launch = store.launch(&run.launch).ok().flatten()?;
-    let bundle = env.evidence.get(&run.id)?.bundle_for(&run)?;
+    let tail = env.evidence.get(&run.id)?;
+    let bundle = tail.bundle_for(&run)?;
     let task = TaskDigest::from(&launch.task);
     let policy = &env.loaded.config.policy;
     let (state, questions, purpose, frozen): (_, Vec<QuestionSpec>, _, _) =
@@ -103,13 +107,16 @@ pub(super) fn ask_context(
                 JudgmentPurpose::Review,
                 None,
             ),
-            "blocked" => (
+            // F31 — `blocked:` carries the newest record when known; the
+            // `limit:` family asks the same questions with the keyed
+            // record as evidence (§4.17).
+            "blocked" | "limit" => (
                 JevState::Blocked(BlockedState {
                     task,
                     transcript: bundle.transcript.clone(),
                     terminal: bundle.terminal.clone(),
                     git: bundle.git.clone(),
-                    limit_record: None,
+                    limit_record: record_state(tail, &effect.key),
                 }),
                 questions::blocked_specs(policy.provider_limit_threshold),
                 JudgmentPurpose::ProviderLimit,
@@ -157,6 +164,23 @@ pub(super) fn ask_context(
         questions,
         set: Box::new(set),
         frozen,
+    })
+}
+
+/// The ask's typed provider-limit record rendered for the wire (F31): a
+/// `limit:<record_id>` ask carries the record it was planned for (the
+/// newest observed record stands in when a restart dropped the keyed
+/// one — a record once proven stays askable); a `blocked:` ask carries
+/// the newest record, when any is known.
+fn record_state(tail: &EvidenceTail, key: &EffectKey) -> Option<LimitRecordState> {
+    let record = match suffix_of(key).split(':').next() {
+        Some("limit") => tail.record_for(key).or_else(|| tail.latest_limit()),
+        _ => tail.latest_limit(),
+    }?;
+    Some(LimitRecordState {
+        source: record.source.to_owned(),
+        observed_at: record.observed_at_rfc3339(),
+        reset_at: record.reset_at_rfc3339(),
     })
 }
 
@@ -219,6 +243,21 @@ pub(super) fn apply_evidence(
     })?;
     plan_with(store, now, run_id, |run, journal| {
         periodic_review(run, owner_absent, journal)
+    })
+}
+
+/// F31 — a typed provider-limit record's ask (§4.17): `limit_observed`
+/// owns the family rules — once per record for the Run's lifetime, in
+/// supervised states only, and skipped while the current blocked
+/// episode's in-flight ask already carries the record.
+pub(super) fn plan_limit(
+    store: &mut Store,
+    now: Timestamp,
+    run_id: &RunId,
+    record: &LimitRecordKey,
+) -> Result<(), DaemonError> {
+    plan_with(store, now, run_id, |run, journal| {
+        limit_observed(run, record, journal)
     })
 }
 

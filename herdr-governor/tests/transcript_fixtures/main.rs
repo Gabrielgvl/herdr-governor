@@ -18,6 +18,8 @@ mod a5_pi;
 #[cfg(test)]
 mod bounded_tail;
 #[cfg(test)]
+mod devin_log;
+#[cfg(test)]
 mod user_turns;
 
 use std::path::{Path, PathBuf};

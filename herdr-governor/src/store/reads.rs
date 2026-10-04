@@ -83,6 +83,7 @@ const MAILBOX_UNACKED: &str = "SELECT m.* FROM mailbox m \
 
 /// `owned` — the caller-scoped reads F7 composes (§4.12).
 mod owned;
+mod run;
 
 fn launch_from(row: &Row<'_>) -> Result<Launch, StoreError> {
     let caller = key_from_row(

@@ -16,6 +16,7 @@ mod window;
 #[cfg(test)]
 mod tests;
 
+pub use devin_log::{LimitRecord, default_dir as devin_log_default_dir, limit_record};
 pub use error::TranscriptError;
 pub use pointer::{ResolvedSource, SessionPointer, TranscriptRoots, resolve};
 pub use window::{BoundedTail, Cursor, EventKind, TranscriptEvent, Window, read_window};
