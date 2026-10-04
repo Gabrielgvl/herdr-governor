@@ -947,6 +947,164 @@ class ProtectedDiffLocalTests(unittest.TestCase):
         proc = self.check()
         self.assertEqual(proc.returncode, 0, proc.stdout)
 
+    # R3 narrow exemptions (PR #15 false positives): a marker-free
+    # tests/support .rs helper may retire — marker judged on the code-only
+    # view, R1 still judges the conditional path, and its removed lines
+    # skip the hunk-side raw scan — and a removed #[test]/#[tokio::test]
+    # line is forgiven only when every old-blob marker attaches to a
+    # nameable fn and each marked name keeps its marker count on the new
+    # side.
+    @case("deleted-test", "control", "a marker-free tests/support .rs helper retires without an R3 fail (R1 still judges the conditional path)")
+    def test_marker_free_support_deletion_ok_r3(self):
+        self.repo.write(
+            BIN + "/tests/support/e2e.rs",
+            "pub fn fixture() -> bool {\n    true\n}\n")
+        self.repo.commit_all()
+        self.repo.remove(BIN + "/tests/support/e2e.rs")
+        proc = self.check()
+        self.assertNotIn("FAIL R3", proc.stdout)
+        self.assertIn("FAIL R1", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a tests/support .rs file that carried a test marker is still a deleted test")
+    def test_marked_support_deletion_fails_r3(self):
+        self.repo.write(
+            BIN + "/tests/support/has_test.rs",
+            "#[test]\nfn test_helper() {}\n")
+        self.repo.commit_all()
+        self.repo.remove(BIN + "/tests/support/has_test.rs")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a non-.rs file deleted under a member tests/ dir stays R3")
+    def test_non_rs_tests_file_deletion_fails_r3(self):
+        self.repo.write(BIN + "/tests/data.json", "{}\n")
+        self.repo.commit_all()
+        self.repo.remove(BIN + "/tests/data.json")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a marker-free test binary main.rs is not a support helper — deletion stays R3")
+    def test_binary_main_deletion_fails_r3(self):
+        self.repo.write(BIN + "/tests/e2e/main.rs", "mod startup;\n")
+        self.repo.commit_all()
+        self.repo.remove(BIN + "/tests/e2e/main.rs")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "control", "#[test] -> #[tokio::test] with the same names in one file is a conversion, not a deletion")
+    def test_marker_conversion_same_names_ok_r3(self):
+        # PR #15's shape: f2x_*-style names gain `async`; only the marker
+        # line is removed (a test_*/should_* fn-name line would still fail)
+        self.repo.write(
+            BIN_TEST, "#[test]\nfn f27_converted() {\n    assert!(true);\n}\n")
+        self.repo.commit_all()
+        self.repo.write(
+            BIN_TEST,
+            "#[tokio::test]\nasync fn f27_converted() {\n    assert!(true);\n}\n")
+        proc = self.check()
+        self.assertNotIn("FAIL R3", proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    @case("deleted-test", "cheat", "a removed marker whose fn was renamed loses the name — the forgiveness is same-name only")
+    def test_marker_removed_fn_renamed_fails_r3(self):
+        self.repo.write(
+            BIN_TEST, "#[test]\nfn f27_kept() {\n    assert!(true);\n}\n")
+        self.repo.commit_all()
+        self.repo.write(
+            BIN_TEST,
+            "#[tokio::test]\nasync fn f28_new_name() {\n    assert!(true);\n}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a removed marker with the fn kept but unmarked is a real deletion")
+    def test_marker_removed_fn_unmarked_fails_r3(self):
+        self.repo.write(
+            BIN_TEST, "#[test]\nfn f27_kept() {\n    assert!(true);\n}\n")
+        self.repo.commit_all()
+        self.repo.write(BIN_TEST, "fn f27_kept() {\n    assert!(true);\n}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a test moved to another file is a deletion here — the forgiveness is per-file")
+    def test_marker_removed_moved_file_fails_r3(self):
+        self.repo.write(
+            BIN_TEST, "#[test]\nfn f27_kept() {\n    assert!(true);\n}\n")
+        self.repo.commit_all()
+        self.repo.write(BIN_TEST, "fn other() {}\n")
+        self.repo.write(
+            BIN + "/tests/moved.rs",
+            "#[test]\nfn f27_kept() {\n    assert!(true);\n}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a removed #[cfg(test)] line is still a deletion — the forgiveness covers test-attribute lines only")
+    def test_cfg_test_line_removed_fails_r3(self):
+        self.repo.write(
+            BIN_TEST,
+            "#[cfg(test)]\nmod unit {\n    #[test]\n    fn inner() {}\n}\n")
+        self.repo.commit_all()
+        self.repo.write(
+            BIN_TEST, "mod unit {\n    #[test]\n    fn inner() {}\n}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "a macro_rules! generating #[test] fns is undeletable — its markers attach to no named fn (pi-review F1)")
+    def test_macro_generated_marker_removed_fails_r3(self):
+        # boundaries.rs shape: `#[test] fn $name()` inside the macro arm
+        # names nothing — deleting the macro while a named test survives
+        # must not pass as a "conversion"
+        self.repo.write(
+            BIN_TEST,
+            "macro_rules! gen {\n"
+            "    ($name:ident) => {\n"
+            "        #[test]\n"
+            "        fn $name() {}\n"
+            "    };\n"
+            "}\n"
+            "gen!(made_a);\n"
+            "gen!(made_b);\n"
+            "#[test]\nfn kept() {}\n")
+        self.repo.commit_all()
+        self.repo.write(BIN_TEST, "#[test]\nfn kept() {}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "cheat", "deleting one of two same-named tests in one file drops its count, not its name (pi-review F2)")
+    def test_same_name_tests_in_modules_fail_r3(self):
+        self.repo.write(
+            BIN_TEST,
+            "mod slow {\n    #[test]\n    fn roundtrip() {}\n}\n"
+            "mod fast {\n    #[test]\n    fn roundtrip() {}\n}\n")
+        self.repo.commit_all()
+        self.repo.write(
+            BIN_TEST, "mod fast {\n    #[test]\n    fn roundtrip() {}\n}\n")
+        proc = self.check()
+        self.assertIn("FAIL R3", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
+    @case("deleted-test", "control", "a tests/support helper whose only marker-shaped text sits in a comment or string is marker-free (pi-review F3)")
+    def test_comment_marker_text_support_deletion_ok_r3(self):
+        self.repo.write(
+            BIN + "/tests/support/doc.rs",
+            "// harness mirrors the #[test] setup and fn test_* names\n"
+            'const DOC: &str = "the #[tokio::test] guide";\n'
+            "pub fn fixture() -> bool {\n    true\n}\n")
+        self.repo.commit_all()
+        self.repo.remove(BIN + "/tests/support/doc.rs")
+        proc = self.check()
+        self.assertNotIn("FAIL R3", proc.stdout)
+        self.assertIn("FAIL R1", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+
     @case("test-moved-off-surface", "cheat", "member test renamed to a non-test path")
     def test_test_file_rename_out_fails(self):
         # a rename out of the test-path set deletes the test file
