@@ -1,18 +1,27 @@
 //! `wire` — Jev's `POST /v1/systemone` body as the fixtures pin it
 //! (`jev-launch-evaluation.json`, `jev-supervision-review.json`,
-//! `jev-raw-response.json`): the request `{state, questions, model}` in
-//! that key order with questions and criteria in asked order, and the
-//! bounded response decode `{model, answers{name → answer}, usage}` into
-//! per-question distributions. Pure — no I/O, no clock, no credential.
+//! `jev-raw-response.json`, and the request-side goldens
+//! `jev-{review,blocked,blocked-limit,acceptance}-request.json`): the
+//! request `{state, questions, model}` in that key order with questions
+//! and criteria in asked order, and the bounded response decode `{model,
+//! answers{name → answer}, usage}` into per-question distributions.
+//! `states` holds the `state` payloads. Pure — no I/O, no clock, no
+//! credential.
 
 use std::collections::BTreeMap;
 
 use governor_core::routing::{Probability, Question};
-use governor_core::task::Task;
 use serde::ser::SerializeMap as _;
 use serde::{Deserialize, Serialize, Serializer};
 
 use super::error::JevError;
+
+mod states;
+
+pub use states::{
+    AcceptanceState, BlockedState, GitState, LimitRecordState, ReviewState, State, TaskDigest,
+    TaskState, TranscriptLine,
+};
 
 /// The governor-side bound on a Jev response body. The largest recorded
 /// answer set is well under 2 KiB; a body past this is not a response we
@@ -23,45 +32,6 @@ pub const JEV_RESPONSE_MAX_BYTES: usize = 256 * 1024;
 /// applies — the same 0.5 the core's `noul_yes` uses (it is `pub(crate)`
 /// there; the core re-checks the verdict in `validate_evaluation`).
 pub const NOUL_VERDICT_BOUND: f64 = 0.5;
-
-/// The semantic state Jev judges. By construction there is no field for an
-/// operating point, provider, tier request or label (F12, H#41): a
-/// `State` cannot carry them, so the request cannot either.
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum State {
-    /// F12 launch evaluation — `{"task": {objective, scope, doneWhen,
-    /// constraints}}`.
-    Task(TaskState),
-}
-
-/// The four semantic Task fields and nothing else.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TaskState {
-    /// `task.objective`.
-    pub objective: String,
-    /// `task.scope`.
-    pub scope: String,
-    /// `task.doneWhen`.
-    #[serde(rename = "doneWhen")]
-    pub done_when: Vec<String>,
-    /// `task.constraints`.
-    pub constraints: Vec<String>,
-}
-
-impl From<&Task> for TaskState {
-    /// Projects the Task: `tier`, `recovery_of`, `label` and `cwd` never
-    /// reach Jev (F12, H#41).
-    fn from(task: &Task) -> Self {
-        Self {
-            objective: task.objective.clone(),
-            scope: task.scope.clone(),
-            done_when: task.done_when.clone(),
-            constraints: task.constraints.clone(),
-        }
-    }
-}
 
 /// The answer shape a question asks for.
 #[derive(Debug, Clone, Copy, PartialEq)]

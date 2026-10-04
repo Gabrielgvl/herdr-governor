@@ -38,7 +38,11 @@ pub fn provider_limited(
     let mut state_changes = Vec::from([StateChange::RecordRecovery(obligation.clone())]);
     let mut events = Vec::new();
     if let Some(provider) = &run.provider {
-        let candidate = Cooldown::limited(provider.clone(), run.id.clone(), now, policy.cooldown);
+        // OQ-X — no stated reset reaches `transition`: the typed limit
+        // record's `reset_at` is the daemon's input (C8), and the
+        // Appendix C signature carries none.
+        let candidate =
+            Cooldown::limited(provider.clone(), run.id.clone(), now, policy.cooldown, None);
         let cooldown = match existing_cooldown {
             Some(existing) => existing.merged(candidate),
             None => candidate,

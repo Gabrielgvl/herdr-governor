@@ -16,4 +16,4 @@ mod tests;
 
 pub use error::TranscriptError;
 pub use pointer::{ResolvedSource, SessionPointer, TranscriptRoots, resolve};
-pub use window::{Cursor, EventKind, TranscriptEvent, Window, read_window};
+pub use window::{BoundedTail, Cursor, EventKind, TranscriptEvent, Window, read_window};

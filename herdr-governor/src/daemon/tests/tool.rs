@@ -393,7 +393,8 @@ async fn tool_status_reports_tick_health() {
 
 /// The refusals surface as typed `ToolError` codes: an envelope that
 /// cannot resolve, a `projectRoot` that fails the realpath check, a
-/// failed request-time snapshot, and a tool PR A does not serve.
+/// failed request-time snapshot, and a `herdr_run` action C4 does not
+/// serve.
 #[test]
 fn tool_refusals_are_typed() {
     let tmp = tempfile::tempdir().expect("tmp");
@@ -436,7 +437,9 @@ fn tool_refusals_are_typed() {
         "an internal fault is never an identity verdict"
     );
 
-    let unknown = tool_reply(
+    // Every `ToolCall` variant is served — the unserved probe moved to
+    // the action level: `herdr_run` answers, an action C4 owns refuses.
+    let unserved = tool_reply(
         &mut coordinator,
         ToolRequest {
             caller: envelope("w1:p1", &root),
@@ -445,10 +448,10 @@ fn tool_refusals_are_typed() {
         Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
         Some(&root),
     )
-    .expect_err("a non-status tool refuses");
+    .expect_err("an action C4 owns refuses as unserved");
     assert_eq!(
-        unknown.code,
-        ToolError::TOOL_UNKNOWN,
-        "PR A serves herdr_status only"
+        unserved.code,
+        ToolError::REQUEST_INVALID,
+        "herdr_run is served; its C4 actions are not yet"
     );
 }

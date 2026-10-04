@@ -51,6 +51,8 @@ pub enum MailboxEventKind {
     RecoveryBlocked,
     /// A recovery obligation was `dispatched` (F21).
     RecoveryDispatched,
+    /// An `accepted` Run's pane was retired by the F30 sweep (one-shot).
+    RunRetired,
 }
 
 impl MailboxEventKind {
@@ -73,6 +75,7 @@ impl MailboxEventKind {
             Self::RecoveryPending => "recovery_pending",
             Self::RecoveryBlocked => "recovery_blocked",
             Self::RecoveryDispatched => "recovery_dispatched",
+            Self::RunRetired => "run_retired",
         }
     }
 
@@ -96,7 +99,8 @@ impl MailboxEventKind {
             | Self::CooldownHit
             | Self::RecoveryPending
             | Self::RecoveryBlocked
-            | Self::RecoveryDispatched => false,
+            | Self::RecoveryDispatched
+            | Self::RunRetired => false,
         }
     }
 
@@ -140,7 +144,8 @@ impl MailboxEventKind {
             | Self::CooldownHit
             | Self::RecoveryPending
             | Self::RecoveryBlocked
-            | Self::RecoveryDispatched => false,
+            | Self::RecoveryDispatched
+            | Self::RunRetired => false,
         };
         match (qualified, qualifier) {
             (true, Some(qualifier_value)) => Some(DedupKey(format!("{base}:{qualifier_value}"))),

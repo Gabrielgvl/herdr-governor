@@ -5,23 +5,26 @@
 //! applied through `apply_with_retry` on the coordinator's store.
 //! `launch/` holds step 0's convergence, `subscribe/` step 8's
 //! `pane.agent_status_changed` feed, `health/` the freshness record,
-//! `outbox/` §4.8's linked resolution. Steps 3–7 (handoff poll,
-//! evidence, follow-ups, hints, recoveries) land in `pass` with their
-//! owning nodes.
+//! `outbox/` was B3's private stand-in — C2's shared
+//! `delivery::linked_outbox_resolution` replaced it. Steps 3–4 and 7
+//! (handoff poll, evidence, recoveries) land in `pass` with their
+//! owning nodes; C2's steps 5–6 live in `delivery::pass`. C3 landed step
+//! 3 (`handoff::poll`) at the end of `pass` and the `active` × `absent`
+//! one-shot read in `observe_run`; step 4's evidence gather is async and
+//! scheduled by the coordinator's tick (`coordinator::supervise`).
 
 mod health;
 mod launch;
-mod outbox;
 mod subscribe;
 
 #[cfg(test)]
 pub(super) use health::HealthState;
 pub(super) use health::HerdrHealth;
-pub(super) use outbox::linked_outbox_resolution;
 pub(super) use subscribe::spawn_subscriptions;
 
 use std::collections::BTreeSet;
 
+use governor_core::acceptance::HandoffReading;
 use governor_core::config::Policy;
 use governor_core::identity::{
     AgentName, HerdrIncarnation, Observation, PaneId, RunId, Timestamp, classify,
@@ -37,7 +40,9 @@ use crate::store::Store;
 use super::DaemonError;
 use super::coordinator::apply::{ApplyOutcome, apply_with_retry};
 use super::coordinator::{empty, versioned};
+use super::handoff;
 use super::identity::{self, AgentRow};
+use super::paths::Paths;
 
 // — The snapshot view —————————————————————————————————————————————————
 
@@ -71,6 +76,25 @@ impl SnapshotView {
     /// move renamed its pane.
     pub(super) fn name_on(&self, pane: &PaneId) -> Option<&AgentName> {
         self.agents.iter().find(|row| row.0 == *pane)?.3.as_ref()
+    }
+
+    /// The snapshot's agent rows — the delivery pass's owner matching
+    /// (hints) and absent classification (the retention sweep) read them.
+    pub(super) fn agents(&self) -> &[AgentRow] {
+        &self.agents
+    }
+
+    /// The incarnation this view was read under (F2's derivation).
+    pub(super) fn incarnation(&self) -> &HerdrIncarnation {
+        &self.incarnation
+    }
+
+    /// Whether the snapshot's pane locators were unique — the F3 guard
+    /// `classify` also enforces internally, re-exposed for gates that
+    /// need the verdict as a value (hint planning hints no one on an
+    /// untrustworthy read).
+    pub(super) fn valid(&self) -> bool {
+        self.valid
     }
 }
 
@@ -162,10 +186,11 @@ fn observation_for(run: &Run, journal: &[Effect], view: &SnapshotView) -> Option
 /// a read), then step 2's deadline sweep (deadlines fire even while
 /// Herdr is down). Per-Run applies — a hard error aborts the pass; at
 /// startup that refuses the daemon like `mark_restart` does, on a tick
-/// the next pass resumes.
+/// the next pass resumes. Step 3's handoff poll closes the pass — file
+/// reads only, so it runs even while Herdr is down.
 pub(super) fn pass(
     store: &mut Store,
-    policy: &Policy,
+    (policy, paths): (&Policy, &Paths),
     now: Timestamp,
     snapshot: &Result<Observed<SessionSnapshot>, HerdrError>,
 ) -> Result<(), DaemonError> {
@@ -173,10 +198,11 @@ pub(super) fn pass(
     if let Ok(observed) = snapshot {
         let view = view_of(observed);
         for run in store.unsettled_runs()? {
-            observe_run(store, policy, now, &run.id, &view)?;
+            observe_run(store, (policy, paths), now, &run.id, &view)?;
         }
     }
-    deadline_sweep(store, policy, now)
+    deadline_sweep(store, policy, now)?;
+    handoff::poll(store, (policy, paths), now)
 }
 
 /// §4.7 step 1 for one Run — the `Msg::Observation` path and the per-Run
@@ -185,7 +211,7 @@ pub(super) fn pass(
 /// computed from the same store read in one apply.
 pub(super) fn observe_run(
     store: &mut Store,
-    policy: &Policy,
+    (policy, paths): (&Policy, &Paths),
     now: Timestamp,
     run_id: &RunId,
     view: &SnapshotView,
@@ -208,24 +234,37 @@ pub(super) fn observe_run(
         let Some(observation) = observation_for(&run, &journal, view) else {
             return empty();
         };
-        // C3's one-shot marked-file read wires into this call site (§4.7
-        // step 1, F4): `None` is the honest not-written answer until the
-        // freeze machinery lands — an `active` × `absent` Run with a
-        // frozen handoff still enters `judging` on the journal read.
+        // §4.7 step 1 (F25/F4) — `active` × `absent` reads the marked
+        // file once; a `Valid` reading freezes, and `freeze_guarded`
+        // publishes the copy before the row can name it.
+        let marked = (run.state == State::Active && observation == Observation::Absent)
+            .then(|| handoff::read_marked(&run.id, &handoff::marked_path(paths, &run.id)));
+        let reading = marked.as_ref().map(|m| m.reading);
+        let freeze_path = match reading {
+            Some(HandoffReading::Valid { digest }) => {
+                handoff::frozen_path(paths, &run.id, run.work_generation, &digest)
+                    .to_string_lossy()
+                    .into_owned()
+            }
+            Some(HandoffReading::NotWritten) | None => String::new(),
+        };
         let handoffs = st.handoffs(run_id).unwrap_or_default();
-        transition(
-            &run,
-            &versioned(
+        handoff::freeze_guarded(
+            transition(
                 &run,
-                Event::Obs {
-                    observation,
-                    handoff_reading: None,
-                },
+                &versioned(
+                    &run,
+                    Event::Obs {
+                        observation,
+                        handoff_reading: reading,
+                    },
+                ),
+                now,
+                policy,
+                (None, journal.as_slice(), handoffs.as_slice()),
+                &freeze_path,
             ),
-            now,
-            policy,
-            (None, journal.as_slice(), handoffs.as_slice()),
-            "",
+            marked.as_ref().and_then(|m| m.bytes.as_deref()),
         )
     })?)
 }

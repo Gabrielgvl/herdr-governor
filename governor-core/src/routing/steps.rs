@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use crate::config::{Capability, Config, OperatingPoint, Policy, Provider, Qualification, Tier};
 use crate::identity::{CallerKey, IdempotencyKey};
-use crate::lifecycle::Run;
+use crate::lifecycle::{Run, Settlement};
 use crate::task::AbstainReason;
 
 use super::{
@@ -86,10 +86,13 @@ pub(super) fn caller_uplifted(
     (applied, tiers.get(applied).cloned())
 }
 
-/// Step 4 — `(rank, recovery_minimum, minimum_rank, excluded_provider)`. The
-/// predecessor's start must sit one full tier below a policy tier, else
-/// `no_higher_tier`; a predecessor that never started has no start to raise,
-/// so only its provider is excluded.
+/// Step 4 — `(rank, recovery_minimum, minimum_rank, excluded_provider)`. A
+/// `provider_limited` predecessor recovers at its own start tier — the
+/// provider was the limit, not the tier — so the minimum is the start
+/// itself and the top tier still recovers through another provider.
+/// Every other predecessor's start must sit one full tier below a policy
+/// tier, else `no_higher_tier`; a predecessor that never started has no
+/// start to raise, so only its provider is excluded.
 pub(super) fn recovery_floored(
     predecessor: Option<&Run>,
     tiers: &[Tier],
@@ -105,10 +108,24 @@ pub(super) fn recovery_floored(
     let Some(previous) = tier_index(tiers, start) else {
         return Err(AbstainReason::NoHigherTier);
     };
-    let Some(minimum) = tiers.get(previous.saturating_add(1)) else {
+    // §14 — the one-tier lift applies to every settlement except
+    // `provider_limited`: a limit names the provider (still excluded
+    // above), not the tier the predecessor started at.
+    let minimum_rank = match predecessor_run.settlement {
+        Some(Settlement::ProviderLimited) => previous,
+        Some(
+            Settlement::Accepted
+            | Settlement::Rejected
+            | Settlement::NoHandoff
+            | Settlement::PaneLost
+            | Settlement::Cancelled
+            | Settlement::Unresolved { reason: _ },
+        )
+        | None => previous.saturating_add(1),
+    };
+    let Some(minimum) = tiers.get(minimum_rank) else {
         return Err(AbstainReason::NoHigherTier);
     };
-    let minimum_rank = previous.saturating_add(1);
     Ok((
         rank.max(minimum_rank),
         Some(minimum.clone()),

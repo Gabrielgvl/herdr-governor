@@ -23,23 +23,47 @@ pub(super) async fn read(
 
 /// A record → its supervision event: `session` records mark the header,
 /// `message` records carry role and content blocks (text and tool
-/// markers), everything else is `Meta`.
+/// markers), a `custom_message` a hook-free user turn, `compaction`
+/// unplaceable, everything else `Meta` (`trace-tail.ts:151-163`).
 fn normalize(record: &Value) -> TranscriptEvent {
     let timestamp = text_field(record, "timestamp");
+    let meta = |at| TranscriptEvent {
+        timestamp: at,
+        role: None,
+        kind: EventKind::Meta,
+        text: None,
+        source_bytes: 0,
+    };
     match record.get("type").and_then(Value::as_str) {
         Some("session") => TranscriptEvent {
             timestamp,
             role: None,
             kind: EventKind::Session,
             text: None,
+            source_bytes: 0,
         },
         Some("message") => message_event(record, timestamp),
-        Some(_) | None => TranscriptEvent {
-            timestamp,
-            role: None,
-            kind: EventKind::Meta,
-            text: None,
+        Some("custom_message") => {
+            let from_hook = record.get("fromHook").and_then(Value::as_bool) == Some(true)
+                || record
+                    .get("message")
+                    .and_then(|m| m.get("fromHook"))
+                    .and_then(Value::as_bool)
+                    == Some(true);
+            TranscriptEvent {
+                kind: if from_hook {
+                    EventKind::Meta
+                } else {
+                    EventKind::UserTurn
+                },
+                ..meta(timestamp)
+            }
+        }
+        Some("compaction") => TranscriptEvent {
+            kind: EventKind::Ambiguous,
+            ..meta(timestamp)
         },
+        Some(_) | None => meta(timestamp),
     }
 }
 
@@ -72,7 +96,9 @@ fn message_event(record: &Value, timestamp: Option<String>) -> TranscriptEvent {
     TranscriptEvent {
         timestamp: timestamp.or_else(|| msg.and_then(|m| text_field(m, "timestamp"))),
         role: role.clone(),
-        kind: if role.as_deref() == Some("toolResult") {
+        kind: if role.as_deref() == Some("user") {
+            EventKind::UserTurn
+        } else if role.as_deref() == Some("toolResult") {
             EventKind::ToolResult
         } else if has_tool_call {
             EventKind::ToolCall
@@ -80,5 +106,6 @@ fn message_event(record: &Value, timestamp: Option<String>) -> TranscriptEvent {
             EventKind::Message
         },
         text: if text.is_empty() { None } else { Some(text) },
+        source_bytes: 0,
     }
 }

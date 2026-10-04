@@ -108,6 +108,7 @@ pub(super) fn launch(requested: Option<&str>, recovery_of: Option<RunId>, key: &
             recovery_of,
             label: None,
             cwd: None,
+            retention: None,
         },
         phase: LaunchPhase::Evaluating,
         decision: None,

@@ -10,13 +10,14 @@ use governor_core::delivery::prompt_dispatchable;
 use governor_core::identity::{Digest, EffectKey, Timestamp};
 use governor_core::lifecycle::{
     Effect, EffectCertainty, EffectKind, EffectResolution, EffectState, EffectTarget, FailureCause,
-    Run, State, op_digest,
+    State, op_digest,
 };
 use governor_core::routing::{Candidate, cooling_down};
 use governor_core::task::LaunchPhase;
 use sha2::Digest as _;
 
 use crate::daemon::runner;
+use crate::daemon::supervision::ask_current;
 use crate::daemon::{FileRef, RenderContext};
 
 use super::Coordinator;
@@ -228,25 +229,6 @@ fn file_intact(file: &FileRef) -> bool {
         return false;
     };
     Digest(sha2::Sha256::digest(&bytes).into()) == file.digest
-}
-
-/// A run-bound ask's generation check: the ask key's `family:gens` must
-/// still match the Run's live numbers — `accept:<wg>:<eg>`, `review:<eg>`,
-/// `blocked:<ep>`, `limit:<wg>` (attempt suffixes are ignored).
-fn ask_current(run: &Run, key: &EffectKey) -> bool {
-    let suffix = runner::seam::suffix_of(key);
-    let mut parts = suffix.split(':');
-    let family = parts.next();
-    let mut number = || parts.next().and_then(|part| part.parse::<u64>().ok());
-    match family {
-        Some("accept") => {
-            number() == Some(run.work_generation) && number() == Some(run.evidence_generation)
-        }
-        Some("review") => number() == Some(run.evidence_generation),
-        Some("blocked") => number() == Some(run.blocked_episode),
-        Some("limit") => number() == Some(run.work_generation),
-        _ => false,
-    }
 }
 
 /// `PreInteractiveFailed` — the F15 refusal class: provably never ran.

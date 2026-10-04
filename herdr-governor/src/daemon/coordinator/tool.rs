@@ -1,7 +1,8 @@
-//! `tool` — the `Msg::Tool` arm's work (F1 + F7 + §4.5): the caller
+//! `tool` — the `Msg::Tool` arm's work (F1 + F6/F7 + §4.5): the caller
 //! envelope resolves over the request-time snapshot, a first-use
 //! `BindCaller` journals, and the call dispatches — `herdr_status`
-//! answers; `herdr_launch` admits or parks.
+//! answers, `herdr_run` runs C2's `message` arm, and `herdr_launch`
+//! admits or parks.
 
 use governor_core::identity::{CallerEnvelope, CallerKey, Timestamp};
 use governor_core::lifecycle::{StateChange, Transition};
@@ -9,7 +10,7 @@ use governor_core::lifecycle::{StateChange, Transition};
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::daemon::api::{ToolCall, ToolError, ToolPrepared, ToolRequest};
 use crate::daemon::launch::Admission;
-use crate::daemon::{identity, status};
+use crate::daemon::{identity, run_tool, status};
 
 use super::Coordinator;
 use super::apply::apply_with_retry;
@@ -17,9 +18,10 @@ use super::apply::apply_with_retry;
 impl Coordinator {
     /// The `Msg::Tool` arm's work: F1 resolves and binds the caller
     /// (`resolve_and_bind`), then the call dispatches — `herdr_status`
-    /// answers directly; `herdr_launch` either answers (a refusal, an
-    /// idempotent terminal replay) or `Park`s, and the arm puts the
-    /// reply under the Launch's waiters.
+    /// answers directly, `herdr_run` serves C2's `message` action, and
+    /// `herdr_launch` either answers (a refusal, an idempotent terminal
+    /// replay) or `Park`s, and the arm puts the reply under the Launch's
+    /// waiters.
     pub(in crate::daemon) fn tool(
         &mut self,
         request: ToolRequest,
@@ -48,10 +50,13 @@ impl Coordinator {
                 let project_root = request.caller.project_root.clone();
                 self.launch_admit(&caller, &key, task, &project_root, prepared)
             }
-            ToolCall::Run(_) => Admission::Answer(Err(ToolError::new(
-                ToolError::TOOL_UNKNOWN,
-                "herdr_run lands with C2",
-            ))),
+            ToolCall::Run(action) => Admission::Answer(run_tool::call(
+                &mut self.store,
+                &self.paths,
+                &caller,
+                action,
+                now,
+            )),
         }
     }
 

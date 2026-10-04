@@ -19,11 +19,12 @@ use governor_core::lifecycle::{
 };
 use tokio::sync::oneshot;
 
+use crate::daemon::delivery;
 use crate::daemon::launch::launched_on_start;
 use crate::daemon::log;
-use crate::daemon::reconcile;
 use crate::daemon::runner::{self, Dispatch};
 use crate::daemon::seam::Boundary;
+use crate::daemon::supervision;
 use crate::daemon::{CommitVerdict, RenderContext};
 use crate::store::Store;
 
@@ -75,16 +76,27 @@ impl Coordinator {
             if self.in_flight.contains_key(&subject) {
                 continue;
             }
-            let Some(context) = runner::context_for(
-                &self.store,
-                &self.paths,
-                &effect,
-                self.latest_snapshot
-                    .as_ref()
-                    .map(|observed| &observed.value),
-                &self.loaded,
-                &self.daemon,
-            ) else {
+            // §4.9 — a Run-bound ask renders from the evidence the
+            // coordinator holds; every other effect from the store.
+            let ask = supervision::AskEnv {
+                loaded: &self.loaded,
+                daemon: &self.daemon,
+                evidence: &self.evidence,
+            };
+            let Some(context) =
+                supervision::ask_context(&self.store, &ask, &effect).or_else(|| {
+                    runner::context_for(
+                        &self.store,
+                        &self.paths,
+                        &effect,
+                        self.latest_snapshot
+                            .as_ref()
+                            .map(|observed| &observed.value),
+                        &self.loaded,
+                        &self.daemon,
+                    )
+                })
+            else {
                 continue;
             };
             self.in_flight.insert(subject, effect.key.clone());
@@ -162,7 +174,7 @@ impl Coordinator {
             };
             // §4.8 — an outbox-linked effect's terminal outcome resolves
             // its entry in the same transaction.
-            if let Some((write, event)) = reconcile::linked_outbox_resolution(st, &row, outcome) {
+            if let Some((write, event)) = delivery::linked_outbox_resolution(st, &row, outcome) {
                 applied.state_changes.push(write);
                 if let Some(mailbox) = event {
                     applied.events.push(mailbox);

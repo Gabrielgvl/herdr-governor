@@ -111,7 +111,7 @@ async fn convergence_planned_eval_dispatches_on_the_next_boot() {
         "{:?}",
         launch.outcome
     );
-    assert_eq!(world.jev().requests().len(), 1, "the journaled ask, once");
+    assert_eq!(world.evals().len(), 1, "the journaled ask, once");
     world.shutdown().await;
 }
 
@@ -140,7 +140,7 @@ async fn convergence_routed_reserved_row_begins_topology() {
         saw_wire(world.fake(), "tab.create"),
         "begin planned the tab"
     );
-    assert!(world.jev().requests().is_empty(), "never re-evaluated");
+    assert!(world.evals().is_empty(), "never re-evaluated");
     world.shutdown().await;
 }
 

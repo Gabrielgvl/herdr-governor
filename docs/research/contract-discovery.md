@@ -560,6 +560,24 @@ Confirmed behaviors and their tests:
 | A sub-0.5-confidence spread still yields the verbatim top label as the route input — intent `reason` .36 at confidence .25, tier `max` .47 at .36 — no abstain on low confidence (`CT-JEV-PROB-1`) | `jev_spread_top_label_route` |
 | `GET /v1/models` is the only introspection surface — two ModelCards `{name, description, release_date}` (`jev-latest`, `jev-preview`); all five live calls responded `kind:"response"` | `jev_models_surface`, `jev_probe_calls_recorded` |
 
+Phase 5 addition (P5.J2): the F23/F24 evidence-bearing request states —
+`State::{review, blocked, acceptance}` — carry only the spec field set:
+the Task digest (`objective`, `doneWhen`, `constraints`), the bounded
+transcript tail, the `agent.read` terminal fallback, the pinned-base
+`git` evidence (omitted when the Run pins no base), the frozen `handoff`
+at acceptance, `scope` on review for the `outside_scope` question, and
+`limitRecord{source, observedAt, resetAt?}` on a blocked ask (F31). The
+request-side goldens `jev-{review,blocked,blocked-limit,acceptance}-request.json`
+are **hand-authored from the spec field list, not live captures**; the
+serializer must reproduce them byte for byte
+(`review_request_matches_golden_bytes`,
+`blocked_request_matches_golden_bytes`,
+`blocked_request_with_limit_record_matches_golden_bytes`,
+`acceptance_request_matches_golden_bytes`), the serialized key set is
+the contract check (`evidence_states_have_no_routing_fields`), and the
+96 KiB client-side abstain holds for the acceptance state
+(`acceptance_over_96k_is_too_large_without_socket_write`).
+
 Confirmed-negative: no local System One/Jev CLI, schema endpoint, or
 contract-introspection endpoint exists — `command -v typesafe jev
 systemone` found nothing and the SDK exposes exactly two resources
@@ -630,6 +648,10 @@ secret-scrubbed JSON in the artifact bundle); fixtures
 | `jev-raw-response.json` | verbatim 200 response envelope: resolved `model`, typed `answers` (noul + choice), `usage` | `jev-raw-response.json` (artifact bundle) |
 | `jev-launch-evaluation.json` | full request+response capture of one router-path judgment call: `{model, state, questions}` body, exact criteria labels, resolved answer envelope | `fixtures/jev/launch-evaluation.json` (artifact bundle) |
 | `jev-supervision-review.json` | full request+response capture of one reviewer-path judgment call: 6 nouls + one 13-label choice, observed Σ=0.99 probabilities | `fixtures/jev/supervision-review.json` (artifact bundle) |
+| `jev-review-request.json` | hand-authored request-side golden of the F23 review ask: Task digest, `scope`, transcript tail, terminal fallback, git evidence; `blocked_on_input`/`no_recent_progress`/`outside_scope` nouls | spec F23 (P5.J2); hand-authored, not a live capture |
+| `jev-blocked-request.json` | hand-authored request-side golden of the F23/F21 blocked ask: Task digest + evidence bundle without `scope`; `provider_limited`/`blocked_on_input` nouls | spec F23/F21 (P5.J2); hand-authored, not a live capture |
+| `jev-blocked-limit-request.json` | the blocked ask plus `limitRecord{source, observedAt, resetAt}` — the typed provider-limit record as evidence (F31) | spec F31 (P5.J2); hand-authored, not a live capture |
+| `jev-acceptance-request.json` | hand-authored request-side golden of the F24 acceptance ask: Task digest, frozen `handoff`, evidence bundle; `handoff_meets_item_0`/`_1` nouls | spec F24 (P5.J2); hand-authored, not a live capture |
 
 `just contract` runs the suite — 144 checks, fail-closed on absent or
 malformed fixtures.

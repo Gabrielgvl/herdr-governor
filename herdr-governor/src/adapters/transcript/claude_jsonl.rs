@@ -32,7 +32,8 @@ pub(super) async fn read(
 /// A record → its supervision event: `user`/`assistant` records carry
 /// role and content (`tool_use`/`tool_result` blocks are the tool
 /// markers); an `isApiErrorMessage` record is an `Error` carrying its
-/// error name (e.g. a rate-limit/quota record); the rest are `Meta`.
+/// error name (e.g. a rate-limit/quota record); a prompt the user
+/// submitted is `UserTurn`; the rest are `Meta`.
 fn normalize(record: &Value) -> TranscriptEvent {
     let timestamp = text_field(record, "timestamp");
     let ty = record.get("type").and_then(Value::as_str);
@@ -42,6 +43,7 @@ fn normalize(record: &Value) -> TranscriptEvent {
             role: ty.map(str::to_owned),
             kind: EventKind::Error,
             text: text_field(record, "error"),
+            source_bytes: 0,
         };
     }
     match ty {
@@ -51,8 +53,13 @@ fn normalize(record: &Value) -> TranscriptEvent {
             TranscriptEvent {
                 timestamp,
                 role: ty.map(str::to_owned),
-                kind,
+                kind: if ty == Some("user") && is_user_turn(record) {
+                    EventKind::UserTurn
+                } else {
+                    kind
+                },
                 text,
+                source_bytes: 0,
             }
         }
         Some(_) | None => TranscriptEvent {
@@ -60,7 +67,42 @@ fn normalize(record: &Value) -> TranscriptEvent {
             role: None,
             kind: EventKind::Meta,
             text: None,
+            source_bytes: 0,
         },
+    }
+}
+
+/// `trace-tail.ts:137-149` — a `type:user` record is the user's prompt
+/// only when `message.role` is `user`, it is not tool output (no
+/// `toolUseResult`, no `tool_result` block) or runtime context
+/// (`isMeta`/`isCompactSummary`/`isSidechain`), and it carries text (a
+/// non-empty string or a `text` block).
+fn is_user_turn(record: &Value) -> bool {
+    let Some(message) = record.get("message") else {
+        return false;
+    };
+    if message.get("role").and_then(Value::as_str) != Some("user")
+        || record.get("toolUseResult").is_some()
+        || record.get("isMeta").and_then(Value::as_bool) == Some(true)
+        || record.get("isCompactSummary").and_then(Value::as_bool) == Some(true)
+        || record.get("isSidechain").and_then(Value::as_bool) == Some(true)
+    {
+        return false;
+    }
+    match message.get("content") {
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(blocks)) => {
+            let mut has_text = false;
+            for block in blocks {
+                match block.get("type").and_then(Value::as_str) {
+                    Some("tool_result") => return false,
+                    Some("text") => has_text = true,
+                    Some(_) | None => {}
+                }
+            }
+            has_text
+        }
+        Some(_) | None => false,
     }
 }
 

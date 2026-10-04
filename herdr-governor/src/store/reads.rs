@@ -309,6 +309,22 @@ impl Store {
         )
     }
 
+    /// Unacked mailbox events with no `event:<id>:hint` effect journaled —
+    /// the §4.7 step-6 hint scan (F18's once-only rule: a journaled row
+    /// in any state counts as hinted, since a hint is never retried).
+    /// `created_at` order is the rate limiter's fairness order.
+    pub fn mailbox_unhinted(&self) -> Result<Vec<MailboxEvent>, StoreError> {
+        self.all(
+            "SELECT m.* FROM mailbox m \
+             WHERE m.acked_at IS NULL \
+             AND NOT EXISTS (SELECT 1 FROM effects e \
+             WHERE e.effect_key = 'event:' || m.event_id || ':hint') \
+             ORDER BY m.created_at, m.event_id",
+            [],
+            mailbox_from,
+        )
+    }
+
     /// Every provider cooldown, by provider.
     pub fn cooldowns(&self) -> Result<Vec<Cooldown>, StoreError> {
         self.all("SELECT * FROM cooldowns ORDER BY provider", [], |row| {

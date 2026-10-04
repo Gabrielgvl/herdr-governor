@@ -81,6 +81,7 @@ pub(super) fn task() -> Task {
         recovery_of: None,
         label: Some("lbl".into()),
         cwd: Some("/proj".into()),
+        retention: None,
     }
 }
 

@@ -1,0 +1,8 @@
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","message":{"role":"user","content":"please fix the failing test"},"timestamp":"2026-09-28T00:00:01.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","message":{"role":"user","content":[{"type":"text","text":"also run the linter"}]},"timestamp":"2026-09-28T00:00:02.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"timestamp":"2026-09-28T00:00:03.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","toolUseResult":{"stdout":"ok"},"message":{"role":"user","content":[{"type":"text","text":"tool output"}]},"timestamp":"2026-09-28T00:00:04.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>"},"timestamp":"2026-09-28T00:00:05.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","isSidechain":true,"message":{"role":"user","content":"subagent prompt"},"timestamp":"2026-09-28T00:00:06.000Z"}
+{"type":"user","sessionId":"00000000-0000-4000-8000-000000000001","isCompactSummary":true,"message":{"role":"user","content":"summary of the earlier conversation"},"timestamp":"2026-09-28T00:00:07.000Z"}
+{"type":"assistant","sessionId":"00000000-0000-4000-8000-000000000001","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"timestamp":"2026-09-28T00:00:08.000Z"}

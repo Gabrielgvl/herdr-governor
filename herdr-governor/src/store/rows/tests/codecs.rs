@@ -47,6 +47,7 @@ fn launch_round_trips_every_outcome() {
         task: Task {
             tier: None,
             label: None,
+            retention: None,
             ..task()
         },
         ..launch(LaunchPhase::Evaluating, None)

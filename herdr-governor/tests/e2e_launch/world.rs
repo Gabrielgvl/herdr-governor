@@ -225,6 +225,22 @@ impl World {
         &self.jev
     }
 
+    /// The captured Jev asks that are launch evaluations — `state.task`
+    /// marks them; C3's supervision families nest under `review`,
+    /// `blocked` and `acceptance`. Supervision is live on the
+    /// one-second tick, so evaluation counts filter it out.
+    pub(crate) fn evals(&self) -> Vec<crate::support::fake_jev::CapturedRequest> {
+        self.jev
+            .requests()
+            .into_iter()
+            .filter(|request| {
+                request
+                    .state()
+                    .is_some_and(|state| state.get("task").is_some())
+            })
+            .collect()
+    }
+
     /// The daemon's state/config dirs.
     pub(crate) fn dirs(&self) -> &DaemonDirs {
         &self.dirs

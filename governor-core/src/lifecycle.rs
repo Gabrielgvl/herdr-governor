@@ -33,7 +33,7 @@ pub use record::{CreatedTopology, OwnerChange, Run, RunUpdate};
 pub use rules::TRANSITION_RULES;
 pub use settle::settle;
 pub use state::{DeadlineKind, PromptCertainty, Settlement, State, UnresolvedReason};
-pub use supervision::{acceptance_retry, periodic_review};
+pub use supervision::{LimitRecordKey, acceptance_retry, limit_observed, periodic_review};
 pub use transition::transition;
 
 /// The empty transition — losing transitions and no-op events commit nothing
@@ -48,7 +48,8 @@ pub(crate) fn nothing() -> Transition {
 }
 
 /// Effect keys are `run:<id>:<suffix>` (Appendix B `effect_key` examples).
-fn effect_key(run: &Run, suffix: &str) -> EffectKey {
+/// Crate-visible so `retirement`'s close family keys share the derivation.
+pub(crate) fn effect_key(run: &Run, suffix: &str) -> EffectKey {
     EffectKey(format!("run:{}:{}", run.id.0, suffix))
 }
 
@@ -63,7 +64,8 @@ fn journaled(journal: &[Effect], key: &EffectKey) -> bool {
 /// is the caller's `op_digest` over the rendered operation descriptor (F8) —
 /// `Some` for the deterministically-rendered Herdr kinds, `None` for
 /// `jev_evaluate` whose rendered form depends on dispatch-time state.
-fn planned_effect(
+/// Crate-visible so `retirement`'s close plans the same journaled shape.
+pub(crate) fn planned_effect(
     run: &Run,
     kind: EffectKind,
     key: EffectKey,

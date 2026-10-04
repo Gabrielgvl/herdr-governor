@@ -19,9 +19,9 @@ use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolRequest, ToolRespon
 /// OQ-S — the tools this build lists and serves. `tools/list` and
 /// `tools/call` read this one set so the advertised surface and the
 /// dispatchable surface cannot drift: PR A is `herdr_status` only; B2
-/// adds `herdr_launch`, C4 `herdr_run` (the decode arms already exist in
-/// `map_call`).
-const SERVED: &[&str] = &[schema::STATUS, schema::LAUNCH];
+/// adds `herdr_launch` and C2 `herdr_run` (the decode arms already exist
+/// in `map_call`).
+const SERVED: &[&str] = &[schema::STATUS, schema::LAUNCH, schema::RUN];
 
 /// `tools/list` — the served subset of the tool definitions, inside the
 /// shared 60,000-byte result bound.
@@ -247,8 +247,9 @@ mod tests {
         }
     }
 
-    /// OQ-S — `tools/list` exposes `herdr_status` + `herdr_launch`; the
-    /// filter and the dispatch gate share `SERVED` so they cannot drift.
+    /// OQ-S — `tools/list` exposes exactly `SERVED` — `herdr_status` +
+    /// `herdr_launch` + `herdr_run`; the filter and the dispatch gate
+    /// share the set so they cannot drift.
     #[test]
     fn tools_list_publishes_only_the_served_set() {
         let Response::Result { result, .. } = list_response(json!(1)) else {
@@ -262,15 +263,15 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["herdr_status", "herdr_launch"],
-            "B2 lists status + launch"
+            ["herdr_status", "herdr_launch", "herdr_run"],
+            "the served set is the schema order filtered"
         );
     }
 
     /// The decode maps arguments through the strict DTOs into typed
     /// domain values — `map_call` covers all three tools; `SERVED` gates
-    /// which names the wire accepts, so `herdr_launch`/`herdr_run` decode
-    /// is proven here while PR A refuses them above the mapper.
+    /// which names the wire accepts, so `herdr_launch`'s decode is proven
+    /// here while it refuses above the mapper.
     #[test]
     fn decode_call_maps_arguments_to_typed_calls() {
         let request = decode_call(
@@ -328,6 +329,7 @@ mod tests {
             json!({"arguments": {}}),
             json!({"name": 7}),
             json!({"name": "herdr_status", "arguments": {"surprise": 1}}),
+            json!({"name": "herdr_run", "arguments": {"action": "bogus"}}),
         ] {
             let err = decode_call(caller(), &params).expect_err("malformed call refuses");
             assert_eq!(
@@ -336,7 +338,7 @@ mod tests {
                 "bad params shape or bad arguments: {params}"
             );
         }
-        for name in ["herdr_run", "bogus"] {
+        for name in ["herdr_unknown", "bogus"] {
             let err = decode_call(caller(), &json!({"name": name, "arguments": {}}))
                 .expect_err("a name outside the served set refuses");
             assert_eq!(

@@ -2,12 +2,15 @@
 //! against the launch fixture and the recorded response shapes — no
 //! socket. Fixture-free wire tests stay in `src/adapters/jev/tests/wire.rs`.
 
+use std::collections::BTreeSet;
+
 use governor_core::routing::Probability;
 use governor_core::task::Task;
 use serde_json::Value;
 
 use herdr_governor::adapters::jev::wire::{
-    Kind, Questions, Request, State, TaskState, WireQuestion, decode, encode,
+    AcceptanceState, BlockedState, GitState, Kind, LimitRecordState, Questions, Request,
+    ReviewState, State, TaskDigest, TaskState, TranscriptLine, WireQuestion, decode, encode,
 };
 
 use crate::support::{fixture, fixture_questions, json as parse};
@@ -22,6 +25,9 @@ const SUPERVISION_ORDER: [&str; 7] = [
     "appears_complete",
     "reason",
 ];
+const REVIEW_ORDER: [&str; 3] = ["blocked_on_input", "no_recent_progress", "outside_scope"];
+const BLOCKED_ORDER: [&str; 2] = ["provider_limited", "blocked_on_input"];
+const ACCEPTANCE_ORDER: [&str; 2] = ["handoff_meets_item_0", "handoff_meets_item_1"];
 
 fn launch_task() -> Task {
     let body = parse(&fixture("jev-launch-evaluation.json"));
@@ -42,6 +48,7 @@ fn launch_task() -> Task {
         recovery_of: Some(governor_core::identity::RunId("run-1".to_owned())),
         label: Some("secret label".to_owned()),
         cwd: Some("/tmp/x".to_owned()),
+        retention: Some(governor_core::task::Retention::Keep),
     }
 }
 
@@ -149,6 +156,223 @@ fn supervision_review_shape() {
     assert_eq!(reason.answer, "verification_passed");
     let sum: f64 = reason.probabilities.values().map(|p| p.0).sum();
     assert!((sum - 0.99).abs() < 1e-9, "{sum}");
+}
+
+/// A Task carrying every routing-adjacent field — `tier`, `recovery_of`,
+/// `label`, `cwd`, `retention` — so the golden and key-set tests prove
+/// the evidence projections drop them (F12, F23/F24, F30, H#41).
+fn evidence_task() -> Task {
+    Task {
+        objective: "Implement the Jev evidence request states".to_owned(),
+        scope: "the Jev wire adapter".to_owned(),
+        done_when: vec![
+            "review, blocked and acceptance states carry the spec evidence fields".to_owned(),
+            "the request-side goldens pass byte for byte".to_owned(),
+        ],
+        constraints: vec!["never send routing fields to Jev".to_owned()],
+        tier: Some(governor_core::config::Tier("leaked-tier".to_owned())),
+        recovery_of: Some(governor_core::identity::RunId("run-1".to_owned())),
+        label: Some("secret label".to_owned()),
+        cwd: Some("/tmp/x".to_owned()),
+        retention: Some(governor_core::task::Retention::Keep),
+    }
+}
+
+fn transcript_lines() -> Vec<TranscriptLine> {
+    vec![
+        TranscriptLine {
+            timestamp: Some("2026-10-03T04:00:00Z".to_owned()),
+            role: Some("assistant".to_owned()),
+            kind: "tool_call".to_owned(),
+            text: Some("just test".to_owned()),
+        },
+        TranscriptLine {
+            timestamp: Some("2026-10-03T04:00:11Z".to_owned()),
+            role: None,
+            kind: "tool_result".to_owned(),
+            text: Some("655 passed".to_owned()),
+        },
+    ]
+}
+
+fn terminal_text() -> String {
+    "$ just test\n655 passed".to_owned()
+}
+
+fn git_state() -> GitState {
+    GitState {
+        head: "e17f8fa3b9c2d1a0f5e6b7c8d9a0b1c2d3e4f5a6".to_owned(),
+        dirty: vec!["herdr-governor/src/adapters/jev/wire.rs".to_owned()],
+    }
+}
+
+fn limit_record() -> LimitRecordState {
+    LimitRecordState {
+        source: "claude_session_quota".to_owned(),
+        observed_at: "2026-10-03T03:41:02Z".to_owned(),
+        reset_at: Some("2026-10-03T19:20:00Z".to_owned()),
+    }
+}
+
+fn review_state() -> ReviewState {
+    ReviewState {
+        task: TaskDigest::from(&evidence_task()),
+        scope: evidence_task().scope,
+        transcript: transcript_lines(),
+        terminal: Some(terminal_text()),
+        git: Some(git_state()),
+    }
+}
+
+fn blocked_state(limit_record: Option<LimitRecordState>) -> BlockedState {
+    BlockedState {
+        task: TaskDigest::from(&evidence_task()),
+        transcript: transcript_lines(),
+        terminal: Some(terminal_text()),
+        git: Some(git_state()),
+        limit_record,
+    }
+}
+
+fn acceptance_state() -> AcceptanceState {
+    AcceptanceState {
+        task: TaskDigest::from(&evidence_task()),
+        handoff: "## Handoff\n\nImplemented the three Jev evidence request states and their request-side goldens.\n\n## Verification\n- just test: green\n- just lint: green\n\n<!-- herdr-governor handoff run=01994c4e-7a3b-7f2e-9d1c-2b3a4f5e6d7c -->".to_owned(),
+        transcript: transcript_lines(),
+        terminal: Some(terminal_text()),
+        git: Some(git_state()),
+    }
+}
+
+/// The serialized key set of a JSON object value.
+fn keys(value: &Value) -> BTreeSet<&str> {
+    value
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect()
+}
+
+/// The encoded request equals the hand-authored golden file byte for
+/// byte — the fixture is the contract, the serializer must reproduce it.
+fn assert_matches_golden(name: &str, state: &State, order: &[&str]) {
+    let fixture_text = fixture(name);
+    let questions = fixture_questions(&parse(&fixture_text), order);
+    let bytes = encode(&Request {
+        state,
+        questions: Questions(&questions),
+        model: "jev-latest",
+    })
+    .expect("encode");
+    assert_eq!(
+        String::from_utf8(bytes).expect("utf8"),
+        fixture_text.trim_end()
+    );
+}
+
+/// F23 review ask: the Task digest, `scope` for `outside_scope`, the
+/// transcript tail, the terminal fallback and the git evidence.
+#[test]
+fn review_request_matches_golden_bytes() {
+    assert_matches_golden(
+        "jev-review-request.json",
+        &State::Review(review_state()),
+        &REVIEW_ORDER,
+    );
+}
+
+/// F23/F21 blocked ask without a limit record: no `limitRecord` key.
+#[test]
+fn blocked_request_matches_golden_bytes() {
+    assert_matches_golden(
+        "jev-blocked-request.json",
+        &State::Blocked(blocked_state(None)),
+        &BLOCKED_ORDER,
+    );
+}
+
+/// F31 blocked ask carrying the typed limit record as evidence:
+/// `limitRecord` renders `{source, observedAt, resetAt}`.
+#[test]
+fn blocked_request_with_limit_record_matches_golden_bytes() {
+    assert_matches_golden(
+        "jev-blocked-limit-request.json",
+        &State::Blocked(blocked_state(Some(limit_record()))),
+        &BLOCKED_ORDER,
+    );
+}
+
+/// F24 acceptance ask: the frozen handoff rides the same evidence
+/// bundle, judged per `handoff_meets_item_k`.
+#[test]
+fn acceptance_request_matches_golden_bytes() {
+    assert_matches_golden(
+        "jev-acceptance-request.json",
+        &State::Acceptance(acceptance_state()),
+        &ACCEPTANCE_ORDER,
+    );
+}
+
+/// The contract check (F12/F23/F24): every evidence state serializes to
+/// exactly the spec field set — no operating point, provider, tier,
+/// label, caller or Run identity can reach Jev through a `State`.
+#[test]
+fn evidence_states_have_no_routing_fields() {
+    let review = serde_json::to_value(State::Review(review_state())).expect("value");
+    let blocked = serde_json::to_value(State::Blocked(blocked_state(None))).expect("value");
+    let limited =
+        serde_json::to_value(State::Blocked(blocked_state(Some(limit_record())))).expect("value");
+    let acceptance = serde_json::to_value(State::Acceptance(acceptance_state())).expect("value");
+    assert_eq!(
+        keys(&review["review"]),
+        BTreeSet::from(["git", "scope", "task", "terminal", "transcript"])
+    );
+    assert_eq!(
+        keys(&blocked["blocked"]),
+        BTreeSet::from(["git", "task", "terminal", "transcript"])
+    );
+    assert_eq!(
+        keys(&limited["blocked"]),
+        BTreeSet::from(["git", "limitRecord", "task", "terminal", "transcript"])
+    );
+    assert_eq!(
+        keys(&limited["blocked"]["limitRecord"]),
+        BTreeSet::from(["observedAt", "resetAt", "source"])
+    );
+    assert_eq!(
+        keys(&acceptance["acceptance"]),
+        BTreeSet::from(["git", "handoff", "task", "terminal", "transcript"])
+    );
+    let no_reset = serde_json::to_value(LimitRecordState {
+        reset_at: None,
+        ..limit_record()
+    })
+    .expect("value");
+    assert_eq!(keys(&no_reset), BTreeSet::from(["observedAt", "source"]));
+    for state in [
+        &review["review"],
+        &blocked["blocked"],
+        &limited["blocked"],
+        &acceptance["acceptance"],
+    ] {
+        assert_eq!(
+            keys(&state["task"]),
+            BTreeSet::from(["constraints", "doneWhen", "objective"])
+        );
+        assert_eq!(keys(&state["git"]), BTreeSet::from(["dirty", "head"]));
+        assert_eq!(
+            keys(&state["transcript"][0]),
+            BTreeSet::from(["kind", "role", "text", "timestamp"])
+        );
+    }
+    let text = [&review, &blocked, &limited, &acceptance]
+        .iter()
+        .map(ToString::to_string)
+        .collect::<String>();
+    for leaked in ["secret label", "/tmp/x", "run-1", "leaked-tier"] {
+        assert!(!text.contains(leaked), "{leaked} leaked into the state");
+    }
 }
 
 fn noul(name: &str, threshold: Option<f64>) -> WireQuestion {

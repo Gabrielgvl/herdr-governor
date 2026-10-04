@@ -1,12 +1,10 @@
-//! P4.Z — the Phase-5 usability smoke test (p4-plan §P4.Z): one launch
-//! driven end to end on public surfaces only — `admit → decided → begin →
-//! agent.start (fake Herdr) → prompt (fake Herdr) → finish` — every
-//! `Transition` committed through `store::apply`, the Jev evaluation
-//! answered by a private in-file `TcpListener` fake, the catalog loaded by
-//! the config adapter, the git and transcript adapters read on tempdirs.
-//! No daemon, no `pub(crate)` reach-in. Daemon-only values minted inline
-//! (handoff names their Phase-5 home): caller binding, run/set ids, the
-//! dispatch commit, `HerdrIncarnation` (OQ-8), `begin ‖ launch_plan`.
+//! P4.Z — the Phase-5 usability smoke test (p4-plan §P4.Z): one launch driven end to end on public
+//! surfaces only — `admit → decided → begin → agent.start (fake Herdr) → prompt (fake Herdr) →
+//! finish` — every `Transition` committed through `store::apply`, the Jev evaluation answered by a
+//! private in-file `TcpListener` fake, the catalog loaded by the config adapter, the git and
+//! transcript adapters read on tempdirs. No daemon, no `pub(crate)` reach-in. Daemon-only values
+//! minted inline (handoff names their Phase-5 home): caller binding, run/set ids, the dispatch
+//! commit, `HerdrIncarnation` (OQ-8), `begin ‖ launch_plan`.
 
 #[cfg(test)]
 pub mod support;
@@ -91,6 +89,7 @@ provider = "vendor-b"
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         }
     }
 

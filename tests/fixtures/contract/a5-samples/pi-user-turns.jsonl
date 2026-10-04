@@ -1,0 +1,8 @@
+{"type":"session","version":3,"id":"native-synthetic","cwd":"/synthetic/project"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"please fix the failing test"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"on it"}]}}
+{"type":"message","message":{"role":"toolResult","content":[{"type":"text","text":"ok"}]}}
+{"type":"custom_message","message":{"role":"user","content":"a queued follow-up"}}
+{"type":"custom_message","fromHook":true,"message":{"role":"user","content":"hook context"}}
+{"type":"custom_message","message":{"role":"user","fromHook":true,"content":"hook context"}}
+{"type":"compaction","summary":"earlier turns"}

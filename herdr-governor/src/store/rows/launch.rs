@@ -14,12 +14,13 @@ use governor_core::identity::{
 };
 use governor_core::lifecycle::{CreatedTopology, EffectCertainty};
 use governor_core::routing::{Candidate, Decision, Exploration};
-use governor_core::task::{AbstainReason, Launch, LaunchOutcome, LaunchPhase, Task};
+use governor_core::task::{AbstainReason, Launch, LaunchOutcome, LaunchPhase, Retention, Task};
 
 use crate::store::error::StoreError;
 use crate::store::rows::{
-    Params, corrupt, enum_decode, hex_decode, hex_encode, json_parse, json_str, json_str_arr,
-    json_write, member, member_arr, member_bool, member_opt_str, member_str, read_col, ts_encode,
+    Params, corrupt, enum_decode, enum_opt_decode, hex_decode, hex_encode, json_opt_str,
+    json_parse, json_str, json_str_arr, json_write, member, member_arr, member_bool,
+    member_opt_str, member_str, read_col, ts_encode,
 };
 
 const TABLE: &str = "launches";
@@ -39,6 +40,8 @@ const ABSTAIN_REASONS: &[AbstainReason] = &[
 ];
 
 const CERTAINTIES: &[EffectCertainty] = &[EffectCertainty::Absent, EffectCertainty::Unknown];
+
+const RETENTIONS: &[Retention] = &[Retention::Retire, Retention::Keep];
 
 /// The `launches` row. `caller_id` is the surrogate the writer resolved
 /// through `rows::caller::caller_id`; `to_core` takes the joined key back.
@@ -239,6 +242,7 @@ fn task_to_json(task: &Task) -> Value {
         "recovery_of": task.recovery_of.as_ref().map(|r| r.0.as_str()),
         "label": task.label,
         "cwd": task.cwd,
+        "retention": task.retention.map(|retention| retention.as_str()),
     })
 }
 
@@ -260,6 +264,17 @@ fn task_from_json(value: &Value) -> Result<Task, StoreError> {
         recovery_of: member_opt_str(value, "recovery_of", TABLE, "task_json")?.map(RunId),
         label: member_opt_str(value, "label", TABLE, "task_json")?,
         cwd: member_opt_str(value, "cwd", TABLE, "task_json")?,
+        retention: enum_opt_decode(
+            match value.get("retention") {
+                None => None,
+                Some(raw) => json_opt_str(raw, TABLE, "task_json")?,
+            }
+            .as_deref(),
+            TABLE,
+            "task_json",
+            RETENTIONS,
+            Retention::as_str,
+        )?,
     })
 }
 

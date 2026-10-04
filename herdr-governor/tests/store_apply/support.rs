@@ -53,6 +53,7 @@ pub fn launch(id: &str, phase: LaunchPhase, outcome: Option<LaunchOutcome>) -> L
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         },
         phase,
         decision: None,

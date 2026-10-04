@@ -15,6 +15,7 @@ use governor_core::lifecycle::{EffectState, State};
 use governor_core::task::{LaunchOutcome, LaunchPhase};
 use serde_json::json;
 
+use crate::support::daemon::await_for;
 use crate::support::fake_herdr::Fault as HerdrFault;
 use crate::support::fake_jev::{Answer, Fault};
 use crate::support::mcp_client::{McpClient, caller_envelope, status_call, status_page};
@@ -110,6 +111,19 @@ async fn f5_outcomes_pending_launched_abstained_rejected_failed() {
     world.jev().push_answers(launch_eval("new"));
     let launched = tool_body(&world.launch(&launch_args(&task(&[]), "k-launched")).await);
     assert_eq!(launched["outcome"], "launched", "{launched}");
+
+    // The launched Run is supervised under C3: its one periodic `review`
+    // ask must reach the fake before the legs' one-shot scripts, or it
+    // would steal a pushed step (the next gather is `review_interval`
+    // away — one ask per run here).
+    await_for("the launched run's review ask", || {
+        world.jev().requests().iter().any(|request| {
+            request
+                .state()
+                .is_some_and(|state| state.get("review").is_some())
+        })
+    })
+    .await;
 
     world.jev().push_answers(with_answer(
         launch_eval("new"),
@@ -355,7 +369,7 @@ async fn f2_ten_concurrent_reservations_mint_distinct_names() {
         .collect();
     assert_eq!(names.len(), 10, "ten distinct child names");
     assert_eq!(wire_calls(world.fake(), "agent.start").len(), 10);
-    assert_eq!(world.jev().requests().len(), 10, "ten evaluations asked");
+    assert_eq!(world.evals().len(), 10, "ten evaluations asked");
     world.shutdown().await;
 }
 

@@ -190,7 +190,7 @@ async fn f21_successor_decided_dispatches_obligation_in_route_transaction() {
         replay, body,
         "the successor key is the idempotency identity"
     );
-    assert_eq!(world.jev().requests().len(), 1, "one evaluation total");
+    assert_eq!(world.evals().len(), 1, "one evaluation total");
     world.shutdown().await;
 }
 

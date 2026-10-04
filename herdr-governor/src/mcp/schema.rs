@@ -6,11 +6,13 @@
 //! map to core types only; `Task::violations` and the refusal codes stay
 //! in `governor-core`.
 
-use governor_core::config::Tier;
-use governor_core::identity::RunId;
-use governor_core::task::{CONSTRAINTS_MAX_ITEMS, DONE_WHEN_MAX_ITEMS, DONE_WHEN_MIN_ITEMS, Task};
+use governor_core::task::{CONSTRAINTS_MAX_ITEMS, DONE_WHEN_MAX_ITEMS, DONE_WHEN_MIN_ITEMS};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+mod task_args;
+
+use task_args::TaskArgs;
 
 /// The wire name of the F7 tool.
 pub(super) const STATUS: &str = "herdr_status";
@@ -39,55 +41,6 @@ pub(super) struct LaunchArgs {
     pub task: TaskArgs,
     /// `idempotencyKey` — unique within `(caller key, projectRoot)` (F11).
     pub idempotency_key: String,
-}
-
-/// The `task` member of [`LaunchArgs`] — F5's field set and bounds:
-/// `objective`/`scope`/`doneWhen` required (`doneWhen` 1–8 items),
-/// `constraints` optional (0–8), `tier`/`recoveryOf`/`label`/`cwd`
-/// optional.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct TaskArgs {
-    /// The work to do (non-empty, F5).
-    pub objective: String,
-    /// Where the work is allowed to happen (non-empty, F5).
-    pub scope: String,
-    /// 1–8 verifiable items.
-    pub done_when: Vec<String>,
-    /// 0–8 items; the spec default is `[]`, never a missing key.
-    #[serde(default)]
-    pub constraints: Vec<String>,
-    /// The caller's uplift input to routing (F13 step 3).
-    #[serde(default)]
-    pub tier: Option<String>,
-    /// F21 — the settled predecessor to continue.
-    #[serde(default)]
-    pub recovery_of: Option<String>,
-    /// Presentation-only display label (H#41).
-    #[serde(default)]
-    pub label: Option<String>,
-    /// Canonical realpath inside `projectRoot`, else the root itself.
-    #[serde(default)]
-    pub cwd: Option<String>,
-}
-
-impl TaskArgs {
-    /// The core Task the DTO carries — the field map only; every value
-    /// bound (non-empty text, the item bounds, `cwd` canonical and inside
-    /// the root, the 64 KiB render bound) is `Task::violations`' (F5).
-    #[must_use]
-    pub(super) fn into_task(self) -> Task {
-        Task {
-            objective: self.objective,
-            scope: self.scope,
-            done_when: self.done_when,
-            constraints: self.constraints,
-            tier: self.tier.map(Tier),
-            recovery_of: self.recovery_of.map(RunId),
-            label: self.label,
-            cwd: self.cwd,
-        }
-    }
 }
 
 /// F6 — `herdr_run` arguments: the `action` member picks the variant and
@@ -195,6 +148,7 @@ fn launch_tool() -> Value {
             "recoveryOf": {"type": "string"},
             "label": {"type": "string", "minLength": 1},
             "cwd": {"type": "string"},
+            "retention": {"type": "string", "enum": ["retire", "keep"]},
         },
         "required": ["objective", "scope", "doneWhen"],
         "additionalProperties": false,
@@ -281,6 +235,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use governor_core::identity::ProjectRoot;
+    use governor_core::task::Retention;
     use serde_json::{Value, json};
 
     use super::{
@@ -322,6 +277,7 @@ mod tests {
             recovery_of: Some("r".into()),
             label: Some("l".into()),
             cwd: Some("/repo".into()),
+            retention: Some(super::task_args::RetentionArg::Keep),
         }
     }
 
@@ -451,6 +407,40 @@ mod tests {
                 "run args refuse unknown fields, unknown actions and missing fields: {raw}"
             );
         }
+    }
+
+    #[test]
+    fn f5_retention_wire_spellings_map_to_core() {
+        let decode = |member: &str| {
+            serde_json::from_str::<TaskArgs>(&format!(
+                r#"{{"objective":"o","scope":"s","doneWhen":["d"]{member}}}"#
+            ))
+            .map(|args| args.into_task().retention)
+        };
+        assert_eq!(
+            decode("").ok(),
+            Some(None),
+            "absent retention is the default"
+        );
+        assert_eq!(
+            decode(r#","retention":"retire""#).ok(),
+            Some(Some(Retention::Retire)),
+            "retire maps to the core default"
+        );
+        assert_eq!(
+            decode(r#","retention":"keep""#).ok(),
+            Some(Some(Retention::Keep)),
+            "keep maps to the core opt-out"
+        );
+        assert!(
+            decode(r#","retention":"hold""#).is_err(),
+            "a third spelling refuses at decode (F5 strict schema)"
+        );
+        assert_eq!(
+            tool(LAUNCH)["inputSchema"]["properties"]["task"]["properties"]["retention"]["enum"],
+            json!(["retire", "keep"]),
+            "the schema's vocabulary is the DTO's"
+        );
     }
 
     #[test]

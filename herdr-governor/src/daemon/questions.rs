@@ -1,6 +1,6 @@
 //! `questions` — the Jev question catalog. B2 owns the launch
-//! evaluation texts (F12); the supervision and acceptance texts land
-//! with C3/C4 on the same `QUESTION_VERSION` bump rule: any wording or
+//! evaluation texts (F12) and C3 the supervision and acceptance texts
+//! (F23/F24), all on the same question-version bump rule: any wording or
 //! label change is a new version so a journaled set always reads back
 //! what it was asked (F24).
 
@@ -132,6 +132,120 @@ pub(crate) fn launch_specs(open_tabs: &[TabId], tiers: &[Tier]) -> Vec<QuestionS
             | Question::OutsideScope
             | Question::ProviderLimited
             | Question::HandoffMeetsItem { .. } => None,
+        })
+        .collect()
+}
+
+// — C3: supervision (F23) and acceptance (F24) texts ——————————————————
+
+/// The supervision/acceptance question-set version (OQ-J, §4.9) stamped
+/// on every review, blocked and acceptance `judgment_sets` row — part of
+/// the F24 assessment key, so a text change re-asks instead of reusing.
+pub(super) const SUPERVISION_QUESTION_VERSION: &str = "2026-10-p5-v1";
+
+/// A yes/no question with its two criteria; `threshold` is the policy
+/// threshold the core re-checks (`None` → the 0.5 verdict bound).
+fn noul(question: Question, threshold: Option<f64>, text: [&str; 3]) -> QuestionSpec {
+    let [instructions, yes, no] = text;
+    QuestionSpec {
+        question,
+        kind: Kind::Noul { threshold },
+        instructions: instructions.into(),
+        criteria: vec![("yes".into(), yes.into()), ("no".into(), no.into())],
+    }
+}
+
+/// `blocked_on_input` — shared by the review and the blocked asks.
+fn blocked_on_input() -> QuestionSpec {
+    noul(
+        Question::BlockedOnInput,
+        None,
+        [
+            "Is the agent waiting on input only a human or its caller can \
+             give — a question, a permission prompt, a choice it cannot make \
+             alone — rather than working or finished?",
+            "the evidence shows the agent stopped to wait for such input.",
+            "the agent is working, finished, or stopped for another reason.",
+        ],
+    )
+}
+
+/// F23 — the periodic review's three advisory questions, in asked order.
+pub(super) fn review_specs() -> Vec<QuestionSpec> {
+    Vec::from([
+        blocked_on_input(),
+        noul(
+            Question::NoRecentProgress,
+            None,
+            [
+                "Does the recent evidence show no meaningful progress toward \
+                 the task's doneWhen — repeated failing attempts, idling, or \
+                 looping — rather than steady work?",
+                "the recent evidence shows no meaningful progress.",
+                "the evidence shows progress toward doneWhen.",
+            ],
+        ),
+        noul(
+            Question::OutsideScope,
+            None,
+            [
+                "Is the agent working outside the stated scope — changing \
+                 things the task's scope does not cover, or pursuing a \
+                 different objective?",
+                "the agent's recent work falls outside the stated scope.",
+                "the agent's work stays within the stated scope.",
+            ],
+        ),
+    ])
+}
+
+/// F23/F21 — the blocked episode's ask: `provider_limited` at the policy
+/// threshold first (a cleared answer settles the Run), then
+/// `blocked_on_input`.
+pub(super) fn blocked_specs(provider_limit_threshold: f64) -> Vec<QuestionSpec> {
+    Vec::from([
+        noul(
+            Question::ProviderLimited,
+            Some(provider_limit_threshold),
+            [
+                "Is the agent stopped because its model provider refused \
+                 further work — a usage, quota or rate limit, or an exhausted \
+                 plan — rather than for any other reason?",
+                "the evidence shows a provider usage, quota or rate limit stopped the agent.",
+                "the agent stopped for some other reason, or is not stopped.",
+            ],
+        ),
+        blocked_on_input(),
+    ])
+}
+
+/// F24 — `handoff_meets_item_k` for `k in 0..done_when.len()`, each
+/// naming its doneWhen item: the verdict needs exactly that set
+/// (`acceptance_verdict`).
+pub(super) fn acceptance_specs(done_when: &[String]) -> Vec<QuestionSpec> {
+    done_when
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let item_index = u8::try_from(index).ok()?;
+            Some(QuestionSpec {
+                question: Question::HandoffMeetsItem { item: item_index },
+                kind: Kind::Noul { threshold: None },
+                instructions: format!(
+                    "Do the frozen handoff and the transcript and git evidence \
+                     show this doneWhen item is satisfied: {item}"
+                ),
+                criteria: vec![
+                    (
+                        "yes".into(),
+                        "the evidence shows the item is satisfied.".into(),
+                    ),
+                    (
+                        "no".into(),
+                        "the item is unmet, unverified, or contradicted.".into(),
+                    ),
+                ],
+            })
         })
         .collect()
 }

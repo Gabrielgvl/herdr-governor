@@ -182,6 +182,7 @@ fn task() -> Task {
         recovery_of: None,
         label: None,
         cwd: None,
+        retention: None,
     }
 }
 

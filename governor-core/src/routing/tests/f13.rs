@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 
 use crate::config::{ConfigVersion, OperatingPointId, Provider, Tier};
 use crate::identity::RunId;
+use crate::lifecycle::Settlement;
 use crate::routing::{Candidate, ChangesFiles, Decision, Exploration, Probability, route};
 use crate::task::AbstainReason;
 
@@ -325,6 +326,78 @@ fn f13_recovery_without_start_excludes_provider_only() {
     );
     assert_eq!(decided.start_tier, Tier("t1".into()));
 }
+
+#[test]
+fn f13_provider_limited_recovery_keeps_predecessor_start_tier() {
+    let config = config_with(
+        policy(),
+        Vec::from([
+            point("same-provider", "t2", 1, "p-x"),
+            point("other", "t2", 2, "p-y"),
+        ]),
+    );
+    let mut predecessor = predecessor_run(Some("t2"), Some("p-x"));
+    predecessor.settlement = Some(Settlement::ProviderLimited);
+    let decided = decision(route(
+        &launch(None, Some(RunId("r-0".into())), "key"),
+        Some(&predecessor),
+        &evaluation("t0", ChangesFiles::Few, 0.1),
+        &config,
+        &[],
+        &[],
+        &[],
+    ));
+    assert_eq!(
+        decided.start_tier,
+        Tier("t2".into()),
+        "a provider limit names the provider, not the tier — the start floor holds (§14)"
+    );
+    assert_eq!(
+        decided.recovery_minimum,
+        Some(Tier("t2".into())),
+        "the recovery minimum is the predecessor's own start tier"
+    );
+    assert_eq!(decided.candidates.len(), 1);
+    assert_eq!(
+        decided.candidates[0].provider,
+        Provider("p-y".into()),
+        "the limited provider stays excluded at the kept tier"
+    );
+}
+
+#[test]
+fn f13_provider_limited_recovery_at_top_tier_picks_another_provider() {
+    let config = config_with(
+        policy(),
+        Vec::from([
+            point("same-provider", "t5", 1, "p-x"),
+            point("other", "t5", 2, "p-y"),
+        ]),
+    );
+    let mut predecessor = predecessor_run(Some("t5"), Some("p-x"));
+    predecessor.settlement = Some(Settlement::ProviderLimited);
+    let decided = decision(route(
+        &launch(None, Some(RunId("r-0".into())), "key"),
+        Some(&predecessor),
+        &evaluation("t5", ChangesFiles::Few, 0.1),
+        &config,
+        &[],
+        &[],
+        &[],
+    ));
+    assert_eq!(
+        decided.start_tier,
+        Tier("t5".into()),
+        "the top tier needs no lift — the limit recovers in place (§14)"
+    );
+    assert_eq!(decided.candidates.len(), 1);
+    assert_eq!(
+        decided.candidates[0].provider,
+        Provider("p-y".into()),
+        "another provider at the top tier recovers it"
+    );
+}
+
 #[test]
 fn f13_decision_records_the_routing_evidence() {
     let mut policy = policy();

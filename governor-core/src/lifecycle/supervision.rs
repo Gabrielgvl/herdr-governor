@@ -154,6 +154,49 @@ pub fn acceptance_retry(run: &Run, journal: &[Effect]) -> Option<Effect> {
     ))
 }
 
+/// F31 — the typed provider-limit record's dedup identity:
+/// `<source>:<observed_at_ms>` minted by the daemon from the parsed
+/// record (§4.17). The `run:<id>:limit:<record_id>` family carries no
+/// generation component, so a record asks exactly once for the Run's
+/// lifetime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitRecordKey(pub String);
+
+/// F31 — one `jev_evaluate` under `run:<id>:limit:<record_id>` once per
+/// record for the Run's lifetime (§4.17): the ask rides `active`,
+/// `judging` and `repair` only, never while the same record's ask is in
+/// flight, and a `failed`/`unconfirmed` attempt re-asks under `:<n>`
+/// (`next_ask_key`, like the other families). While the current blocked
+/// episode's ask is in flight it already carries the record as evidence
+/// — one ask per pass, no double ask. `Some` is the effect to plan.
+#[must_use]
+pub fn limit_observed(run: &Run, record: &LimitRecordKey, journal: &[Effect]) -> Option<Effect> {
+    match run.state {
+        State::Active | State::Judging | State::Repair => {}
+        State::Reserved | State::Starting | State::Prompting | State::Settled => return None,
+    }
+    let blocked = effect_key(run, &format!("blocked:{}", run.blocked_episode));
+    let blocked_prefix = format!("{}:", blocked.0);
+    if journal.iter().any(|effect| {
+        (effect.key == blocked || effect.key.0.starts_with(&blocked_prefix))
+            && matches!(
+                effect.state,
+                EffectState::Planned | EffectState::Dispatching
+            )
+    }) {
+        return None;
+    }
+    let base = effect_key(run, &format!("limit:{}", record.0));
+    let key = next_ask_key(journal, &base, true)?;
+    Some(planned_effect(
+        run,
+        EffectKind::JevEvaluate,
+        key,
+        None,
+        None,
+    ))
+}
+
 pub(super) fn on_unique(
     run: &Run,
     status: Option<ChildStatus>,

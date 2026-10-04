@@ -24,7 +24,7 @@ async fn s1_evaluate_pre_dispatch_relaunches_once() {
         launch.outcome
     );
     assert_eq!(
-        cell.world.jev().requests().len(),
+        cell.world.evals().len(),
         1,
         "the journaled ask dispatches exactly once"
     );
@@ -137,7 +137,7 @@ async fn s1_evaluate_result_committed_continues() {
         launch.outcome
     );
     assert_eq!(
-        cell.world.jev().requests().len(),
+        cell.world.evals().len(),
         1,
         "the committed evaluation is never re-asked"
     );

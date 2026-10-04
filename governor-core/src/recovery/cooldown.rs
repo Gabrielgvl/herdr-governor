@@ -24,17 +24,25 @@ pub struct Cooldown {
 
 impl Cooldown {
     /// F21 — the exclusion a `provider_limited` settlement records: `until`
-    /// is `now + duration` (the policy cooldown window, `Policy::cooldown`).
+    /// is the later of `now + duration` (the policy cooldown window,
+    /// `Policy::cooldown`) and `reset_at` — the reset instant a typed
+    /// provider-limit record or Jev's answer carries (F31/OQ-X). With no
+    /// stated reset it is the policy window alone.
     #[must_use]
     pub fn limited(
         provider: Provider,
         source_run: RunId,
         now: Timestamp,
         duration: Duration,
+        reset_at: Option<Timestamp>,
     ) -> Self {
+        let policy_until = now.after(duration);
         Self {
             provider,
-            until: now.after(duration),
+            until: match reset_at {
+                Some(reset) if reset > policy_until => reset,
+                Some(_) | None => policy_until,
+            },
             reason: Settlement::ProviderLimited.as_str().into(),
             source_run: Some(source_run),
         }

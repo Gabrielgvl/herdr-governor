@@ -153,7 +153,7 @@ async fn f12_jev_never_sees_operating_points() {
     let reply = world.launch(&launch_args(&task(&extras), "k1")).await;
     assert_eq!(tool_body(&reply)["outcome"], "launched");
 
-    let requests = world.jev().requests();
+    let requests = world.evals();
     let [request] = requests.as_slice() else {
         panic!("one evaluation: {requests:?}");
     };

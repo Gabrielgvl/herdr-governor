@@ -56,8 +56,8 @@ async fn transport_tools_list_exposes_status_only_in_pr_a() {
         .collect();
     assert_eq!(
         names,
-        ["herdr_status", "herdr_launch"],
-        "B2 lists status + launch"
+        ["herdr_status", "herdr_launch", "herdr_run"],
+        "the served surface lists every tool this build answers"
     );
 
     let sock = daemon.socket_path();

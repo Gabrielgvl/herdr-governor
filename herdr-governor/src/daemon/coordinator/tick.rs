@@ -1,7 +1,8 @@
 //! `coordinator::tick` — the `Msg::Tick`/`Msg::Observation` arms (§4.7):
 //! the snapshot's health record, the steps-0–2 `reconcile::pass`, the
-//! per-Run observation the subscription feed triggers, and the
-//! child-pane set pushed to the step-8 maintainer.
+//! steps-5–6 `delivery::pass`, the per-Run observation the subscription
+//! feed triggers, and the child-pane set pushed to the step-8
+//! maintainer.
 
 use std::collections::BTreeSet;
 
@@ -11,15 +12,16 @@ use governor_core::identity::{ChildStatus, PaneId, RunId};
 
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::daemon::reconcile::{self, SnapshotView};
-use crate::daemon::{DaemonError, log};
+use crate::daemon::{DaemonError, delivery, log};
 
 use super::Coordinator;
 
 impl Coordinator {
-    /// `Msg::Tick` — record health, run the §4.7 steps-0–2 pass (a hard
-    /// error is logged and dropped; the next tick resumes), answer the
-    /// waiters of Launches it finished, then feed the step-8 maintainer
-    /// the current pane set.
+    /// `Msg::Tick` — record health, run the §4.7 steps-0–2 pass then the
+    /// steps-5–6 delivery pass on the same fresh view (a hard error is
+    /// logged and dropped; the next tick resumes), answer the waiters of
+    /// Launches it finished, then feed the step-8 maintainer the current
+    /// pane set.
     pub(super) fn on_tick(&mut self, snapshot: &Result<Observed<SessionSnapshot>, HerdrError>) {
         let now = self.clock.now();
         let panes = snapshot
@@ -34,7 +36,21 @@ impl Coordinator {
         // settled the Runs its rows depend on (F21).
         self.converge_launches(snapshot.as_ref().ok());
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-        if let Err(error) = reconcile::pass(store, policy, now, snapshot) {
+        if let Err(error) = reconcile::pass(store, (policy, &self.paths), now, snapshot) {
+            log::apply_dropped(1, kind_of(&error));
+        }
+        let view = snapshot.as_ref().ok().map(reconcile::view_of);
+        // §4.7 step 4 — evidence gathers (async) and the acceptance retry.
+        self.supervise(view.as_ref());
+        if let Err(error) = delivery::pass(
+            &mut self.store,
+            &self.loaded.config.catalog,
+            view.as_ref(),
+            &mut self.followup_absent_since,
+            &mut self.last_hint_at,
+            &self.paths,
+            now,
+        ) {
             log::apply_dropped(1, kind_of(&error));
         }
         self.drain_done_waiters();
@@ -62,7 +78,9 @@ impl Coordinator {
             return;
         };
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-        if let Err(error) = reconcile::observe_run(store, policy, now, &run_id, &view) {
+        if let Err(error) =
+            reconcile::observe_run(store, (policy, &self.paths), now, &run_id, &view)
+        {
             log::apply_dropped(1, kind_of(&error));
         }
         self.push_subscription_specs();
@@ -85,7 +103,7 @@ impl Coordinator {
         // re-resolves the caller's pane against this read.
         self.converge_launches(snapshot.as_ref().ok());
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-        reconcile::pass(store, policy, now, snapshot)
+        reconcile::pass(store, (policy, &self.paths), now, snapshot)
     }
 
     /// The feed setter — `daemon::run` hands the maintainer's `watch`
@@ -145,13 +163,20 @@ impl Coordinator {
     }
 }
 
-/// The `apply_dropped` kind spelling for a reconcile failure — the only
-/// `DaemonError` variants `pass`/`observe_run` produce are `Store` and
-/// `Apply`.
-fn kind_of(error: &DaemonError) -> &'static str {
-    if matches!(error, DaemonError::Store(_)) {
-        "store"
-    } else {
-        "apply"
+/// The `apply_dropped` kind spelling for a pass failure — `pass`
+/// variants are `Store`/`Apply`; `delivery::pass` adds `Io` from the
+/// retention sweep.
+pub(super) fn kind_of(error: &DaemonError) -> &'static str {
+    match error {
+        DaemonError::Store(_) => "store",
+        DaemonError::Io(_) => "io",
+        DaemonError::Usage(_)
+        | DaemonError::Config(_)
+        | DaemonError::NoDaemonTable
+        | DaemonError::Credential(_)
+        | DaemonError::Jev(_)
+        | DaemonError::Locked { .. }
+        | DaemonError::Apply(_)
+        | DaemonError::Seam(_) => "apply",
     }
 }
