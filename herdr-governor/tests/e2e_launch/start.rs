@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use governor_core::config::{OperatingPointId, Provider};
+use governor_core::delivery::MailboxEventKind;
 use governor_core::identity::EffectKey;
 use governor_core::lifecycle::{
     EffectCertainty, EffectReceipt, EffectState, Settlement, State, StateChange, UnresolvedReason,
@@ -77,20 +78,35 @@ async fn f15_busy_falls_back_to_next_candidate_same_pane() {
 
 /// F15/H#45 — a start that times out is ambiguous (`unknown`): fallback
 /// stops (`start:1` is never planned), the Launch records `failed
-/// {effectCertainty: unknown}` with the created tab, and the Run is left
-/// to the transition rules — it settles `unresolved(launch_failed)`.
+/// {effectCertainty: unknown}` with the created tab, and the Run — seen
+/// `starting` with no captured identity (absent by name) — settles
+/// `unresolved(launch_failed)` through the identity-less absence rule.
 #[tokio::test]
 async fn f15_runtime_timeout_stops_fallback_records_failed() {
     let mut world = World::new(&two_points(), "launch_wait_secs = 15\n");
     world.jev().push_answers(launch_eval("new"));
     world.start().await;
     qualify_both(&world);
+    // The held `starting` window makes the nameless Run observable
+    // before the ambiguous result commits.
     world.fake().fault(
         "agent.start",
-        Fault::TimeoutAfter(Duration::from_millis(50)),
+        Fault::TimeoutAfter(Duration::from_millis(1_500)),
     );
 
-    let body = tool_body(&world.launch(&launch_args(&task(&[]), "k1")).await);
+    let call = world.spawn_launch(&launch_args(&task(&[]), "k1"));
+    let starting = wait_store(&world.state(), "the run to reach starting", |store| {
+        let launch = all_launches(store).into_iter().next()?;
+        let run = store.run_by_launch(&launch.id).ok().flatten()?;
+        (run.state == State::Starting).then_some(run)
+    })
+    .await;
+    assert!(
+        starting.identity.is_none(),
+        "absent by name — no start ack ever minted an identity"
+    );
+
+    let body = tool_body(&call.await.expect("call joins"));
     assert_eq!(body["outcome"], "failed", "{body}");
     assert_eq!(body["effectCertainty"], "unknown");
     assert!(body["createdTopology"]["tab"].is_string(), "{body}");
@@ -106,6 +122,10 @@ async fn f15_runtime_timeout_stops_fallback_records_failed() {
         Some(Settlement::Unresolved {
             reason: UnresolvedReason::LaunchFailed,
         })
+    );
+    assert!(
+        run.identity.is_none(),
+        "still nameless — the absence rule, not an observation, settled it"
     );
     let store = world.store();
     let start = effect_at(&store, &run_key(&run, "start:0"));
@@ -215,5 +235,76 @@ async fn f15_cooldown_between_decision_and_start_skips_candidate_pre_interactive
     let starts = wire_calls(world.fake(), "agent.start");
     assert_eq!(starts.len(), 1, "exactly one start reached the wire");
     assert_eq!(starts[0]["args"], json!(["--b"]), "never the cooled point");
+    world.shutdown().await;
+}
+
+/// S26/F8 — a garbage reply mid-dispatch (a non-envelope frame, then a
+/// line over the 1 MiB bound) resolves the in-flight start `unknown`:
+/// the key is terminal, so it is never re-sent, fallback does not run,
+/// and each Run settles `unresolved(launch_failed)` nameless.
+#[tokio::test]
+async fn f8_malformed_and_oversized_replies_fail_unknown_never_retried() {
+    let mut world = World::new(&two_points(), "launch_wait_secs = 15\n");
+    world.jev().push_answers(launch_eval("new"));
+    world.start().await;
+    qualify_both(&world);
+
+    for (key, fault) in [
+        ("k-malformed", Fault::malformed()),
+        ("k-oversized", Fault::oversized()),
+    ] {
+        world.fake().fault("agent.start", fault);
+        let body = tool_body(&world.launch(&launch_args(&task(&[]), key)).await);
+        assert_eq!(body["outcome"], "failed", "{key}: {body}");
+        assert_eq!(body["effectCertainty"], "unknown", "{key}: {body}");
+        assert!(
+            body["createdTopology"]["tab"].is_string(),
+            "{key}: the committed tab is reported: {body}"
+        );
+
+        let run = wait_store(&world.state(), "the run to settle", |store| {
+            let launch = launch_at(store, key);
+            let run = run_for(store, &launch);
+            (run.state == State::Settled).then_some(run)
+        })
+        .await;
+        assert_eq!(
+            run.settlement,
+            Some(Settlement::Unresolved {
+                reason: UnresolvedReason::LaunchFailed,
+            }),
+            "{key}"
+        );
+        let store = world.store();
+        let start = effect_at(&store, &run_key(&run, "start:0"));
+        assert_eq!(start.state, EffectState::Failed, "{key}");
+        assert_eq!(start.certainty, Some(EffectCertainty::Unknown), "{key}");
+        assert!(
+            start.dispatched_at.is_some(),
+            "{key}: the leg really did dispatch"
+        );
+        assert!(
+            store
+                .effect(&EffectKey(run_key(&run, "start:1")))
+                .expect("read")
+                .is_none(),
+            "{key}: an ambiguous reply never falls back"
+        );
+    }
+
+    // `Fault::Raw` replies before `apply`, so the faulted calls never
+    // reach the request log — but a retry would run unfaulted and be
+    // recorded. Zero is the no-retry proof, not a silent absence: the
+    // `failed` rows above are what the dispatched legs resolved to.
+    assert_eq!(
+        wire_calls(world.fake(), "agent.start").len(),
+        0,
+        "a failed/unknown key is never retried"
+    );
+    assert_eq!(
+        caller_events(&world.store(), MailboxEventKind::LaunchAnswered).len(),
+        2,
+        "launch_answered once per launch"
+    );
     world.shutdown().await;
 }

@@ -9,6 +9,7 @@
 
 mod deadlines;
 mod observations;
+mod snapshots;
 mod startup;
 mod subscription;
 
@@ -17,16 +18,20 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use governor_core::config::{Policy, Tier};
+use governor_core::acceptance::FrozenHandoff;
+use governor_core::config::{
+    Capability, ConfigVersion, OperatingPointId, Policy, Provider, Qualification, Tier, args_digest,
+};
 use governor_core::identity::{
-    AgentKind, AgentName, CallerBinding, CallerKey, ChildIdentity, Digest, EffectId, EffectKey,
-    HerdrIncarnation, IdempotencyKey, LaunchId, NativeSession, PaneId, ProjectRoot,
+    AgentKind, AgentName, CallerBinding, CallerKey, ChildIdentity, ChildStatus, Digest, EffectId,
+    EffectKey, HerdrIncarnation, IdempotencyKey, LaunchId, NativeSession, PaneId, ProjectRoot,
     RelayInstanceId, RunId, TerminalId, Timestamp,
 };
 use governor_core::lifecycle::{
-    Effect, EffectKind, EffectState, EffectWrite, Run, Settlement, State, StateChange, Transition,
-    UnresolvedReason, settle,
+    Effect, EffectKind, EffectState, EffectTarget, EffectWrite, Run, Settlement, State,
+    StateChange, Transition, UnresolvedReason, op_digest, settle,
 };
+use governor_core::routing::{Candidate, Decision, Exploration};
 use governor_core::task::{Launch, LaunchPhase, Task};
 use herdr_governor::adapters::herdr::SessionKind;
 use herdr_governor::daemon::{self, Settings};
@@ -35,7 +40,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::support::fake_herdr::topology::{Occupant, SessionRef};
-use crate::support::fake_herdr::{FakeHerdr, Topology};
+use crate::support::fake_herdr::{FakeHerdr, Fault, Topology};
 
 const DEADLINE: Duration = Duration::from_secs(10);
 /// `reconcile_secs = 1` — the fastest cadence the catalog accepts.
@@ -333,6 +338,32 @@ fn agent_topology(name: &str, session: Option<&str>) -> (Topology, String) {
     });
     let terminal = pane.terminal_id.clone();
     (topology, terminal)
+}
+
+/// `create_tab` plus an occupant on its root pane — `agent_topology` for
+/// panes beyond the first. Returns `(pane_id, terminal_id)`.
+fn occupied_tab(
+    topology: &mut Topology,
+    workspace: &str,
+    name: &str,
+    session: &str,
+) -> (String, String) {
+    let (_tab, pane_id) = topology.create_tab(workspace);
+    let pane = topology
+        .panes
+        .iter_mut()
+        .find(|p| p.pane_id == pane_id)
+        .expect("the created pane");
+    pane.agent = Some(Occupant {
+        name: name.to_owned(),
+        kind: "kind-a".to_owned(),
+        status: "working".to_owned(),
+        session: Some(SessionRef {
+            kind: SessionKind::Id,
+            value: session.to_owned(),
+        }),
+    });
+    (pane_id, pane.terminal_id.clone())
 }
 
 /// The `HerdrIncarnation` a snapshot over `path` mints —

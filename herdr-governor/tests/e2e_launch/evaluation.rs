@@ -1,10 +1,11 @@
 //! `evaluation` — F12 on the wire: every evaluation failure class
-//! (transport, auth, HTTP, malformed, oversize) abstains
+//! (silent, transport, auth, HTTP, malformed, oversize) abstains
 //! `evaluation_failed` with zero effects; an evaluation left
 //! `dispatching` by a kill abstains `interrupted_before_decision` on
 //! restart, never re-asked; and the request Jev receives names no
 //! operating point, provider, argument, tier request, label or cwd.
 
+use governor_core::delivery::MailboxEventKind;
 use governor_core::lifecycle::{EffectCertainty, EffectState};
 use governor_core::task::{AbstainReason, LaunchOutcome};
 use herdr_governor::daemon::{Boundary, SeamAction, SeamConfig};
@@ -14,16 +15,17 @@ use crate::support::fake_jev::{Answer, Fault};
 
 use super::*;
 
-/// F12 — transport (connection dropped mid-call), auth (401), HTTP
-/// (500), malformed (a choice outside its own distribution) and
-/// oversize (a request over 96 KiB, refused before any socket write)
-/// each abstain `evaluation_failed`: no Run reserved, no topology, and
-/// the oversize ask never reaches Jev.
+/// F12 — silent (the ask is never answered and the deadline fires),
+/// transport (connection dropped mid-call), auth (401), HTTP (500),
+/// malformed (a choice outside its own distribution) and oversize (a
+/// request over 96 KiB, refused before any socket write) each abstain
+/// `evaluation_failed`: no Run reserved, no topology, each caller
+/// answered once, and the oversize ask never reaches Jev.
 #[tokio::test]
 async fn f12_transport_auth_http_malformed_oversize_abstain_with_zero_effects() {
     let mut world = World::new(
         &point("op-a", 0, "vendor-a", "--a"),
-        "launch_wait_secs = 15\n",
+        "launch_wait_secs = 15\njev_timeout_secs = 1\n",
     );
     world.start().await;
     qualify_start(&mut world.store(), "op-a", &["--a"]);
@@ -33,6 +35,7 @@ async fn f12_transport_auth_http_malformed_oversize_abstain_with_zero_effects() 
         error_type: None,
         retry_after_ms: None,
     };
+    world.jev().push_fault(Fault::Silent);
     world.jev().push_fault(Fault::Abort);
     world.jev().push_fault(status(401));
     world.jev().push_fault(status(500));
@@ -45,6 +48,7 @@ async fn f12_transport_auth_http_malformed_oversize_abstain_with_zero_effects() 
     // serialize escaped to ~120 KB — past the 96 KiB request bound.
     let oversize = task(&[("objective", json!("\"".repeat(60_000)))]);
     let cases = [
+        ("k-silent", task(&[])),
         ("k-transport", task(&[])),
         ("k-auth", task(&[])),
         ("k-http", task(&[])),
@@ -67,14 +71,20 @@ async fn f12_transport_auth_http_malformed_oversize_abstain_with_zero_effects() 
     }
     assert_eq!(
         world.jev().requests().len(),
-        4,
+        5,
         "the oversize request never left the daemon"
     );
     assert!(
         !saw_wire(world.fake(), "tab.create")
             && !saw_wire(world.fake(), "pane.split")
-            && !saw_wire(world.fake(), "agent.start"),
-        "zero topology effects"
+            && !saw_wire(world.fake(), "agent.start")
+            && !saw_wire(world.fake(), "agent.prompt"),
+        "zero Herdr effects"
+    );
+    assert_eq!(
+        caller_events(&world.store(), MailboxEventKind::LaunchAnswered).len(),
+        6,
+        "every abstained caller is answered exactly once"
     );
     world.shutdown().await;
 }

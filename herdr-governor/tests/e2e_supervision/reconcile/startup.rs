@@ -88,3 +88,69 @@ async fn f28_sessionless_run_settles_identity_unprovable_only_on_valid_foreign_s
     .await;
     stop(handle, shutdown).await;
 }
+
+/// F28 — S7b's other half: the foreign-incarnation settlement needs a
+/// *valid* read. Unavailable and invalid post-restart snapshots both
+/// hold the sessionless Run — `identity_unprovable` lands only once a
+/// good foreign snapshot reaches the loop.
+#[tokio::test]
+async fn f28_sessionless_run_needs_a_valid_foreign_snapshot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (state, config) = fixture(tmp.path());
+    let (topology, terminal) = agent_topology("gov-r-28b", None);
+    let mut fake = FakeHerdr::start(topology);
+    let inc = socket_incarnation(fake.socket_path());
+
+    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS));
+    wait_bound(&state).await;
+    let mut store = open_store(&state);
+    bind_caller(&mut store);
+    let run = active_run_on("r-28b", "w1:p1", &terminal, None, &inc);
+    seed_run(&mut store, &run);
+    wait_for("unique classification", || {
+        read_run(&store, "r-28b").child_status.is_some()
+    })
+    .await;
+
+    // Restart under a latched outage: the incarnation is foreign but
+    // every read still fails — no `identity_unprovable`.
+    fake.snapshot_fault(true);
+    fake.restart();
+    let span = Instant::now()
+        .checked_add(Duration::from_millis(2_000))
+        .unwrap();
+    while Instant::now() < span {
+        assert!(
+            read_run(&store, "r-28b").settlement.is_none(),
+            "unavailable foreign snapshots never settle unprovable"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // Reads recover but the snapshot is invalid (duplicated locator) —
+    // still no settlement under the foreign incarnation.
+    let duplicated = fake.state().topology.panes[0].clone();
+    fake.state().topology.panes.push(duplicated);
+    fake.snapshot_fault(false);
+    let invalid_span = Instant::now()
+        .checked_add(Duration::from_millis(2_000))
+        .unwrap();
+    while Instant::now() < invalid_span {
+        assert!(
+            read_run(&store, "r-28b").settlement.is_none(),
+            "invalid foreign snapshots never settle unprovable"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // The first *valid* foreign read settles it.
+    fake.state().topology.panes.pop();
+    wait_for("the valid foreign settlement", || {
+        read_run(&store, "r-28b").settlement
+            == Some(Settlement::Unresolved {
+                reason: UnresolvedReason::IdentityUnprovable,
+            })
+    })
+    .await;
+    stop(handle, shutdown).await;
+}

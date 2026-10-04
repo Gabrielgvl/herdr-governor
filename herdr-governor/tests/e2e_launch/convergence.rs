@@ -8,6 +8,7 @@
 //! in-flight leg resolves. (The `dispatching`-eval row is
 //! `evaluation::f12_dispatching_eval_abstains_interrupted_on_restart`.)
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use governor_core::config::{ConfigVersion, OperatingPointId, Provider, Tier};
@@ -18,11 +19,12 @@ use governor_core::lifecycle::{
 };
 use governor_core::routing::{Candidate, Decision, Exploration};
 use governor_core::task::{LaunchOutcome, LaunchPhase, admit};
+use herdr_governor::daemon::{Boundary, SeamAction, SeamConfig};
 use herdr_governor::store::Store;
 use serde_json::json;
 
 use crate::support::fake_herdr::Fault;
-use crate::support::fake_herdr::topology::Topology;
+use crate::support::fake_herdr::topology::{PaneRow, Topology};
 
 use super::*;
 
@@ -207,6 +209,107 @@ async fn f7_topology_failure_finishes_launch_failed_and_run_unresolved() {
         })
     );
     let store = world.store();
+    assert!(
+        store
+            .effect(&EffectKey(run_key(&run, "start:0")))
+            .expect("read")
+            .is_none(),
+        "no start leg was ever planned"
+    );
+    assert_eq!(
+        caller_events(&store, MailboxEventKind::LaunchFailed).len(),
+        1
+    );
+    assert_eq!(
+        caller_events(&store, MailboxEventKind::LaunchAnswered).len(),
+        1
+    );
+    assert!(!saw_wire(world.fake(), "agent.start"));
+    world.shutdown().await;
+}
+
+/// §4.5/S14b — the same row's `absent` certainty: the split's anchor
+/// pane vanishes between `dispatch_committed` and the wire write, so
+/// `pane.split` answers `pane_not_found`. The Launch finishes
+/// `failed{absent}` with nothing created, the Run settles
+/// `unresolved(launch_failed)`, and no start leg is ever planned.
+#[tokio::test]
+async fn f7_absent_topology_failure_finishes_failed_absent() {
+    // The caller's tab with a dead-headed shell pane first: the split
+    // verify anchors on the first pane in the tab, so the one this test
+    // removes is not the caller's.
+    let mut topology = caller_topology();
+    topology.panes.insert(
+        0,
+        PaneRow {
+            pane_id: "w1:p9".to_owned(),
+            tab_id: "w1:t1".to_owned(),
+            workspace_id: "w1".to_owned(),
+            terminal_id: "term_anchor".to_owned(),
+            revision: 0,
+            state_change_seq: None,
+            text: String::new(),
+            source_texts: BTreeMap::new(),
+            agent: None,
+        },
+    );
+    let mut world = World::build(topology, |catalog| {
+        catalog.points_toml = point("op-a", 0, "vendor-a", "--a");
+        catalog.daemon_extra = "launch_wait_secs = 15\n".to_owned();
+    });
+    world.jev().push_answers(launch_eval("w1:t1"));
+    world
+        .start_seamed(SeamConfig {
+            suffix: "split".to_owned(),
+            boundary: Boundary::DispatchCommitted,
+            action: SeamAction::Pause(Duration::from_millis(600)),
+        })
+        .await;
+    qualify_start(&mut world.store(), "op-a", &["--a"]);
+
+    let call = world.spawn_launch(&launch_args(&task(&[]), "k1"));
+    wait_store(&world.state(), "the split leg in flight", |store| {
+        let launch = store
+            .launches_in_phase(LaunchPhase::Launching)
+            .expect("read")
+            .into_iter()
+            .next()?;
+        let run = store.run_by_launch(&launch.id).ok().flatten()?;
+        let split = store
+            .effect(&EffectKey(run_key(&run, "split")))
+            .ok()
+            .flatten()?;
+        (split.state == EffectState::Dispatching).then_some(())
+    })
+    .await;
+    // The pause still holds the dispatch — the pane the verify resolved
+    // is gone when the wire write runs.
+    world.fake().remove_pane("w1:p9");
+
+    let body = tool_body(&call.await.expect("call joins"));
+    assert_eq!(body["outcome"], "failed", "{body}");
+    assert_eq!(body["effectCertainty"], "absent", "{body}");
+    assert_eq!(
+        body["createdTopology"],
+        json!({"tab": null, "panes": []}),
+        "{body}"
+    );
+
+    let run = wait_store(&world.state(), "the run to settle", |store| {
+        let run = run_for(store, &only_launch(store));
+        (run.state == State::Settled).then_some(run)
+    })
+    .await;
+    assert_eq!(
+        run.settlement,
+        Some(Settlement::Unresolved {
+            reason: UnresolvedReason::LaunchFailed,
+        })
+    );
+    let store = world.store();
+    let split = effect_at(&store, &run_key(&run, "split"));
+    assert_eq!(split.state, EffectState::Failed);
+    assert_eq!(split.certainty, Some(EffectCertainty::Absent));
     assert!(
         store
             .effect(&EffectKey(run_key(&run, "start:0")))

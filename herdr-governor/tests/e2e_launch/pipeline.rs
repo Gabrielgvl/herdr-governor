@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use governor_core::delivery::MailboxEventKind;
@@ -16,6 +17,7 @@ use serde_json::json;
 
 use crate::support::fake_herdr::Fault as HerdrFault;
 use crate::support::fake_jev::{Answer, Fault};
+use crate::support::mcp_client::{McpClient, caller_envelope, status_call, status_page};
 
 use super::*;
 
@@ -355,4 +357,88 @@ async fn f2_ten_concurrent_reservations_mint_distinct_names() {
     assert_eq!(wire_calls(world.fake(), "agent.start").len(), 10);
     assert_eq!(world.jev().requests().len(), 10, "ten evaluations asked");
     world.shutdown().await;
+}
+
+/// `/proc/<pid>/status`'s `VmHWM` — the child's peak RSS in KiB; it
+/// never falls, so a read after the load covers the whole window.
+fn peak_rss_kib(pid: u32) -> u64 {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).expect("proc status");
+    status
+        .lines()
+        .find(|line| line.starts_with("VmHWM:"))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|kib| kib.parse().ok())
+        .expect("VmHWM in KiB")
+}
+
+/// S32/N3/N4 — the combined load: a real child daemon answers fifty
+/// concurrent `herdr_status` calls and ten concurrent `herdr_launch`
+/// calls — every caller answered, ten distinct `gov-` child names — and
+/// the daemon's peak RSS stays under the 176 MiB bound.
+#[tokio::test]
+async fn s32_fifty_status_calls_and_ten_launches_answer_under_rss() {
+    let world = World::new(
+        &point("op-a", 0, "vendor-a", "--a"),
+        "launch_wait_secs = 15\n",
+    );
+    world.jev().push_answers(launch_eval("new"));
+    let daemon = KillOnDrop(
+        Command::new(env!("CARGO_BIN_EXE_herdr-governor"))
+            .arg("daemon")
+            .arg("--state-dir")
+            .arg(world.dirs().state_dir())
+            .arg("--config-dir")
+            .arg(world.dirs().config_dir())
+            .env_remove("GOV_DAEMON_SEAM")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("daemon child spawns"),
+    );
+    let pid = daemon.0.id();
+    wait_for_socket(&world.dirs().socket_path()).await;
+    qualify_start(&mut world.store(), "op-a", &["--a"]);
+
+    let statuses: Vec<_> = {
+        let status_client = Arc::new(McpClient::new(
+            &world.dirs().socket_path(),
+            caller_envelope(CALLER_PANE, world.project().to_str().expect("utf8"), RELAY),
+        ));
+        (0..50_u32)
+            .map(|index| {
+                let client = Arc::clone(&status_client);
+                tokio::spawn(async move { client.call(&status_call(json!(index))).await })
+            })
+            .collect()
+    };
+    let launches: Vec<_> = (0..10_u8)
+        .map(|index| world.spawn_launch(&launch_args(&task(&[]), &format!("s32-{index}"))))
+        .collect();
+
+    for call in statuses {
+        let _page = status_page(&call.await.expect("status joins"));
+    }
+    let mut run_ids = BTreeSet::new();
+    for call in launches {
+        let body = tool_body(&call.await.expect("call joins"));
+        assert_eq!(body["outcome"], "launched", "{body}");
+        assert!(
+            run_ids.insert(body["runId"].as_str().expect("runId").to_owned()),
+            "run ids are distinct"
+        );
+    }
+
+    let store = world.store();
+    let names: BTreeSet<String> = all_launches(&store)
+        .iter()
+        .map(|launch| run_for(&store, launch).child_name)
+        .collect();
+    assert_eq!(names.len(), 10, "ten distinct child names");
+
+    let hwm = peak_rss_kib(pid);
+    assert!(
+        hwm <= 176 * 1024,
+        "daemon peak RSS {hwm} KiB exceeds the 176 MiB bound"
+    );
+    drop(daemon);
 }

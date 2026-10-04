@@ -7,12 +7,16 @@
 
 use std::time::Duration;
 
+use governor_core::config::{Policy, Tier};
 use governor_core::delivery::MailboxEventKind;
 use governor_core::identity::EffectKey;
-use governor_core::lifecycle::{EffectCertainty, EffectState, PromptCertainty, Run, State};
+use governor_core::lifecycle::{
+    EffectCertainty, EffectState, PromptCertainty, Run, Settlement, State, settle,
+};
 use governor_core::task::LaunchOutcome;
 use herdr_governor::daemon::{Boundary, SeamAction, SeamConfig};
 
+use crate::support::daemon::{await_for, never};
 use crate::support::fake_herdr::Fault;
 
 use super::*;
@@ -168,5 +172,91 @@ async fn f16_prompt_kill_after_dispatch_commit_is_unconfirmed() {
         !saw_wire(world.fake(), "agent.prompt"),
         "never sent, never resubmitted"
     );
+    world.shutdown().await;
+}
+
+/// F20/S31b — the cancel that lands while `prompt:task`'s pre-dispatch
+/// `session.snapshot` is still on the wire: `DispatchCommit` re-reads
+/// the Run, sees the settlement, and skips — the row stays `planned`,
+/// `dispatched_at` unset, and no `agent.prompt` is ever written. The
+/// supervisor-facing cancel rides `herdr_run`, which PR B declares but
+/// does not serve (a `TOOL_UNKNOWN` refusal, "lands with C2"); the
+/// settlement the commit gate checks is the same one `on_cancel`
+/// writes, so this test
+/// applies `cancelled` through the store like
+/// `f7_run_settled_before_prompting` does.
+#[tokio::test]
+async fn f20_cancel_during_pre_dispatch_snapshot_never_sends_the_prompt() {
+    let mut world = World::build(caller_topology(), |catalog| {
+        catalog.points_toml = point("op-a", 0, "vendor-a", "--a");
+        catalog.daemon_extra = "launch_wait_secs = 15\n".to_owned();
+        // An inert tick: no reconcile snapshot can consume the armed
+        // delay before the prompt's own verification does.
+        catalog.reconcile_secs = 3600;
+    });
+    world.jev().push_answers(launch_eval("new"));
+    world.start().await;
+    qualify_start(&mut world.store(), "op-a", &["--a"]);
+    // Hold the start ack long enough to arm the snapshot delay after the
+    // request-time and tab-leg snapshots have passed — the next
+    // `session.snapshot` on the wire is the task prompt's verification.
+    world
+        .fake()
+        .fault("agent.start", Fault::Delay(Duration::from_millis(2_500)));
+
+    let call = world.spawn_launch(&launch_args(&task(&[]), "k1"));
+    await_for("the start on the wire", || {
+        saw_wire(world.fake(), "agent.start")
+    })
+    .await;
+    world
+        .fake()
+        .fault("session.snapshot", Fault::Delay(Duration::from_secs(5)));
+    let snapshots = wire_calls(world.fake(), "session.snapshot").len();
+    await_for("the prompt's verification in flight", || {
+        wire_calls(world.fake(), "session.snapshot").len() > snapshots
+    })
+    .await;
+
+    let policy = Policy {
+        tiers: vec![Tier("standard".into())],
+        no_change_cap: None,
+        security_floor: None,
+        broad_change_floor: None,
+        provider_limit_threshold: 0.6,
+        exploration_rate: 0.0,
+        recovery_expiry: Duration::from_hours(24),
+        cooldown: Duration::from_hours(1),
+        max_age: Duration::from_hours(24),
+        repair_window: Duration::from_mins(15),
+        judgment_window: Duration::from_mins(30),
+        idle_window: Duration::from_mins(15),
+    };
+    let run = run_for(&world.store(), &only_launch(&world.store()));
+    world
+        .store()
+        .apply(&settle(&run, Settlement::Cancelled, NOW, &policy), NOW)
+        .expect("cancel the prompting run");
+
+    assert_eq!(
+        tool_body(&call.await.expect("call joins"))["outcome"],
+        "launched",
+        "the start ack already answered"
+    );
+    // The delayed reply lands, the commit asks, the settled gate skips:
+    // five seconds of delay plus margin, and the prompt is never sent.
+    never(
+        "a prompt after the skipped commit",
+        Duration::from_secs(4),
+        || saw_wire(world.fake(), "agent.prompt"),
+    )
+    .await;
+    let store = world.store();
+    let prompt = effect_at(&store, &run_key(&run, "prompt:task"));
+    assert_eq!(prompt.state, EffectState::Planned, "the commit skipped");
+    assert_eq!(prompt.dispatched_at, None, "never marked dispatching");
+    let settled = run_for(&store, &only_launch(&store));
+    assert_eq!(settled.state, State::Settled);
+    assert_eq!(settled.settlement, Some(Settlement::Cancelled));
     world.shutdown().await;
 }

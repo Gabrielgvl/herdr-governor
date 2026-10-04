@@ -5,6 +5,7 @@
 //! effect (a kill before the eval's dispatch loses nothing), and a git
 //! outage never masks a stored outcome.
 
+use governor_core::delivery::MailboxEventKind;
 use governor_core::lifecycle::EffectState;
 use governor_core::task::{LaunchOutcome, LaunchPhase};
 use herdr_governor::daemon::{Boundary, SeamAction, SeamConfig};
@@ -53,6 +54,53 @@ async fn f11_same_key_same_digest_returns_stored_or_pending() {
     assert_eq!(all_launches(&world.store()).len(), 2, "one row per key");
     assert_eq!(world.jev().requests().len(), 2, "one evaluation per key");
     assert_eq!(wire_calls(world.fake(), "agent.start").len(), 1);
+    world.shutdown().await;
+}
+
+/// F11 — a replay whose own wait elapses while the Launch is still
+/// `evaluating` answers `pending` naming the *same* Launch: no second
+/// row, no second ask. Once the Launch is terminal the same key returns
+/// the stored outcome instead.
+#[tokio::test]
+async fn f11_inflight_replay_pending_names_the_same_launch() {
+    let mut world = World::new(
+        &point("op-a", 0, "vendor-a", "--a"),
+        "launch_wait_secs = 1\njev_timeout_secs = 6\n",
+    );
+    world.jev().push_fault(Fault::Silent);
+    world.start().await;
+    qualify_start(&mut world.store(), "op-a", &["--a"]);
+
+    let args = launch_args(&task(&[]), "k-pending");
+    let first = tool_body(&world.launch(&args).await);
+    assert_eq!(first["outcome"], "pending", "the wait elapses: {first}");
+    let replay = tool_body(&world.launch(&args).await);
+    assert_eq!(
+        replay["outcome"], "pending",
+        "the in-flight replay parks, then pends: {replay}"
+    );
+    assert_eq!(
+        replay["launchId"], first["launchId"],
+        "the replay names the same in-flight Launch"
+    );
+    assert_eq!(all_launches(&world.store()).len(), 1, "one row only");
+    assert_eq!(world.jev().requests().len(), 1, "one evaluation only");
+
+    let done = launch_done(&world.state()).await;
+    assert_eq!(done.id.0, first["launchId"].as_str().expect("launchId"));
+    let stored = tool_body(&world.launch(&args).await);
+    assert_eq!(
+        stored,
+        json!({"outcome": "abstained", "reason": "evaluation_failed"}),
+        "the terminal replay returns the stored outcome: {stored}"
+    );
+    assert_eq!(all_launches(&world.store()).len(), 1);
+    assert_eq!(world.jev().requests().len(), 1);
+    assert_eq!(
+        caller_events(&world.store(), MailboxEventKind::LaunchAnswered).len(),
+        1,
+        "the one Launch is answered exactly once"
+    );
     world.shutdown().await;
 }
 
