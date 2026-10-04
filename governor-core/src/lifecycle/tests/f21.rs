@@ -69,6 +69,29 @@ pub(super) fn f21_blocked_episode_reasks_failure_and_reopens_on_work() {
         "an unanswered episode ask retries under :1"
     );
 
+    // …but an answered set is the episode's completed ask — the
+    // supervision families keep the F23 suppression rule.
+    let mut answered = journal_effect(
+        &run_blocked,
+        "blocked:1",
+        EffectKind::JevEvaluate,
+        EffectState::Acknowledged,
+    );
+    answered.receipt = Some(EffectReceipt::Judgments(review_record(&run, Vec::new())));
+    let journal_answered = Vec::from([answered]);
+    let t_done = transition(
+        &run_blocked,
+        &stamped(&run_blocked, obs_unique(Some(ChildStatus::Blocked))),
+        NOW,
+        &test_policy(),
+        (None, &journal_answered, &[]),
+        "/fp",
+    );
+    assert!(
+        t_done.effects.is_empty(),
+        "an answered episode ask suppresses the re-ask"
+    );
+
     // the episode ends when the child works again — a blocked report after
     // a non-blocked one opens the next episode and asks under its key.
     let mut run_working = run_in(State::Active);

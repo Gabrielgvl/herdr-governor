@@ -139,9 +139,10 @@ pub(crate) enum Msg {
     EffectResult(Box<EffectResult>),
     /// A runner's pre-commit exit — its fresh verify found nothing honest
     /// to wire (§4.4 step 2's `None`), so the row stays `planned` and the
-    /// in-flight subject claim drops: the next hand-off re-offers it.
-    /// Runner exits *after* `DispatchCommit` release via that arm's
-    /// non-`Go` verdicts or the `EffectResult` arm instead.
+    /// in-flight subject claim drops: the next hand-off re-offers it —
+    /// never this release's own (F10). Runner exits *after*
+    /// `DispatchCommit` release via that arm's non-`Go` verdicts or the
+    /// `EffectResult` arm instead.
     ReleaseSubject {
         /// The effect key the claim was taken under.
         key: EffectKey,
@@ -363,10 +364,15 @@ impl Coordinator {
                             break self.begin_shutdown(Stop::Signalled);
                         }
                         Some(msg) => {
-                            self.handle(msg).await;
                             // Every arm is also a dispatch trigger: an
                             // apply that planned an effect hands it out.
-                            self.hand_out();
+                            // A hold is not (F4/F10) — re-offering the
+                            // row it left unchanged would spin its runner
+                            // at round-trip speed; the next tick,
+                            // observation or other arm re-offers it.
+                            if self.handle(msg).await {
+                                self.hand_out();
+                            }
                         }
                         None => break self.begin_shutdown(Stop::Requested),
                     }
@@ -407,8 +413,10 @@ impl Coordinator {
         stop
     }
 
-    /// One `Msg` to completion.
-    pub(super) async fn handle(&mut self, msg: Msg) {
+    /// One `Msg` to completion — `false` for a hold: a `ReleaseSubject`
+    /// or a `Skip` commit, which leaves its effect exactly as the
+    /// hand-off offered it, so `serve` must not re-offer it (F4/F10).
+    pub(super) async fn handle(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Tool {
                 request,
@@ -442,9 +450,12 @@ impl Coordinator {
                 key,
                 context,
                 reply,
-            } => self.on_dispatch_commit(&key, &context, reply),
+            } => return self.on_dispatch_commit(&key, &context, reply),
             Msg::EffectResult(result) => self.on_effect_result(result).await,
-            Msg::ReleaseSubject { key } => self.free(&key),
+            Msg::ReleaseSubject { key } => {
+                self.free(&key);
+                return false;
+            }
             Msg::LaunchWait { launch } => self.launch_wait_expired(&launch),
             Msg::LaunchBase { launch, base } => self.on_launch_base(&launch, base),
             Msg::Signal(Signal::Reload) => self.reload().await,
@@ -452,6 +463,7 @@ impl Coordinator {
                 // Handled in `serve`'s arm — unreachable here.
             }
         }
+        true
     }
 }
 

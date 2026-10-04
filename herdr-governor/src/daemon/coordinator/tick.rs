@@ -32,7 +32,7 @@ impl Coordinator {
         }
         // §4.7 step 0 — launch convergence, before any observation has
         // settled the Runs its rows depend on (F21).
-        self.converge_launches();
+        self.converge_launches(snapshot.as_ref().ok());
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
         if let Err(error) = reconcile::pass(store, policy, now, snapshot) {
             log::apply_dropped(1, kind_of(&error));
@@ -81,10 +81,9 @@ impl Coordinator {
             self.latest_snapshot = Some(observed.clone());
         }
         // §4.3 step 5's table — `evaluating`/`routed` convergence runs
-        // before any observation is derived (F21); the snapshot was
-        // just stashed, so the routed row re-resolves the caller's pane
-        // against it.
-        self.converge_launches();
+        // before any observation is derived (F21); the routed row
+        // re-resolves the caller's pane against this read.
+        self.converge_launches(snapshot.as_ref().ok());
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
         reconcile::pass(store, policy, now, snapshot)
     }

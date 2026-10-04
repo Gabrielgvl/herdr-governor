@@ -8,7 +8,7 @@
 //! | `evaluating`, eval `planned` | — | `hand_out` dispatches (no row here) |
 //! | `evaluating`, eval `dispatching` | restart | `mark_restart` already abstained it |
 //! | `evaluating`, eval `acknowledged`/`failed`/`unconfirmed`, no decision | tick/restart | re-run `on_evaluated` from the journaled set |
-//! | `routed`, run `reserved`, no topology effect | tick/restart | caller pane by native session → `begin ‖ launch_plan`, absent → `Failed{Absent}` |
+//! | `routed`, run `reserved`, no topology effect | tick/restart | caller pane by native session → `begin ‖ launch_plan`, absent from this pass's valid read → `Failed{Absent}`, else wait |
 //!
 //! `launching` rows are B3's `reconcile/launch` — a Run ≥ `starting`
 //! belongs to the observation pipeline, never to this pass.
@@ -17,6 +17,7 @@ use governor_core::identity::LaunchId;
 use governor_core::lifecycle::{EffectKind, EffectState, State};
 use governor_core::task::LaunchPhase;
 
+use crate::adapters::herdr::{Observed, SessionSnapshot};
 use crate::daemon::coordinator::Coordinator;
 
 use super::context::{eval_key, eval_related_tab};
@@ -24,7 +25,12 @@ use super::context::{eval_key, eval_related_tab};
 impl Coordinator {
     /// §4.5's convergence pass — runs every tick (step 0, before any
     /// observation) and at startup step 5, strictly before the bind.
-    pub(in crate::daemon) fn converge_launches(&mut self) {
+    /// `read` is the pass's own snapshot (`None` when it failed) — the
+    /// only one a routed row's caller absence may be proven by.
+    pub(in crate::daemon) fn converge_launches(
+        &mut self,
+        read: Option<&Observed<SessionSnapshot>>,
+    ) {
         // `evaluating` rows whose eval reached a terminal state but
         // whose decide apply never landed (a drop, or the result→decide
         // kill seam): re-run `on_evaluated` from the journaled set —
@@ -53,7 +59,8 @@ impl Coordinator {
         // — the decide landed but `begin` never did (the kill seam
         // between the two applies, or a restart between them). The
         // caller's pane re-resolves by native session in the freshest
-        // snapshot — never derived from an observation.
+        // snapshot — never derived from an observation; absence only
+        // from this pass's own valid read.
         let routed = self
             .store
             .launches_in_phase(LaunchPhase::Routed)
@@ -75,7 +82,7 @@ impl Coordinator {
                 continue;
             }
             let related_tab = eval_related_tab(&self.store, &self.loaded.config.policy, &launch.id);
-            self.begin_launch(&launch.id, related_tab.as_ref());
+            self.begin_launch(&launch.id, related_tab.as_ref(), read);
         }
     }
 

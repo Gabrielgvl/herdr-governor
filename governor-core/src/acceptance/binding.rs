@@ -10,7 +10,7 @@ use crate::config::ConfigVersion;
 use crate::identity::{Digest, RunId, Timestamp};
 use crate::lifecycle::JudgmentVerdict;
 use crate::routing::{
-    JudgmentOutcome, JudgmentPurpose, JudgmentRecord, Question, QuestionVersion, noul_cleared,
+    JudgmentOutcome, JudgmentPurpose, JudgmentRecord, Question, QuestionVersion, noul_verdict,
 };
 
 /// F24/Appendix B `handoffs` — the frozen copy of a valid marked file, keyed
@@ -155,11 +155,13 @@ pub fn unjudged_items(
 /// when the record is not a complete valid assessment of the Task's
 /// `item_count` doneWhen items: `record.set` must be an `answered`
 /// `acceptance` set and its judgments exactly the rendered ask's answers —
-/// one `handoff_meets_item_k` per `k` in `{0..item_count}`, each item once
-/// and none outside the family (a one-item prefix of a larger Task, a
-/// duplicate, an out-of-range item or a foreign question are all `None`).
-/// `None` is journal-and-re-ask, never a verdict (OQ-K). `items_met[i]` is
-/// item `i`'s noul at the calibrated majority; `verdict` resolves the set.
+/// one `handoff_meets_item_k` per `k` in `{0..item_count}`, each item once,
+/// each a noul answer in contract (`noul_verdict`: P(yes) recorded and
+/// `answer` matching the verdict it resolves), and none outside the family
+/// (a one-item prefix of a larger Task, a duplicate, an out-of-range item,
+/// a foreign question or a malformed item answer are all `None`). `None`
+/// is journal-and-re-ask, never a verdict (OQ-K). `items_met[i]` is item
+/// `i`'s resolved noul; `verdict` resolves the set.
 #[must_use]
 pub fn acceptance_verdict(record: &JudgmentRecord, item_count: u8) -> Option<JudgmentVerdict> {
     if record.set.purpose != JudgmentPurpose::Acceptance
@@ -174,7 +176,7 @@ pub fn acceptance_verdict(record: &JudgmentRecord, item_count: u8) -> Option<Jud
             return None;
         };
         let slot = items_met.get_mut(usize::from(item))?;
-        if slot.replace(noul_cleared(judgment, None)).is_some() {
+        if slot.replace(noul_verdict(judgment)?).is_some() {
             return None;
         }
     }

@@ -146,7 +146,26 @@ fn f24_acceptance_verdict_accepts_complete_one_item_task() {
         Some(JudgmentVerdict::Reject),
         "any unmet item rejects into repair"
     );
-    // A distribution with no "yes" is unmet at the calibrated majority.
+    // A policy threshold recorded on the item shifts the noul's bound:
+    // P(yes)=0.6 under 0.7 resolves "no" — in contract, and unmet.
+    let mut thresholded = meets(0, 0.9);
+    thresholded
+        .probabilities
+        .insert(String::from("yes"), Probability(0.6));
+    thresholded.answer = String::from("no");
+    thresholded.threshold = Some(0.7);
+    let under = record(
+        JudgmentPurpose::Acceptance,
+        JudgmentOutcome::Answered,
+        Vec::from([thresholded]),
+    );
+    assert_eq!(
+        acceptance_verdict(&under, 1),
+        Some(JudgmentVerdict::Reject),
+        "P(yes) below the judgment's recorded threshold reads unmet"
+    );
+    // A distribution with no "yes" is malformed, not unmet — routing's
+    // `noul_at` refuses the shape and OQ-K re-asks the set.
     let mut no_yes = meets(0, 0.9);
     no_yes.probabilities.clear();
     let unmet = record(
@@ -156,8 +175,36 @@ fn f24_acceptance_verdict_accepts_complete_one_item_task() {
     );
     assert_eq!(
         acceptance_verdict(&unmet, 1),
-        Some(JudgmentVerdict::Reject),
-        "an answered item without P(yes) reads unmet, not invalid"
+        None,
+        "an answered item without P(yes) is malformed, not a verdict"
+    );
+    // An `answer` contradicting P(yes) is malformed for the same reason —
+    // P(yes)=0.9 resolving "no" is acted on by neither accept nor reject.
+    let mut contradictory = meets(0, 0.9);
+    contradictory.answer = String::from("no");
+    let lied = record(
+        JudgmentPurpose::Acceptance,
+        JudgmentOutcome::Answered,
+        Vec::from([contradictory]),
+    );
+    assert_eq!(
+        acceptance_verdict(&lied, 1),
+        None,
+        "an answer contradicting P(yes) is malformed, not a verdict"
+    );
+    // A probability outside [0,1] is out of contract too.
+    let mut wild = meets(0, 0.9);
+    wild.probabilities
+        .insert(String::from("yes"), Probability(1.5));
+    let invalid = record(
+        JudgmentPurpose::Acceptance,
+        JudgmentOutcome::Answered,
+        Vec::from([wild]),
+    );
+    assert_eq!(
+        acceptance_verdict(&invalid, 1),
+        None,
+        "a probability outside [0,1] is malformed, not a verdict"
     );
 }
 

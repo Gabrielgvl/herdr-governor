@@ -177,7 +177,10 @@ fn f23_acceptance_retry_reasks_after_failed_attempt_only_while_judging() {
         Some(String::from("run:r-1:accept:0:1:1")),
         "a stale acceptance set re-asks"
     );
-    // An answered attempt completes the family — no re-ask.
+    // An answered set that cannot verdict is journaled and re-asked — it
+    // counts as an attempt, never a completion (F24/OQ-K). The run leaves
+    // `judging` the moment a verdict lands, so an answered row while still
+    // judging can only be a set `acceptance_verdict` refused.
     let mut answered = journal_effect(
         &run,
         "accept:0:1",
@@ -188,9 +191,9 @@ fn f23_acceptance_retry_reasks_after_failed_attempt_only_while_judging() {
     answered_record.set.purpose = JudgmentPurpose::Acceptance;
     answered.receipt = Some(EffectReceipt::Judgments(answered_record));
     assert_eq!(
-        acceptance_retry(&run, &Vec::from([answered])),
-        None,
-        "an answered acceptance set suppresses the re-ask"
+        acceptance_retry(&run, &Vec::from([answered])).map(|e| e.key.0),
+        Some(String::from("run:r-1:accept:0:1:1")),
+        "an answered acceptance set that cannot verdict re-asks (OQ-K)"
     );
     // An in-flight attempt suppresses it.
     for state in [EffectState::Planned, EffectState::Dispatching] {

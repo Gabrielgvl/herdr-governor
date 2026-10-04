@@ -15,7 +15,8 @@ use governor_core::config::{ConfigVersion, OperatingPointId, Provider, Tier};
 use governor_core::delivery::MailboxEventKind;
 use governor_core::identity::{AgentKind, CallerBinding, EffectKey, PaneId, RelayInstanceId};
 use governor_core::lifecycle::{
-    EffectCertainty, EffectState, Settlement, State, StateChange, UnresolvedReason, settle,
+    EffectCertainty, EffectReceipt, EffectState, Settlement, State, StateChange, UnresolvedReason,
+    settle,
 };
 use governor_core::routing::{Candidate, Decision, Exploration};
 use governor_core::task::{LaunchOutcome, LaunchPhase, admit};
@@ -399,6 +400,77 @@ async fn f7_run_settled_before_prompting_finishes_launch_once() {
     assert!(
         !saw_wire(world.fake(), "agent.start"),
         "a settled Run never starts"
+    );
+    world.shutdown().await;
+}
+
+/// §4.5/F20 — the Run settles (`cancelled`) while `agent.start` is in
+/// flight, and the start then succeeds: the late `AgentStarted` ack
+/// journals on the settled Run, and the Launch finishes `failed{unknown}`
+/// — `absent` would tell the caller nothing ran while a live child exists
+/// (`createdTopology` names topology legs, never the started agent).
+#[tokio::test]
+async fn f7_settled_run_late_start_ack_reports_unknown() {
+    let mut world = World::new(
+        &point("op-a", 0, "vendor-a", "--a"),
+        "launch_wait_secs = 15\n",
+    );
+    world.jev().push_answers(launch_eval("new"));
+    world.start().await;
+    qualify_start(&mut world.store(), "op-a", &["--a"]);
+    world
+        .fake()
+        .fault("agent.start", Fault::Delay(Duration::from_millis(2500)));
+
+    let call = world.spawn_launch(&launch_args(&task(&[]), "k1"));
+    let run = wait_store(&world.state(), "the start leg in flight", |store| {
+        let launch = store
+            .launches_in_phase(LaunchPhase::Launching)
+            .expect("read")
+            .into_iter()
+            .next()?;
+        let run = store.run_by_launch(&launch.id).ok().flatten()?;
+        let start = store
+            .effect(&EffectKey(run_key(&run, "start:0")))
+            .ok()
+            .flatten()?;
+        (start.state == EffectState::Dispatching).then_some(run)
+    })
+    .await;
+    let policy = governor_core::config::Policy {
+        tiers: vec![Tier("standard".into())],
+        no_change_cap: None,
+        security_floor: None,
+        broad_change_floor: None,
+        provider_limit_threshold: 0.6,
+        exploration_rate: 0.0,
+        recovery_expiry: Duration::from_hours(24),
+        cooldown: Duration::from_hours(1),
+        max_age: Duration::from_hours(24),
+        repair_window: Duration::from_mins(15),
+        judgment_window: Duration::from_mins(30),
+        idle_window: Duration::from_mins(15),
+    };
+    world
+        .store()
+        .apply(&settle(&run, Settlement::Cancelled, NOW, &policy), NOW)
+        .expect("settle the starting run");
+
+    let body = tool_body(&call.await.expect("call joins"));
+    assert_eq!(body["outcome"], "failed", "{body}");
+    assert_eq!(body["effectCertainty"], "unknown", "{body}");
+    assert_eq!(body["runId"], json!(run.id.0), "{body}");
+
+    let store = world.store();
+    let start = effect_at(&store, &run_key(&run, "start:0"));
+    assert_eq!(
+        start.state,
+        EffectState::Acknowledged,
+        "the late start ack journaled"
+    );
+    assert!(
+        matches!(start.receipt, Some(EffectReceipt::AgentStarted { .. })),
+        "the receipt proves a child ran"
     );
     world.shutdown().await;
 }

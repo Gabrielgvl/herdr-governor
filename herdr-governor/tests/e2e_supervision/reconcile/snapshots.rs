@@ -1,7 +1,11 @@
 //! S8 — §4.7 step 1's untrusted-read rows, e2e: `session.snapshot`
 //! unavailable, malformed or carrying a duplicated pane locator is never
 //! an absence — no settlement while the read is unusable, health
-//! degraded for the caller, deadlines still firing.
+//! degraded for the caller, deadlines still firing — and none of them
+//! proves a `routed` Launch's caller absent (F3/F7).
+
+use governor_core::lifecycle::EffectCertainty;
+use governor_core::task::LaunchOutcome;
 
 use super::*;
 
@@ -212,5 +216,174 @@ async fn f3_duplicated_locator_never_settles() {
         read_run(&store, "r-dup").settlement == Some(Settlement::PaneLost)
     })
     .await;
+    stop(handle, shutdown).await;
+}
+
+/// Seed `launch` `routed` with its decision and `run` `reserved`, no
+/// topology leg — the §4.5 convergence row a kill between `decided` and
+/// `begin` leaves behind.
+fn seed_routed(store: &mut Store, launch: &str, run: &str) {
+    let mut routed = launch_row(launch, LaunchPhase::Routed);
+    routed.decision = Some(Decision {
+        judged_tier: Tier("standard".into()),
+        requested_tier: None,
+        policy_cap: None,
+        policy_floor: None,
+        caller_uplift: None,
+        recovery_minimum: None,
+        exploration: Exploration {
+            assigned: false,
+            executed: false,
+        },
+        start_tier: Tier("standard".into()),
+        candidates: vec![Candidate {
+            operating_point: OperatingPointId("op-a".into()),
+            provider: Provider("vendor-a".into()),
+            tier: Tier("standard".into()),
+            harness: AgentKind("kind-a".into()),
+            args: vec!["--a".to_owned()],
+        }],
+        config_version: ConfigVersion("seeded".into()),
+    });
+    store
+        .apply(
+            &changes(vec![
+                StateChange::RecordLaunch(launch_row(launch, LaunchPhase::Evaluating)),
+                StateChange::RecordLaunch(routed),
+                StateChange::ReserveRun(run_row_on(run, launch)),
+            ]),
+            NOW,
+        )
+        .expect("seed routed");
+}
+
+fn read_launch(store: &Store, id: &str) -> Launch {
+    store
+        .launch(&LaunchId(id.into()))
+        .expect("launch read")
+        .expect("launch row")
+}
+
+/// Assert for `within` that `launch` stays `routed` and `run` unsettled.
+async fn hold_routed(store: &Store, launch: &str, run: &str, within: Duration, why: &str) {
+    let span = Instant::now().checked_add(within).unwrap();
+    while Instant::now() < span {
+        let current = read_launch(store, launch);
+        assert_eq!(
+            current.phase,
+            LaunchPhase::Routed,
+            "{why}: {:?}",
+            current.outcome
+        );
+        assert!(read_run(store, run).settlement.is_none(), "{why}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// F3 — the §4.5 `routed` row never reads an invalid snapshot as the
+/// caller's absence: with a duplicated pane locator the startup pass and
+/// every tick leave the Launch `routed` and its Run `reserved`; the first
+/// valid read that lacks the caller finishes it `failed{absent}` and
+/// settles the Run `launch_not_started`.
+#[tokio::test]
+async fn f3_invalid_snapshot_never_fails_a_routed_launch_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (state, config) = fixture(tmp.path());
+    // The one occupant is not the caller, and its row is duplicated.
+    let (mut topology, _terminal) = agent_topology("gov-other", Some("sess-other"));
+    let duplicated = topology.panes[0].clone();
+    topology.panes.push(duplicated);
+    let fake = FakeHerdr::start(topology);
+    let mut store = open_store(&state);
+    bind_caller(&mut store);
+    seed_routed(&mut store, "l-inv", "r-inv");
+
+    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS));
+    wait_bound(&state).await;
+    hold_routed(
+        &store,
+        "l-inv",
+        "r-inv",
+        Duration::from_millis(2_500),
+        "an invalid snapshot never proves the caller absent",
+    )
+    .await;
+
+    fake.state().topology.panes.pop();
+    wait_for("the valid read to prove the absence", || {
+        read_launch(&store, "l-inv").phase == LaunchPhase::Done
+    })
+    .await;
+    assert!(
+        matches!(
+            read_launch(&store, "l-inv").outcome,
+            Some(LaunchOutcome::Failed {
+                certainty: EffectCertainty::Absent,
+                ..
+            })
+        ),
+        "a valid absence finishes failed{{absent}}"
+    );
+    assert_eq!(
+        read_run(&store, "r-inv").settlement,
+        Some(Settlement::Unresolved {
+            reason: UnresolvedReason::LaunchNotStarted,
+        })
+    );
+    stop(handle, shutdown).await;
+}
+
+/// F7 — a failed read leaves only the last good snapshot, and it is
+/// never the caller's absence: the caller is missing from that read,
+/// returns during the outage, and the first good read after it begins
+/// the Launch's topology instead of failing it `absent`.
+#[tokio::test]
+async fn f7_stale_snapshot_never_fails_a_routed_launch_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (state, config) = fixture(tmp.path());
+    let (topology, _terminal) = agent_topology("gov-other", Some("sess-other"));
+    let fake = FakeHerdr::start(topology);
+
+    let (handle, shutdown) = spawn_daemon(settings(&state, &config, &fake, TICK_SECS));
+    wait_bound(&state).await;
+    let mut store = open_store(&state);
+    bind_caller(&mut store);
+    // Latch the outage and let one faulted read land, so the good read
+    // that lacks the caller is the stale one every later tick holds.
+    fake.snapshot_fault(true);
+    let base = fake.requests().len();
+    wait_for("a faulted read", || {
+        fake.requests_since(base)
+            .iter()
+            .any(|(method, _)| method == "session.snapshot")
+    })
+    .await;
+    seed_routed(&mut store, "l-stale", "r-stale");
+    hold_routed(
+        &store,
+        "l-stale",
+        "r-stale",
+        Duration::from_millis(2_500),
+        "a stale snapshot never proves the caller absent",
+    )
+    .await;
+
+    // The caller is back when reads recover: the row begins.
+    occupied_tab(&mut fake.state().topology, "w1", "caller", "sess-caller-1");
+    fake.snapshot_fault(false);
+    wait_for("the returned caller's topology leg", || {
+        fake.saw("tab.create")
+    })
+    .await;
+    assert!(
+        !matches!(
+            read_launch(&store, "l-stale").outcome,
+            Some(LaunchOutcome::Failed {
+                certainty: EffectCertainty::Absent,
+                ..
+            })
+        ),
+        "never failed absent"
+    );
     stop(handle, shutdown).await;
 }

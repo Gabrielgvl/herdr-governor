@@ -53,11 +53,15 @@ fn is_launch_leg(effect: &Effect) -> bool {
 
 /// The F20 certainty a terminated launch reports: `unconfirmed` rows (or
 /// any `unknown` certainty already journaled) mean *unknown*; otherwise
-/// provable absence.
+/// provable absence — except an acknowledged `agent_start`: its receipt
+/// proves a child ran, so a Run that settled mid-dispatch leaves a live
+/// agent the outcome can never call `absent` (`createdTopology` names
+/// only the topology legs, never the started agent).
 fn launch_certainty(journal: &[Effect]) -> EffectCertainty {
     let unknown = journal.iter().any(|effect| {
         effect.state == EffectState::Unconfirmed
             || effect.certainty == Some(EffectCertainty::Unknown)
+            || (effect.kind == EffectKind::AgentStart && effect.state == EffectState::Acknowledged)
     });
     if unknown {
         EffectCertainty::Unknown

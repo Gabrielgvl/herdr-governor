@@ -22,6 +22,7 @@ use herdr_governor::store::Store;
 use serde_json::{Value, json};
 
 use crate::support::fake_jev::{Answer, Fault};
+use crate::support::mcp_client::{McpClient, caller_envelope};
 
 use super::*;
 
@@ -48,6 +49,13 @@ fn seed_policy() -> Policy {
     }
 }
 
+/// The `unresolved(launch_failed)` settlement most predecessors end on.
+fn launch_failed() -> Settlement {
+    Settlement::Unresolved {
+        reason: UnresolvedReason::LaunchFailed,
+    }
+}
+
 /// A `done` predecessor Launch (`failed`) — the CHECK wants an outcome.
 fn done_launch(launch: &str, run: &str) -> Launch {
     let mut row = launch_row(launch, LaunchPhase::Done);
@@ -64,14 +72,13 @@ fn done_launch(launch: &str, run: &str) -> Launch {
 
 /// Seed `owner`'s predecessor `run` (launch `launch`), `starting` with no
 /// identity (the start never captured one — provably absent), started at
-/// `tier` on `provider`; settled `unresolved(launch_failed)` unless
-/// `unsettled`.
+/// `tier` on `provider`; settled `settlement` when one is given.
 fn seed_predecessor(
     store: &mut Store,
     owner: &CallerKey,
     run: &str,
     launch: &str,
-    unsettled: bool,
+    settlement: Option<Settlement>,
 ) {
     let mut row = run_row(run, launch, State::Starting);
     row.owner = owner.clone();
@@ -90,21 +97,14 @@ fn seed_predecessor(
     seed.extend(launch_chain(&done));
     seed.push(StateChange::ReserveRun(row));
     store.apply(&changes(seed), NOW).expect("seed predecessor");
-    if unsettled {
+    let Some(end) = settlement else {
         return;
-    }
+    };
     let seeded = store
         .run(&RunId(run.into()))
         .expect("read")
         .expect("seeded run");
-    let settled = settle(
-        &seeded,
-        Settlement::Unresolved {
-            reason: UnresolvedReason::LaunchFailed,
-        },
-        NOW,
-        &seed_policy(),
-    );
+    let settled = settle(&seeded, end, NOW, &seed_policy());
     store.apply(&settled, NOW).expect("settle predecessor");
 }
 
@@ -134,7 +134,13 @@ async fn recovery_world() -> World {
     world.start().await;
     let mut store = world.store();
     bind_caller(&mut store);
-    seed_predecessor(&mut store, &caller_key(), "run-pred", "l-pred", false);
+    seed_predecessor(
+        &mut store,
+        &caller_key(),
+        "run-pred",
+        "l-pred",
+        Some(launch_failed()),
+    );
     qualify_start(&mut store, "op-hi-b", &["--hi-b"]);
     world
 }
@@ -250,8 +256,14 @@ async fn f21_recovery_of_refusals() {
     {
         let mut store = world.store();
         bind_caller(&mut store);
-        seed_predecessor(&mut store, &caller_key(), "run-live", "l-live", true);
-        seed_predecessor(&mut store, &foreign, "run-foreign", "l-foreign", false);
+        seed_predecessor(&mut store, &caller_key(), "run-live", "l-live", None);
+        seed_predecessor(
+            &mut store,
+            &foreign,
+            "run-foreign",
+            "l-foreign",
+            Some(launch_failed()),
+        );
     }
 
     let unknown = world.launch(&recovery_args("run-missing", "k1")).await;
@@ -303,7 +315,13 @@ async fn f13_recovery_minimum_and_exclusion() {
     {
         let mut store = world.store();
         bind_caller(&mut store);
-        seed_predecessor(&mut store, &caller_key(), "run-pred", "l-pred", false);
+        seed_predecessor(
+            &mut store,
+            &caller_key(),
+            "run-pred",
+            "l-pred",
+            Some(launch_failed()),
+        );
         for (point_id, args) in [
             ("op-std-a", "--std-a"),
             ("op-hi-a", "--hi-a"),
@@ -327,5 +345,77 @@ async fn f13_recovery_minimum_and_exclusion() {
         .map(|candidate| candidate.operating_point)
         .collect();
     assert_eq!(candidates, [OperatingPointId("op-hi-b".into())]);
+    world.shutdown().await;
+}
+
+/// F21 — the claimable window across idempotency scopes: a `provider_limit`
+/// obligation stays `pending` — claimable — while the successor that
+/// claimed it is still `evaluating`, and F11's `(caller, project_root,
+/// key)` scope cannot see a `recovery:<predecessor>` Launch admitted
+/// under another root. A second `recoveryOf` from the same owner under a
+/// different root is `RECOVERY_EXISTS`: the successor Launch, not the
+/// scope, is the recovery's identity.
+#[tokio::test]
+async fn f21_second_recovery_in_another_scope_is_recovery_exists() {
+    let mut world = World::build(caller_topology(), |catalog| {
+        catalog.tiers = vec!["standard".to_owned(), "high".to_owned()];
+        catalog.points_toml = point_at("op-hi-b", "high", 0, "vendor-b", "--hi-b");
+        catalog.daemon_extra = "launch_wait_secs = 1\n".to_owned();
+    });
+    // The successor's evaluation never answers — the Launch holds
+    // `evaluating` and the claimed obligation `pending` for the window.
+    world.jev().push_fault(Fault::Silent);
+    world.start().await;
+    {
+        let mut store = world.store();
+        bind_caller(&mut store);
+        seed_predecessor(
+            &mut store,
+            &caller_key(),
+            "run-pred",
+            "l-pred",
+            Some(Settlement::ProviderLimited),
+        );
+        qualify_start(&mut store, "op-hi-b", &["--hi-b"]);
+    }
+
+    let first = world.spawn_launch(&recovery_args("run-pred", "k1"));
+    wait_store(&world.state(), "the successor launch", |store| {
+        all_launches(store)
+            .iter()
+            .any(|launch| launch.idempotency_key.0 == "recovery:run-pred")
+            .then_some(())
+    })
+    .await;
+
+    // The same owner under a different canonical `projectRoot` — a
+    // second idempotency scope the `recovery:` key never sees.
+    let other = world.outside();
+    let second_scope = McpClient::new(
+        &world.dirs().socket_path(),
+        caller_envelope(CALLER_PANE, other.to_str().expect("utf8"), RELAY),
+    );
+    let reply = second_scope
+        .call_tool(json!(1), "herdr_launch", recovery_args("run-pred", "k2"))
+        .await;
+    assert_eq!(tool_code(&reply), "RECOVERY_EXISTS", "{reply}");
+
+    let store = world.store();
+    let successors: Vec<Launch> = all_launches(&store)
+        .into_iter()
+        .filter(|launch| launch.idempotency_key.0.starts_with("recovery:"))
+        .collect();
+    assert_eq!(successors.len(), 1, "one successor: {successors:?}");
+    assert_eq!(
+        store
+            .recoveries_by_state(RecoveryStatus::Pending)
+            .expect("recoveries read")
+            .len(),
+        1,
+        "the claimed obligation was still pending — the window the refusal closes"
+    );
+
+    let first_body = tool_body(&first.await.expect("first call joins"));
+    assert_eq!(first_body["outcome"], "pending", "{first_body}");
     world.shutdown().await;
 }

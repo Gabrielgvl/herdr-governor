@@ -204,7 +204,9 @@ impl Coordinator {
     /// caller's settled Run, its observation must prove it is not still
     /// live (the freshest snapshot classifies it — a Run that never
     /// captured an identity provably has no live child), and an existing
-    /// claimable obligation is preserved rather than duplicated.
+    /// claimable obligation is preserved rather than duplicated. A
+    /// successor Launch in ANY idempotency scope is itself a recorded
+    /// recovery — a second is `RECOVERY_EXISTS`.
     /// Returns the obligation `admit` records `pending`, or the typed
     /// refusal.
     fn recovery_admission(
@@ -222,6 +224,38 @@ impl Coordinator {
                 "recoveryOf names no run",
             ));
         };
+        // The owner check precedes the successor read: a non-owner's
+        // refusal says `NOT_OWNER`, never whether a recovery exists
+        // (`caller_admission` re-verifies ownership inside its own
+        // gate).
+        if predecessor.owner != *caller {
+            return Err(ToolError::refusal(
+                Refusal::NotOwner,
+                "recovery admission refused",
+            ));
+        }
+        // F21 — one recovery per predecessor across every scope: the
+        // `(caller, project_root, key)` uniqueness `replay` checks
+        // cannot see a `recovery:<pred>` successor admitted under
+        // another root, and a claimable `provider_limit` obligation
+        // stays `pending` — claimable — through that admission. An
+        // exact in-scope replay already returned its stored outcome.
+        if self
+            .store
+            .recovery_successor(predecessor_id)
+            .map_err(|_error| {
+                ToolError::new(
+                    ToolError::DAEMON_UNAVAILABLE,
+                    "recovery successor read failed",
+                )
+            })?
+            .is_some()
+        {
+            return Err(ToolError::refusal(
+                Refusal::RecoveryExists,
+                "a recovery already exists for the predecessor",
+            ));
+        }
         let obligation = self
             .store
             .recoveries_by_state(governor_core::recovery::RecoveryStatus::Pending)

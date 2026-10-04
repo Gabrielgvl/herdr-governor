@@ -5,6 +5,7 @@
 //! the absent-caller `Failed{Absent}` finish. Each apply recomputes
 //! against the durable row — a phase that moved mid-CAS writes nothing.
 
+use std::collections::BTreeSet;
 use std::io;
 
 use governor_core::config::Policy;
@@ -15,6 +16,7 @@ use governor_core::task::{
     AbstainReason, Launch, LaunchOutcome, LaunchPhase, begin, decided, finish,
 };
 
+use crate::adapters::herdr::{Observed, SessionSnapshot};
 use crate::daemon::coordinator::apply::{ApplyOutcome, apply_with_retry, concat};
 use crate::daemon::coordinator::{Coordinator, empty};
 use crate::daemon::{identity, ids};
@@ -100,7 +102,7 @@ impl Coordinator {
                 // Launch left `evaluating` (a dropped apply retries
                 // with it).
                 self.launch_bases.remove(&launch.id);
-                self.begin_launch(&launch.id, evaluation.related_tab.as_ref());
+                self.begin_launch(&launch.id, evaluation.related_tab.as_ref(), None);
             }
             Ok(ApplyOutcome::Dropped { .. }) | Err(_) => {
                 // The row stays `evaluating` + `acknowledged` — the
@@ -112,14 +114,16 @@ impl Coordinator {
 
     /// `routed` → `launching`: the caller's pane resolves by native
     /// session in the freshest snapshot — never derived from an
-    /// observation (the §4.5 restart row's rule). A snapshot-proven
-    /// absence finishes `Failed{Absent}` and settles the reserved Run
-    /// `launch_not_started` in the same write; `begin ‖ launch_plan`
-    /// is one atomic apply.
+    /// observation (the §4.5 restart row's rule). Absence needs `read`,
+    /// the calling message's own valid snapshot (F3): it finishes
+    /// `Failed{Absent}` and settles the reserved Run `launch_not_started`
+    /// in the same write; an unproven caller leaves the Launch `routed`
+    /// for a later tick. `begin ‖ launch_plan` is one atomic apply.
     pub(in crate::daemon) fn begin_launch(
         &mut self,
         launch_id: &LaunchId,
         related_tab: Option<&TabChoice>,
+        read: Option<&Observed<SessionSnapshot>>,
     ) {
         let now = self.clock.now();
         let Some(launch) = self.store.launch(launch_id).ok().flatten() else {
@@ -140,77 +144,115 @@ impl Coordinator {
             .map(|observed| caller_tabs(&launch.caller, &observed.value))
             .unwrap_or_default();
         let plan = placement_plan(related_tab, &counts);
-        if let Some(pane) = self.caller_pane(&launch.caller) {
-            let applied = apply_with_retry(&mut self.store, now, |st| {
-                let Some(current) = st.launch(launch_id).ok().flatten() else {
-                    return empty();
-                };
-                if current.phase != LaunchPhase::Routed {
-                    return empty();
+        match self.caller_pane(&launch.caller, read) {
+            CallerPane::At(pane) => {
+                let applied = apply_with_retry(&mut self.store, now, |st| {
+                    let Some(current) = st.launch(launch_id).ok().flatten() else {
+                        return empty();
+                    };
+                    if current.phase != LaunchPhase::Routed {
+                        return empty();
+                    }
+                    let Some(run) = st.run_by_launch(launch_id).ok().flatten() else {
+                        return empty();
+                    };
+                    if run.state != State::Reserved {
+                        return empty();
+                    }
+                    concat(
+                        begin(&current),
+                        [launch_plan(&run, &decision, &plan, &pane)],
+                    )
+                });
+                if let Err(_error) = applied {
+                    crate::daemon::log::apply_dropped(3, "conflict");
                 }
-                let Some(run) = st.run_by_launch(launch_id).ok().flatten() else {
-                    return empty();
-                };
-                if run.state != State::Reserved {
-                    return empty();
-                }
-                concat(
-                    begin(&current),
-                    [launch_plan(&run, &decision, &plan, &pane)],
-                )
-            });
-            if let Err(_error) = applied {
-                crate::daemon::log::apply_dropped(3, "conflict");
             }
-        } else {
-            // Caller provably absent — `Failed{Absent}` settles the
-            // reserved Run `launch_not_started` in the same write.
-            let (store, policy) = (&mut self.store, &self.loaded.config.policy);
-            let applied = apply_with_retry(store, now, |st| {
-                let Some(current) = st.launch(launch_id).ok().flatten() else {
-                    return empty();
-                };
-                if current.phase != LaunchPhase::Routed {
-                    return empty();
+            CallerPane::Absent => {
+                // Caller provably absent — `Failed{Absent}` settles the
+                // reserved Run `launch_not_started` in the same write.
+                let (store, policy) = (&mut self.store, &self.loaded.config.policy);
+                let applied = apply_with_retry(store, now, |st| {
+                    let Some(current) = st.launch(launch_id).ok().flatten() else {
+                        return empty();
+                    };
+                    if current.phase != LaunchPhase::Routed {
+                        return empty();
+                    }
+                    let Some(run) = st.run_by_launch(launch_id).ok().flatten() else {
+                        return empty();
+                    };
+                    finish(
+                        &current,
+                        LaunchOutcome::Failed {
+                            certainty: EffectCertainty::Absent,
+                            run: Some(run.id.clone()),
+                            created_topology: no_topology(),
+                        },
+                        None,
+                        Some(&run),
+                        now,
+                        policy,
+                    )
+                });
+                if let Err(_error) = applied {
+                    crate::daemon::log::apply_dropped(3, "conflict");
                 }
-                let Some(run) = st.run_by_launch(launch_id).ok().flatten() else {
-                    return empty();
-                };
-                finish(
-                    &current,
-                    LaunchOutcome::Failed {
-                        certainty: EffectCertainty::Absent,
-                        run: Some(run.id.clone()),
-                        created_topology: no_topology(),
-                    },
-                    None,
-                    Some(&run),
-                    now,
-                    policy,
-                )
-            });
-            if let Err(_error) = applied {
-                crate::daemon::log::apply_dropped(3, "conflict");
             }
+            // Nothing proves either — the next tick's routed row
+            // re-resolves against its own read.
+            CallerPane::Unproven => {}
         }
         self.answer_waiters(launch_id);
     }
 
     /// The caller's pane for topology planning: `native_session`
-    /// resolved in the freshest snapshot — `None` (proven absent)
-    /// means the launch fails `Absent`; without a snapshot the last
-    /// bound pane is the best locator the journal can carry (the
-    /// wire's fresh `CallerPane` re-resolution is the honest gate
-    /// regardless).
-    fn caller_pane(&self, caller: &CallerKey) -> Option<PaneId> {
-        match &self.latest_snapshot {
-            Some(observed) => identity::agent_rows(&observed.value)
-                .iter()
-                .find(|row| row.4.as_ref() == Some(&caller.native_session))
-                .map(|row| row.0.clone()),
-            None => self.store.caller_pane(caller).ok().flatten(),
+    /// resolved in `read`, else the freshest stashed snapshot; without
+    /// any snapshot the last bound pane is the best locator the journal
+    /// can carry (the wire's fresh `CallerPane` re-resolution is the
+    /// honest gate regardless). Absence is proven only by `read` — the
+    /// calling message's own snapshot — and only when it is valid: an
+    /// invalid (duplicated pane locator), unavailable or stale snapshot
+    /// never counts as absence (F3/H#74).
+    fn caller_pane(
+        &self,
+        caller: &CallerKey,
+        read: Option<&Observed<SessionSnapshot>>,
+    ) -> CallerPane {
+        let Some(observed) = read.or(self.latest_snapshot.as_ref()) else {
+            return self
+                .store
+                .caller_pane(caller)
+                .ok()
+                .flatten()
+                .map_or(CallerPane::Unproven, CallerPane::At);
+        };
+        let rows = identity::agent_rows(&observed.value);
+        if let Some(row) = rows
+            .iter()
+            .find(|row| row.4.as_ref() == Some(&caller.native_session))
+        {
+            return CallerPane::At(row.0.clone());
+        }
+        // `reconcile::view_of`'s validity rule: one duplicated pane
+        // locator makes the whole read untrustworthy.
+        let mut locators = BTreeSet::new();
+        if read.is_some() && rows.iter().all(|row| locators.insert(&row.0)) {
+            CallerPane::Absent
+        } else {
+            CallerPane::Unproven
         }
     }
+}
+
+/// Where the §4.5 routed row's caller resolution landed.
+enum CallerPane {
+    /// Located — the topology plan's caller-context pane.
+    At(PaneId),
+    /// The calling message's own valid read lacks the caller.
+    Absent,
+    /// Nothing proves presence or absence — the Launch stays `routed`.
+    Unproven,
 }
 
 /// §4.5/F1 — the `decided` apply: `decided(launch, decision, reserved)`

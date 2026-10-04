@@ -393,6 +393,26 @@ pub(crate) fn noul_cleared(judgment: &Judgment, threshold: Option<f64>) -> bool 
         .is_some_and(|p| noul_yes(*p, threshold))
 }
 
+/// F24 — a noul judgment's resolved verdict, or `None` when the recorded
+/// answer is not in contract: every probability finite inside `[0, 1]`,
+/// a `P(yes)` under the `"yes"` key, and `answer` matching the verdict
+/// `P(yes)` resolves at `Judgment::threshold` (the calibrated majority
+/// when none applies) — the per-judgment half of the contract routing's
+/// `noul_at` enforces (F12). `Some(true)` clears the bound, `Some(false)`
+/// does not.
+pub(crate) fn noul_verdict(judgment: &Judgment) -> Option<bool> {
+    if !judgment
+        .probabilities
+        .values()
+        .all(|p| valid_probability(*p))
+    {
+        return None;
+    }
+    let probability = judgment.probabilities.get("yes")?;
+    let cleared = noul_yes(*probability, judgment.threshold);
+    (judgment.answer == if cleared { "yes" } else { "no" }).then_some(cleared)
+}
+
 /// F13 step 5 — the exploration lottery: `sha256(caller ‖ idempotencyKey)`,
 /// with `caller` the durable caller key, read as a uniform fraction below
 /// the policy rate.

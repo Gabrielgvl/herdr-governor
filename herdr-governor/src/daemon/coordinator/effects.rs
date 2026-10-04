@@ -101,12 +101,14 @@ impl Coordinator {
     /// `Skip`, or `Refused` after committing the corresponding write —
     /// the process-to-completion contract means no `cancel`, settlement
     /// or reload can interleave between the re-read and the write.
+    /// `false` for a `Skip` — the row is exactly as the hand-off offered
+    /// it, so `serve` must not re-offer it (F4).
     pub(super) fn on_dispatch_commit(
         &mut self,
         key: &EffectKey,
         context: &RenderContext,
         reply: oneshot::Sender<CommitVerdict>,
-    ) {
+    ) -> bool {
         let now = self.clock.now();
         let verdict = match self.commit_gate(key, context, now) {
             Gate::Skip => CommitVerdict::Skip,
@@ -126,6 +128,7 @@ impl Coordinator {
             self.free(key);
         }
         let _gone = reply.send(verdict);
+        verdict != CommitVerdict::Skip
     }
 
     /// §4.4 step 7 — the `EffectResult` arm: the core's

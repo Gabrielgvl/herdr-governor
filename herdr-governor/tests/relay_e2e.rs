@@ -1,11 +1,12 @@
 //! P5.R1 — the stdio relay end to end (p5-plan §4.11, S30; F1, N4, N7):
-//! a child `herdr-governor relay` runs `relay::run` in a real process so
+//! a child `herdr-relay` runs `relay::run` in a real process so
 //! the F1 identity derivation, the per-request fresh connection,
 //! notification dropping, the daemon-down failure map, the stdin-EOF exit
 //! and the 8 MB RSS bound are exercised over real pipes and a real unix
-//! socket — the `store_probe` precedent for a child-process suite. I1
-//! wired the `relay` subcommand to `relay::run`, so the suite runs the
-//! real binary the harness itself would spawn.
+//! socket — the `store_probe` precedent for a child-process suite. The
+//! suite spawns the standalone `herdr-relay` binary the OQ-R split
+//! registers with the harness (ADR-0004's PR B amendment), not the
+//! `herdr-governor relay` compatibility subcommand.
 
 #[cfg(test)]
 mod tests {

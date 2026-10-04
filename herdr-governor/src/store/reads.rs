@@ -152,6 +152,16 @@ impl Store {
         self.first(&sql, params![id, project_root.0, key.0], launch_from)
     }
 
+    /// The Launch `task.recovery_of` names `predecessor` for — the F21
+    /// successor in ANY `(caller, project_root, key)` idempotency scope:
+    /// a `recovery:<predecessor>` row admitted under another root is
+    /// invisible to `launch_by_idempotency` but is still the one
+    /// recovery the predecessor is allowed.
+    pub fn recovery_successor(&self, predecessor: &RunId) -> Result<Option<Launch>, StoreError> {
+        let sql = format!("{LAUNCHES} WHERE json_extract(l.task_json, '$.recovery_of') = ?1");
+        self.first(&sql, params![predecessor.0], launch_from)
+    }
+
     /// The Launch with `id`.
     pub fn launch(&self, id: &LaunchId) -> Result<Option<Launch>, StoreError> {
         let sql = format!("{LAUNCHES} WHERE l.launch_id = ?1");

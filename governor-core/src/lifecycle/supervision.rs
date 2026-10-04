@@ -54,9 +54,17 @@ fn answered(effect: &Effect) -> bool {
 
 /// The next key in an ask family — `base`, then `base:1`, `base:2`, … —
 /// or `None` when a row in the family is still in flight
-/// (`planned`/`dispatching`) or already answered: at most one ask in
-/// flight per key, and only a completed review suppresses it (F23).
-fn next_ask_key(journal: &[Effect], base: &EffectKey) -> Option<EffectKey> {
+/// (`planned`/`dispatching`) or, with `answered_terminal`, already
+/// answered: at most one ask in flight per key, and only a completed
+/// review suppresses it (F23). The acceptance family passes `false`
+/// (F24/OQ-K): the run leaves `judging` the moment a verdict lands, so an
+/// answered row while still `judging` is a set `acceptance_verdict`
+/// refused — it counts as an attempt and the family re-asks.
+fn next_ask_key(
+    journal: &[Effect],
+    base: &EffectKey,
+    answered_terminal: bool,
+) -> Option<EffectKey> {
     let prefix = format!("{}:", base.0);
     let mut attempts = 0_u64;
     for effect in journal {
@@ -66,7 +74,7 @@ fn next_ask_key(journal: &[Effect], base: &EffectKey) -> Option<EffectKey> {
         match effect.state {
             EffectState::Planned | EffectState::Dispatching => return None,
             EffectState::Acknowledged | EffectState::Failed | EffectState::Unconfirmed => {
-                if answered(effect) {
+                if answered_terminal && answered(effect) {
                     return None;
                 }
                 attempts = attempts.saturating_add(1);
@@ -93,7 +101,7 @@ pub fn periodic_review(run: &Run, owner_absent: bool, journal: &[Effect]) -> Opt
     // review: the family's key carries the generation, so an answered or
     // in-flight attempt suppresses this one while a failed one re-asks.
     let base = effect_key(run, &format!("review:{}", run.evidence_generation));
-    let key = next_ask_key(journal, &base)?;
+    let key = next_ask_key(journal, &base, true)?;
     // `jev_evaluate` renders on dispatch-time state — no plan-time digest.
     Some(planned_effect(
         run,
@@ -105,13 +113,16 @@ pub fn periodic_review(run: &Run, owner_absent: bool, journal: &[Effect]) -> Opt
 }
 
 /// F24 — the acceptance ask's re-ask rule: the `accept:<wg>:<gen>` family
-/// retries a failed, unconfirmed, stale or otherwise unanswered attempt
+/// retries a failed, unconfirmed, stale or otherwise unresolved attempt
 /// under the next attempt key, only while the Run is `judging` — an
-/// answered or in-flight attempt suppresses it (`next_ask_key`). One
-/// exception ends the family: a `too_large` attempt is terminal because
-/// the frozen request cannot shrink, so the wait falls to
-/// `judgment_deadline` → `unresolved(judgment_unavailable)` (OQ-I).
-/// `Some` is the effect to plan.
+/// in-flight attempt suppresses it; an `answered` one does not. The run
+/// leaves `judging` when a verdict lands, so an answered row here is a
+/// partial or malformed set `acceptance_verdict` refused: it counts as
+/// an attempt and the family re-asks (OQ-K). One outcome ends the
+/// family: a `too_large` attempt is terminal because the frozen request
+/// cannot shrink, so the wait falls to `judgment_deadline` →
+/// `unresolved(judgment_unavailable)` (OQ-I). `Some` is the effect to
+/// plan.
 #[must_use]
 pub fn acceptance_retry(run: &Run, journal: &[Effect]) -> Option<Effect> {
     if run.state != State::Judging {
@@ -133,7 +144,7 @@ pub fn acceptance_retry(run: &Run, journal: &[Effect]) -> Option<Effect> {
     if too_large {
         return None;
     }
-    let key = next_ask_key(journal, &base)?;
+    let key = next_ask_key(journal, &base, false)?;
     Some(planned_effect(
         run,
         EffectKind::JevEvaluate,
@@ -273,7 +284,7 @@ fn blocked_observed(
     observe_fields(&mut record, status, pane, native_session);
     let base = effect_key(run, &format!("blocked:{}", record.blocked_episode));
     let mut effects = Vec::new();
-    if let Some(key) = next_ask_key(journal, &base) {
+    if let Some(key) = next_ask_key(journal, &base, true) {
         effects.push(planned_effect(
             run,
             EffectKind::JevEvaluate,
