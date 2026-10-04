@@ -322,7 +322,7 @@ mod tests {
 
         let Some(Msg::Tool {
             snapshot,
-            resolved_root,
+            prepared,
             reply,
             ..
         }) = rx.recv().await
@@ -334,7 +334,7 @@ mod tests {
             "a failed snapshot rides the message — never an identity verdict"
         );
         assert_eq!(
-            resolved_root.as_deref(),
+            prepared.resolved_root.as_deref(),
             Some(root_str.as_str()),
             "the connection task canonicalizes the envelope's projectRoot"
         );

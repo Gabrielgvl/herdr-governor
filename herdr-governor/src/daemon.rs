@@ -23,9 +23,11 @@ pub mod status;
 
 mod clock;
 mod coordinator;
+mod launch;
 mod lock;
 mod log;
 mod paths;
+mod questions;
 mod reconcile;
 mod runner;
 mod seam;
@@ -97,6 +99,10 @@ pub enum DaemonError {
     /// The `credentials` file failed `load_credentials` (spec §19).
     #[error("credential unreadable: {0}")]
     Credential(#[from] JevError),
+    /// The Jev client failed construction (a `jev_base_url` the adapter
+    /// refuses) at runner arm.
+    #[error("jev client: {0}")]
+    Jev(JevError),
     /// A second daemon holds the state-dir lock — `answers` reports
     /// whether the probe found a live listener behind it.
     #[error("another daemon holds the state-dir lock (socket answers: {answers})")]
@@ -135,6 +141,7 @@ impl DaemonError {
             | Self::Config(_)
             | Self::NoDaemonTable
             | Self::Credential(_)
+            | Self::Jev(_)
             | Self::Seam(_) => Code::from(2),
             Self::Locked { .. } => Code::from(3),
             Self::Store(_) | Self::Apply(_) | Self::Io(_) => Code::from(1),
@@ -219,9 +226,7 @@ pub async fn run(
         loaded,
         daemon,
         resolved,
-        // §19's credential still loads (and fails) at startup; nothing
-        // consumes it until the Jev lane wires in with PR C.
-        api_key: _,
+        api_key,
         catalog_path,
     } = startup::prepare(&settings).await?;
 
@@ -251,6 +256,13 @@ pub async fn run(
     );
     coordinator.mark_restart(now)?;
 
+    // §4.14 — the signal bridges go up before the first blocking leg:
+    // a SIGTERM landing anywhere in reconcile/bind/runner-arm queues
+    // `Signal::Shutdown` on the mailbox and `serve` stops cleanly,
+    // rather than the default disposition killing mid-init.
+    let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
+    let mut tasks = shutdown::spawn_signals(&tx);
+
     // §4.3 steps 6–7 — convergence, classification (with the revised
     // identity-less rule), the elapsed-deadline sweep and the sessionless
     // foreign-incarnation settlement on one fresh snapshot, strictly
@@ -261,13 +273,15 @@ pub async fn run(
     let listener = startup::bind(&paths)?;
     log::bound(&paths.sock());
 
-    let (tx, rx) = mpsc::channel::<Msg>(coordinator::MSG_CAPACITY);
     // §4.4 — the runner pool's environment: adapter handles, the
     // configured deadlines, the mailbox, the shutdown watch and the seam.
     coordinator.arm_runner(runner::RunnerEnv {
         herdr: crate::adapters::herdr::Client::new(resolved.herdr_socket.clone()),
         herdr_op: daemon.herdr_op_timeout,
         agent_start: daemon.agent_start_timeout,
+        jev: crate::adapters::jev::Client::new(&daemon.jev_base_url).map_err(DaemonError::Jev)?,
+        jev_key: api_key,
+        jev_timeout: daemon.jev_timeout,
         tx: tx.clone(),
         shutdown: coordinator.shutdown_receiver(),
         seam: armed_seam,
@@ -286,7 +300,6 @@ pub async fn run(
         tx.clone(),
     );
     coordinator.arm_subscriptions(sub_feed);
-    let mut tasks = shutdown::spawn_signals(&tx);
     tasks.extend([accept, tick, sub]);
     drop(tx);
 

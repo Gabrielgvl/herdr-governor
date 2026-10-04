@@ -33,10 +33,10 @@ fn caller(dirs: &DaemonDirs) -> governor_core::identity::CallerEnvelope {
     caller_envelope("w1:p1", &canonical(dirs.root()), RELAY)
 }
 
-/// PR A's surface (OQ-S): `tools/list` over the real socket serves exactly
-/// `herdr_status` — `herdr_launch`/`herdr_run` stay unlisted until B2/C4.
-/// F1 gates the framed request first: `Msg::VerifyCaller` resolves and
-/// binds the caller before the list is allowed out.
+/// The served surface (OQ-S): `tools/list` over the real socket serves
+/// exactly `herdr_status` + `herdr_launch` — `herdr_run` stays unlisted
+/// until C4. F1 gates the framed request first: `Msg::VerifyCaller`
+/// resolves and binds the caller before the list is allowed out.
 #[tokio::test]
 async fn transport_tools_list_exposes_status_only_in_pr_a() {
     let fake = FakeHerdr::start(occupied_topology());
@@ -54,7 +54,11 @@ async fn transport_tools_list_exposes_status_only_in_pr_a() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name is a string"))
         .collect();
-    assert_eq!(names, ["herdr_status"], "PR A lists exactly one tool");
+    assert_eq!(
+        names,
+        ["herdr_status", "herdr_launch"],
+        "B2 lists status + launch"
+    );
 
     let sock = daemon.socket_path();
     daemon.shutdown().await;

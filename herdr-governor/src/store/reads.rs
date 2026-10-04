@@ -49,18 +49,22 @@ const HANDOFFS: &str = "SELECT h.*, EXISTS(SELECT 1 FROM judgment_sets j \
      AND j.handoff_digest = h.digest AND j.purpose = ?2 AND j.outcome = ?3) AS assessed \
      FROM handoffs h WHERE h.run_id = ?1 ORDER BY h.work_generation, h.frozen_at, h.digest";
 
-/// `planned` effects a dispatcher may pick up (§4.4): a launch-subject
-/// effect whose Launch is already `done` is excluded (F10 defense-in-depth
-/// on top of OQ-13's terminal write — a row that bypassed `finish` must
-/// still never reach a dispatcher), as is a run-subject effect whose Run
-/// is `settled` — except `close` (close/retire effects dispatch against
-/// settled subjects by design) and `event:%` hints, which are exempt from
-/// both subject gates (§4.8).
+/// `planned` effects a dispatcher may pick up (§4.4): a launch-bound
+/// effect (no Run subject) whose Launch is already `done` is excluded (F10
+/// defense-in-depth on top of OQ-13's terminal write — a row that bypassed
+/// `finish` must still never reach a dispatcher), as is a run-subject
+/// effect whose Run is `settled` — except `close` (close/retire effects
+/// dispatch against settled subjects by design) and `event:%` hints, which
+/// are exempt from both subject gates (§4.8). A Run-bound effect carries
+/// its Launch as a subject too (`planned_effect`), and a `launched` Launch
+/// is `done` for the Run's whole supervised life — its prompts and
+/// follow-ups answer to the Run's settlement, never the Launch's phase.
 const READY_EFFECTS: &str = "SELECT e.* FROM effects e \
      LEFT JOIN launches l ON l.launch_id = e.subject_launch_id \
      LEFT JOIN runs r ON r.run_id = e.subject_run_id \
      WHERE e.state = ?1 \
-     AND (e.subject_launch_id IS NULL OR l.phase <> ?2 OR e.effect_key LIKE 'event:%') \
+     AND (e.subject_launch_id IS NULL OR e.subject_run_id IS NOT NULL OR l.phase <> ?2 \
+          OR e.effect_key LIKE 'event:%') \
      AND (e.subject_run_id IS NULL OR r.state <> ?3 OR e.kind = ?4 OR e.effect_key LIKE 'event:%') \
      ORDER BY e.planned_at, e.effect_id";
 

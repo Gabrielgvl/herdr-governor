@@ -53,9 +53,10 @@ impl Coordinator {
             return Gate::Skip;
         }
         // The subject gates mirror READY_EFFECTS' exclusions — a
-        // `settled` Run or a `done` Launch can no longer dispatch (F10's
-        // defense-in-depth); `close` and `event:` hints are exempt by
-        // design.
+        // `settled` Run, or a launch-bound effect's `done` Launch, can no
+        // longer dispatch (F10's defense-in-depth); `close` and `event:`
+        // hints are exempt by design. A Run-bound effect answers to its
+        // Run alone: a `launched` Launch is `done` for the Run's life.
         let subject = match &effect.subject_run {
             Some(run_id) => match self.store.run(run_id) {
                 Ok(Some(run)) => Some(run),
@@ -71,7 +72,9 @@ impl Coordinator {
         {
             return Gate::Skip;
         }
-        if let Some(launch_id) = &effect.subject_launch {
+        if let Some(launch_id) = &effect.subject_launch
+            && subject.is_none()
+        {
             let Ok(Some(launch)) = self.store.launch(launch_id) else {
                 return Gate::Skip;
             };

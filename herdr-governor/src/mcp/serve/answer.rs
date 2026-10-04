@@ -17,7 +17,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::adapters::herdr::{Client, MAX_FRAME_BYTES};
 use crate::daemon::Msg;
-use crate::daemon::api::{ToolError, ToolRequest, ToolResponse};
+use crate::daemon::api::{
+    ToolCall, ToolError, ToolPrepared, ToolRequest, ToolResponse, probe_base_commit,
+};
 use crate::mcp::framing::{self, Inbound};
 use crate::mcp::jsonrpc::{self, Request, Response};
 use crate::mcp::tools;
@@ -150,10 +152,11 @@ async fn post(
     let (reply, wait) = oneshot::channel();
     let snapshot = herdr.session_snapshot(op_timeout).await;
     let resolved_root = canonical_root(&request.caller.project_root.0).await;
+    let prepared = prepared(&request, resolved_root).await;
     let msg = Msg::Tool {
         request,
         snapshot: Box::new(snapshot),
-        resolved_root,
+        prepared,
         reply,
     };
     if tx.send(msg).await.is_err() {
@@ -187,6 +190,59 @@ async fn verify(
         return Err(unavailable());
     }
     wait.await.unwrap_or_else(|_| Err(unavailable()))
+}
+
+/// The §4.2 `ToolPrepared` — the launch call's pre-admission evidence:
+/// `task.cwd` canonicalized (`Err` carries `TASK_INVALID` when the path
+/// cannot resolve to a canonical UTF-8 name — violations re-checks the
+/// field against the root) and `base_commit` probed before admission
+/// (F6 — `Ok(head)` → `Some`, `NotARepo`/`UnbornHead` → `None` for a
+/// legal plain-directory Run, every other git failure the typed
+/// `GIT_EVIDENCE_UNAVAILABLE`). Every non-launch call carries the
+/// neutral `root_only` shape.
+async fn prepared(request: &ToolRequest, resolved_root: Option<String>) -> ToolPrepared {
+    let ToolCall::Launch { task, .. } = &request.call else {
+        return ToolPrepared::root_only(resolved_root);
+    };
+    let resolved_cwd = match &task.cwd {
+        None => Ok(None),
+        Some(cwd) => match canonical_root(cwd).await {
+            // The Task's spelling must already be its realpath —
+            // `cwd_not_canonical` is lexical; this is the resolution
+            // check (a symlinked or `..`-spelled cwd refuses here).
+            Some(resolved) if resolved == *cwd => Ok(Some(resolved)),
+            Some(_) | None => Err(ToolError::new(
+                ToolError::TASK_INVALID,
+                "task.cwd does not resolve to a canonical path",
+            )),
+        },
+    };
+    let target = resolved_cwd
+        .as_ref()
+        .ok()
+        .and_then(Clone::clone)
+        .or_else(|| resolved_root.clone());
+    let base_commit = match target {
+        Some(path) => base_commit(&path).await,
+        // The root never resolved — identity refuses first; the probe is
+        // moot, so the honest neutral value rides along.
+        None => Ok(None),
+    };
+    ToolPrepared {
+        resolved_root,
+        resolved_cwd,
+        base_commit,
+    }
+}
+
+/// F6's `base_commit` probe on the canonical cwd — `NotARepo` and
+/// `UnbornHead` are legal (`None`, a plain-directory Run); every other
+/// git failure is the pre-admission typed refusal, so nothing is ever
+/// recorded for a launch whose base evidence could not be taken.
+async fn base_commit(path: &str) -> Result<Option<String>, ToolError> {
+    probe_base_commit(std::path::Path::new(path))
+        .await
+        .map_err(|error| ToolError::new(ToolError::GIT_EVIDENCE_UNAVAILABLE, error.to_string()))
 }
 
 /// The `realpath` of the relay-attached `projectRoot` (§4.6): `Some`

@@ -10,6 +10,7 @@ mod gate;
 
 use std::sync::Arc;
 
+use governor_core::config::Policy;
 use governor_core::delivery::FollowUpWrite;
 use governor_core::identity::{EffectKey, LaunchId, RunId, Timestamp};
 use governor_core::lifecycle::{
@@ -18,11 +19,13 @@ use governor_core::lifecycle::{
 };
 use tokio::sync::oneshot;
 
+use crate::daemon::launch::launched_on_start;
 use crate::daemon::log;
 use crate::daemon::reconcile;
 use crate::daemon::runner::{self, Dispatch};
 use crate::daemon::seam::Boundary;
 use crate::daemon::{CommitVerdict, RenderContext};
+use crate::store::Store;
 
 use super::apply::{ApplyOutcome, apply_with_retry, concat};
 use super::{Coordinator, empty, versioned};
@@ -72,7 +75,16 @@ impl Coordinator {
             if self.in_flight.contains_key(&subject) {
                 continue;
             }
-            let Some(context) = runner::context_for(&self.store, &self.paths, &effect) else {
+            let Some(context) = runner::context_for(
+                &self.store,
+                &self.paths,
+                &effect,
+                self.latest_snapshot
+                    .as_ref()
+                    .map(|observed| &observed.value),
+                &self.loaded,
+                &self.daemon,
+            ) else {
                 continue;
             };
             self.in_flight.insert(subject, effect.key.clone());
@@ -132,46 +144,7 @@ impl Coordinator {
                 return empty();
             }
             let mut applied = match row.subject_run.clone() {
-                Some(run_id) => {
-                    let Some(run) = st.run(&run_id).ok().flatten() else {
-                        return empty();
-                    };
-                    let launch = st.launch(&run.launch).ok().flatten();
-                    let journal = st.journal(&run.id).unwrap_or_default();
-                    let handoffs = st.handoffs(&run.id).unwrap_or_default();
-                    let mut emitted = transition(
-                        &run,
-                        &versioned(&run, Event::EffectResult((*result).clone())),
-                        now,
-                        policy,
-                        (
-                            launch.as_ref().and_then(|l| l.decision.as_ref()),
-                            journal.as_slice(),
-                            handoffs.as_slice(),
-                        ),
-                        "",
-                    );
-                    // F24 — an answered acceptance set's verdict rides the
-                    // same commit as a `judgment` event stamped with the
-                    // set's own request versions (§4.9; a stale set's stamp
-                    // is dropped by the transition's staleness check).
-                    if let Some(judgment) = acceptance_lift(&result, launch.as_ref()) {
-                        let lifted = transition(
-                            &run,
-                            &judgment,
-                            now,
-                            policy,
-                            (
-                                launch.as_ref().and_then(|l| l.decision.as_ref()),
-                                journal.as_slice(),
-                                handoffs.as_slice(),
-                            ),
-                            "",
-                        );
-                        emitted = concat(emitted, [lifted]);
-                    }
-                    emitted
-                }
+                Some(run_id) => run_bound(st, &run_id, &result, now, policy),
                 // Launch-bound results (the admission lane's `evaluate`)
                 // journal the result write directly — no Run exists to
                 // transition against; B2's admission consumes the set.
@@ -197,6 +170,20 @@ impl Coordinator {
         self.free(&result.key);
         match applied {
             Ok(ApplyOutcome::Applied { .. }) => {
+                // A committed launch-bound result drives §4.5 step 6;
+                // a run-bound one may have finished its Launch (the
+                // `Launched` compose) — drain the waiters either way.
+                if let Some(row) = self.store.effect(&result.key).ok().flatten() {
+                    if let Some(launch_id) = row.subject_launch.clone() {
+                        self.on_evaluated(&launch_id);
+                    }
+                    if let Some(run_id) = row.subject_run.as_ref()
+                        && let Some(launch_id) =
+                            self.store.run(run_id).ok().flatten().map(|run| run.launch)
+                    {
+                        self.answer_waiters(&launch_id);
+                    }
+                }
                 self.push_subscription_specs();
                 runner::seam::checkpoint(
                     &result.key,
@@ -361,4 +348,43 @@ fn acceptance_lift(
         requested_against: versions,
         value: Event::Judgment(verdict),
     })
+}
+
+/// The run-bound result lane: the core's `Event::EffectResult` against
+/// the Run's durable state, the F24 acceptance lift and the §4.5 start
+/// ack's `finish(Launched)` composed into the same commit.
+fn run_bound(
+    st: &Store,
+    run_id: &RunId,
+    result: &EffectResult,
+    now: Timestamp,
+    policy: &Policy,
+) -> Transition {
+    let Some(run) = st.run(run_id).ok().flatten() else {
+        return empty();
+    };
+    let launch = st.launch(&run.launch).ok().flatten();
+    let journal = st.journal(&run.id).unwrap_or_default();
+    let handoffs = st.handoffs(&run.id).unwrap_or_default();
+    let env = (
+        launch.as_ref().and_then(|l| l.decision.as_ref()),
+        journal.as_slice(),
+        handoffs.as_slice(),
+    );
+    let event = versioned(&run, Event::EffectResult(result.clone()));
+    let mut emitted = transition(&run, &event, now, policy, env, "");
+    // F24 — an answered acceptance set's verdict rides the same commit as
+    // a `judgment` event stamped with the set's own request versions
+    // (§4.9; a stale set's stamp is dropped by the transition's staleness
+    // check).
+    if let Some(judgment) = acceptance_lift(result, launch.as_ref()) {
+        let lifted = transition(&run, &judgment, now, policy, env, "");
+        emitted = concat(emitted, [lifted]);
+    }
+    // §4.5/F15 — a start ack that moved the Run to `prompting` finishes
+    // its Launch in the same commit.
+    if let Some(done) = launched_on_start(launch.as_ref(), &run, &emitted, now, policy) {
+        emitted = concat(emitted, [done]);
+    }
+    emitted
 }

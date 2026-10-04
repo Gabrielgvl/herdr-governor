@@ -21,7 +21,7 @@ use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolRequest, ToolRespon
 /// dispatchable surface cannot drift: PR A is `herdr_status` only; B2
 /// adds `herdr_launch`, C4 `herdr_run` (the decode arms already exist in
 /// `map_call`).
-const SERVED: &[&str] = &[schema::STATUS];
+const SERVED: &[&str] = &[schema::STATUS, schema::LAUNCH];
 
 /// `tools/list` — the served subset of the tool definitions, inside the
 /// shared 60,000-byte result bound.
@@ -247,8 +247,8 @@ mod tests {
         }
     }
 
-    /// OQ-S — PR A's `tools/list` exposes `herdr_status` only; the filter
-    /// and the dispatch gate share `SERVED` so they cannot drift.
+    /// OQ-S — `tools/list` exposes `herdr_status` + `herdr_launch`; the
+    /// filter and the dispatch gate share `SERVED` so they cannot drift.
     #[test]
     fn tools_list_publishes_only_the_served_set() {
         let Response::Result { result, .. } = list_response(json!(1)) else {
@@ -260,7 +260,11 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().expect("tool name is a string"))
             .collect();
-        assert_eq!(names, ["herdr_status"], "PR A lists exactly one tool");
+        assert_eq!(
+            names,
+            ["herdr_status", "herdr_launch"],
+            "B2 lists status + launch"
+        );
     }
 
     /// The decode maps arguments through the strict DTOs into typed
@@ -332,7 +336,7 @@ mod tests {
                 "bad params shape or bad arguments: {params}"
             );
         }
-        for name in ["herdr_launch", "herdr_run", "bogus"] {
+        for name in ["herdr_run", "bogus"] {
             let err = decode_call(caller(), &json!({"name": name, "arguments": {}}))
                 .expect_err("a name outside the served set refuses");
             assert_eq!(

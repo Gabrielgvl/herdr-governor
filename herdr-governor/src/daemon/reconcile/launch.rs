@@ -43,6 +43,14 @@ fn created_topology(journal: &[Effect]) -> CreatedTopology {
     topology
 }
 
+/// A topology or start effect — the launch leg §4.5's rows reason over.
+fn is_launch_leg(effect: &Effect) -> bool {
+    matches!(
+        effect.kind,
+        EffectKind::TabCreate | EffectKind::PaneSplit | EffectKind::AgentStart
+    )
+}
+
 /// The F20 certainty a terminated launch reports: `unconfirmed` rows (or
 /// any `unknown` certainty already journaled) mean *unknown*; otherwise
 /// provable absence.
@@ -62,7 +70,8 @@ fn launch_certainty(journal: &[Effect]) -> EffectCertainty {
 /// the store alone:
 ///
 /// * Run `settled` → `finish(Failed{certainty, run, createdTopology})`
-///   (the run ended while the launch row stayed open);
+///   (the run ended while the launch row stayed open) once no launch leg
+///   is still `dispatching`;
 /// * Run ≥ `prompting` → `finish(Launched{…})`, idempotent;
 /// * Run `starting` with every topology/start leg terminal and at least
 ///   one failed/unconfirmed → `finish(Failed{certainty, run, …})` — the
@@ -80,6 +89,18 @@ fn converge_launch(
     policy: &Policy,
 ) -> Transition {
     match run.state {
+        // A leg still `dispatching` may yet create topology — wait for its
+        // result (a restart marks it `unconfirmed` → `unknown`) so the
+        // outcome's certainty and `createdTopology` are not guessed. A
+        // `planned` leg never dispatches for a settled Run (the commit
+        // gate skips it): provably absent, nothing to wait for.
+        State::Settled
+            if journal.iter().any(|effect| {
+                is_launch_leg(effect) && effect.state == EffectState::Dispatching
+            }) =>
+        {
+            empty()
+        }
         State::Settled => finish(
             launch,
             LaunchOutcome::Failed {
@@ -92,32 +113,17 @@ fn converge_launch(
             now,
             policy,
         ),
+        // The restart convergence of the start-ack compose — the same
+        // outcome (`requestedOperatingPointId` after a fallback, F15).
         State::Prompting | State::Active | State::Judging | State::Repair => {
-            let (Some(point), Some(decision)) = (&run.operating_point, &launch.decision) else {
+            let Some(outcome) = crate::daemon::launch::launched(launch, run) else {
                 return empty();
             };
-            finish(
-                launch,
-                LaunchOutcome::Launched {
-                    run: run.id.clone(),
-                    operating_point: point.clone(),
-                    requested_operating_point: None,
-                    tier_evidence: decision.clone(),
-                },
-                None,
-                None,
-                now,
-                policy,
-            )
+            finish(launch, outcome, None, None, now, policy)
         }
         State::Starting => {
             let mut failed = None;
-            for effect in journal.iter().filter(|effect| {
-                matches!(
-                    effect.kind,
-                    EffectKind::TabCreate | EffectKind::PaneSplit | EffectKind::AgentStart
-                )
-            }) {
+            for effect in journal.iter().filter(|effect| is_launch_leg(effect)) {
                 match effect.state {
                     // A leg still in flight — the launch is healthy, wait.
                     EffectState::Planned | EffectState::Dispatching => return empty(),

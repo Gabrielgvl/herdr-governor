@@ -18,9 +18,10 @@ use crate::adapters::herdr::{
     AgentInfo, AgentSession, AgentStatus, ConnEpoch, HerdrError, Observed, SessionKind,
     SessionSnapshot,
 };
-use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolRequest};
+use crate::daemon::api::{RunAction, ToolCall, ToolError, ToolPrepared, ToolRequest, ToolResponse};
 use crate::daemon::clock::Clock;
 use crate::daemon::coordinator::{Coordinator, CoordinatorArgs, Msg, Signal};
+use crate::daemon::launch::Admission;
 use crate::daemon::paths::Paths;
 use crate::store::Store;
 
@@ -184,6 +185,33 @@ fn status_request(envelope: &CallerEnvelope) -> ToolRequest {
     }
 }
 
+/// The `tool` fn's status-call shape: only the launch leg parks, so the
+/// tests' `Answer` unwrap is honest — `resolved_cwd`/`base_commit` are
+/// launch-only evidence a status call never reads.
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "a test helper — a `Park` from a status call is a bug worth crashing on"
+)]
+fn tool_reply(
+    coordinator: &mut Coordinator,
+    request: ToolRequest,
+    snapshot: Result<Observed<SessionSnapshot>, HerdrError>,
+    resolved_root: Option<&str>,
+) -> ToolResponse {
+    match coordinator.tool(
+        request,
+        snapshot,
+        ToolPrepared {
+            resolved_root: resolved_root.map(str::to_owned),
+            resolved_cwd: Ok(None),
+            base_commit: Ok(None),
+        },
+    ) {
+        Admission::Answer(response) => response,
+        Admission::Park(_launch) => panic!("a status call never parks"),
+    }
+}
+
 // — The `Msg::Tool` arm (A2) ———————————————————————————————————————————
 
 /// F1 + F7 end-to-end through `Coordinator::tool`: the first valid call
@@ -197,13 +225,13 @@ fn tool_status_resolves_binds_and_pages() {
     let agents = vec![agent("w1:p1", Some("sess-1"))];
     let request = status_request(&envelope("w1:p1", &root));
 
-    let page = coordinator
-        .tool(
-            request.clone(),
-            Ok(observed(snapshot(agents.clone()))),
-            Some(&root),
-        )
-        .expect("a status page answers");
+    let page = tool_reply(
+        &mut coordinator,
+        request.clone(),
+        Ok(observed(snapshot(agents.clone()))),
+        Some(&root),
+    )
+    .expect("a status page answers");
     assert_eq!(page["runs"], json!([]), "a fresh caller owns no runs");
     assert!(
         page["health"]["daemon"]["pid"].is_u64(),
@@ -224,9 +252,13 @@ fn tool_status_resolves_binds_and_pages() {
         "the persisted caller is the resolved one"
     );
 
-    let again = coordinator
-        .tool(request, Ok(observed(snapshot(agents))), Some(&root))
-        .expect("the bound caller still serves");
+    let again = tool_reply(
+        &mut coordinator,
+        request,
+        Ok(observed(snapshot(agents))),
+        Some(&root),
+    )
+    .expect("the bound caller still serves");
     assert_eq!(
         again["unreadEventIds"],
         json!([]),
@@ -254,13 +286,13 @@ async fn reload_without_daemon_table_records_the_refusal() {
     let request = status_request(&envelope("w1:p1", &root));
     let agents = || vec![agent("w1:p1", Some("sess-1"))];
 
-    let before = coordinator
-        .tool(
-            request.clone(),
-            Ok(observed(snapshot(agents()))),
-            Some(&root),
-        )
-        .expect("the startup page answers");
+    let before = tool_reply(
+        &mut coordinator,
+        request.clone(),
+        Ok(observed(snapshot(agents()))),
+        Some(&root),
+    )
+    .expect("the startup page answers");
     assert_eq!(
         before["config"]["valid"], true,
         "the startup config is valid"
@@ -270,9 +302,13 @@ async fn reload_without_daemon_table_records_the_refusal() {
 
     coordinator.handle(Msg::Signal(Signal::Reload)).await;
 
-    let after = coordinator
-        .tool(request, Ok(observed(snapshot(agents()))), Some(&root))
-        .expect("the page still answers on the last-good config");
+    let after = tool_reply(
+        &mut coordinator,
+        request,
+        Ok(observed(snapshot(agents()))),
+        Some(&root),
+    )
+    .expect("the page still answers on the last-good config");
     assert_eq!(
         after["config"]["valid"], false,
         "a daemonless catalog is a refused reload"
@@ -333,13 +369,13 @@ async fn tool_status_reports_tick_health() {
     // proves the tool call's own snapshot is what renders.
     let mut later = observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]));
     later.epoch.socket_inode = 8;
-    let page = coordinator
-        .tool(
-            status_request(&envelope("w1:p1", &root)),
-            Ok(later),
-            Some(&root),
-        )
-        .expect("a status page answers");
+    let page = tool_reply(
+        &mut coordinator,
+        status_request(&envelope("w1:p1", &root)),
+        Ok(later),
+        Some(&root),
+    )
+    .expect("a status page answers");
     assert_eq!(
         page["health"]["herdr"]["incarnation"], "8:1790000000.000000005",
         "the request-time snapshot's epoch reports"
@@ -365,47 +401,51 @@ fn tool_refusals_are_typed() {
     let mut coordinator = coordinator_with(store_in(tmp.path()), tmp.path());
 
     let request = status_request(&envelope("w1:p1", &root));
-    let sessionless = coordinator
-        .tool(
-            request.clone(),
-            Ok(observed(snapshot(vec![agent("w1:p1", None)]))),
-            Some(&root),
-        )
-        .expect_err("a sessionless occupant refuses");
+    let sessionless = tool_reply(
+        &mut coordinator,
+        request.clone(),
+        Ok(observed(snapshot(vec![agent("w1:p1", None)]))),
+        Some(&root),
+    )
+    .expect_err("a sessionless occupant refuses");
     assert_eq!(
         sessionless.code, "CALLER_IDENTITY_SESSIONLESS",
         "no native session is sessionless"
     );
-    let bad_root = coordinator
-        .tool(
-            request.clone(),
-            Ok(observed(snapshot(vec![agent("w1:p1", Some("s"))]))),
-            Some("/else"),
-        )
-        .expect_err("a foreign realpath refuses");
+    let bad_root = tool_reply(
+        &mut coordinator,
+        request.clone(),
+        Ok(observed(snapshot(vec![agent("w1:p1", Some("s"))]))),
+        Some("/else"),
+    )
+    .expect_err("a foreign realpath refuses");
     assert_eq!(
         bad_root.code, "CALLER_IDENTITY_INVALID",
         "projectRoot is never re-anchored"
     );
-    let no_snapshot = coordinator
-        .tool(request, Err(HerdrError::FrameTooLarge), Some(&root))
-        .expect_err("a failed snapshot is unavailable");
+    let no_snapshot = tool_reply(
+        &mut coordinator,
+        request,
+        Err(HerdrError::FrameTooLarge),
+        Some(&root),
+    )
+    .expect_err("a failed snapshot is unavailable");
     assert_eq!(
         no_snapshot.code,
         ToolError::DAEMON_UNAVAILABLE,
         "an internal fault is never an identity verdict"
     );
 
-    let unknown = coordinator
-        .tool(
-            ToolRequest {
-                caller: envelope("w1:p1", &root),
-                call: ToolCall::Run(RunAction::Adopt { runs: Vec::new() }),
-            },
-            Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
-            Some(&root),
-        )
-        .expect_err("a non-status tool refuses");
+    let unknown = tool_reply(
+        &mut coordinator,
+        ToolRequest {
+            caller: envelope("w1:p1", &root),
+            call: ToolCall::Run(RunAction::Adopt { runs: Vec::new() }),
+        },
+        Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
+        Some(&root),
+    )
+    .expect_err("a non-status tool refuses");
     assert_eq!(
         unknown.code,
         ToolError::TOOL_UNKNOWN,

@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use governor_core::identity::{LaunchId, RunId, Timestamp};
 use governor_core::lifecycle::{EffectKind, EffectOutcome, EffectState, Event, transition};
-use governor_core::task::{AbstainReason, LaunchOutcome, LaunchPhase, finish};
+use governor_core::task::{AbstainReason, LaunchOutcome, LaunchPhase};
 
 use crate::daemon::reconcile;
 use crate::daemon::{DaemonError, log};
@@ -101,13 +101,13 @@ impl Coordinator {
                 if launch.phase != LaunchPhase::Evaluating {
                     return empty();
                 }
-                finish(
+                crate::daemon::launch::eval_finish(
+                    st,
                     &launch,
-                    LaunchOutcome::Abstained {
+                    &LaunchOutcome::Abstained {
                         reason: AbstainReason::InterruptedBeforeDecision,
                     },
                     Some(EffectState::Dispatching),
-                    None,
                     now,
                     policy,
                 )

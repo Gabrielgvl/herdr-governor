@@ -70,7 +70,11 @@ async fn s30_relay_round_trip_against_the_real_daemon() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect();
-    assert_eq!(names, ["herdr_status"], "PR A lists one tool");
+    assert_eq!(
+        names,
+        ["herdr_status", "herdr_launch"],
+        "B2 lists status + launch"
+    );
 
     let page = status_page(&replies[2]);
     assert_eq!(replies[2]["id"], 4);
@@ -112,7 +116,7 @@ async fn s31_strict_schemas_refuse_through_the_relay() {
                 call_request(11, "herdr_status", &json!({"eventId": 7})),
                 json!({"jsonrpc": "2.0", "id": 12, "method": "tools/call"}),
                 call_request(13, "bogus", &json!({})),
-                call_request(14, "herdr_launch", &json!({})),
+                call_request(14, "herdr_run", &json!({})),
                 request(15, "bogus/unknown", &json!({})),
                 json!({"id": 16, "method": "ping"}),
                 status_call(17),
@@ -148,7 +152,7 @@ async fn s31_strict_schemas_refuse_through_the_relay() {
     assert_eq!(
         refused(&replies[4], 14),
         "TOOL_UNKNOWN",
-        "declared but unserved in PR A"
+        "declared but unserved in PR B"
     );
     assert_eq!(replies[5]["id"], 15);
     assert_eq!(

@@ -5,8 +5,12 @@
 //! typed boundary between the transport and the coordinator: `caller` is
 //! the relay-attached envelope (F1), framing, never a tool argument.
 
+use std::path::Path;
+
 use governor_core::identity::{CallerEnvelope, EventId, IdempotencyKey, MessageKey, PaneId, RunId};
 use governor_core::task::{Refusal, Task};
+
+use crate::adapters::git::{self, GitError};
 
 /// One forwarded tool call: the relay-attached caller envelope (F1) plus
 /// the validated call.
@@ -95,6 +99,56 @@ pub enum RunAction {
 /// `ToolError` on refusal. The body shape is per tool (F5–F7) and owned by
 /// `mcp::`; the coordinator returns either.
 pub type ToolResponse = Result<serde_json::Value, ToolError>;
+
+/// §4.2's `ToolPrepared` — the request-time evidence `mcp::serve`
+/// gathers alongside the snapshot so the coordinator performs no I/O.
+/// The launch fields are `Ok(None)` for every other tool.
+#[derive(Debug)]
+pub struct ToolPrepared {
+    /// The connection task's `canonicalize` of the envelope's
+    /// `projectRoot` — `None` when the path does not resolve (H#3).
+    pub resolved_root: Option<String>,
+    /// Launch only: the realpath of the Task's `cwd` — the project root
+    /// when the Task names none. `Err` carries the `TASK_INVALID`
+    /// refusal a noncanonical/nonresolving `cwd` earns before any
+    /// recording; `violations` re-checks the field against the root.
+    pub resolved_cwd: Result<Option<String>, ToolError>,
+    /// Launch only: `base_commit` of the resolved `cwd`, taken before
+    /// admission (F6): `Ok(head)` → `Some`, `NotARepo`/`UnbornHead` →
+    /// `None` — a legal plain-directory Run; every other git failure is
+    /// the typed `GIT_EVIDENCE_UNAVAILABLE` refusal, also before any
+    /// recording.
+    pub base_commit: Result<Option<String>, ToolError>,
+}
+
+impl ToolPrepared {
+    /// The non-launch shape — every field carries its neutral value.
+    #[must_use]
+    pub fn root_only(resolved_root: Option<String>) -> Self {
+        Self {
+            resolved_root,
+            resolved_cwd: Ok(None),
+            base_commit: Ok(None),
+        }
+    }
+}
+
+/// F6's base-commit verdict for `cwd` — the one mapping the
+/// pre-admission probe and the restart re-probe share: `Ok(head)` pins
+/// the base, `NotARepo`/`UnbornHead` are the legal plain-directory
+/// `None` (git evidence is then omitted for the Run).
+///
+/// # Errors
+///
+/// Every `GitError` outside those two legal-`None` classes — the
+/// admission path refuses `GIT_EVIDENCE_UNAVAILABLE` before recording.
+pub async fn probe_base_commit(cwd: &Path) -> Result<Option<String>, GitError> {
+    match git::base_commit(cwd).await {
+        Ok(head) => Ok(Some(head)),
+        Err(GitError::NotARepo | GitError::UnbornHead) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
 
 /// A tool-call refusal: a stable `code` the caller branches on plus a
 /// caller-facing message. `code` is a spec refusal spelling

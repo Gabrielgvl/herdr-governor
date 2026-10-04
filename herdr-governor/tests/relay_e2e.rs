@@ -22,9 +22,9 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::tempdir;
 
-    /// The shipped binary — the `relay` subcommand dispatches to
-    /// `relay::run`, which is what the harness itself spawns per session.
-    const BIN: &str = env!("CARGO_BIN_EXE_herdr-governor");
+    /// The shipped relay binary — the OQ-R split keeps the std-only
+    /// transport under the N4 bound with the daemon's deps GC'd.
+    const BIN: &str = env!("CARGO_BIN_EXE_herdr-relay");
     /// N4: one stateless relay stays at or under 8 MB RSS.
     const RSS_LIMIT_KB: u64 = 8 * 1024;
 
@@ -190,7 +190,6 @@ mod tests {
     fn spawn_relay(socket: &Path, cwd: &Path, pane_id: Option<&str>) -> RelayChild {
         let mut command = Command::new(BIN);
         command
-            .arg("relay")
             .arg("--socket")
             .arg(socket)
             .current_dir(cwd)
@@ -345,7 +344,6 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let mut command = Command::new(BIN);
         command
-            .arg("relay")
             .arg("--socket")
             .arg(tmp.path().join("absent.sock"))
             .current_dir(tmp.path())

@@ -168,6 +168,12 @@ pub(super) fn apply_dropped(attempts: usize, error_kind: &'static str) {
     );
 }
 
+/// A restart-lost `base_commit` pin whose re-probe failed (§4.5/F6) —
+/// the Launch abstains; the git error (paths, stderr) is never printed.
+pub(super) fn base_reprobe_failed() {
+    tracing::warn!("base_commit re-probe failed; launch abstains");
+}
+
 /// A `SIGHUP` reload that was retained: `kind` names the refusal category
 /// (`decode`/`read`/`invalid`/`missing-daemon`), never the error text.
 pub(super) fn config_retained(kind: &'static str) {

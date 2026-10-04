@@ -302,7 +302,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - **Liveness assumption:** the daemon runs eventually and storage is writable.
 - **F23 Supervision.** Evidence is:
   - the transcript window from the parser (bounded, and the parser reads at most a configured ceiling), otherwise `agent.read`;
-  - the git state against the base pinned before any effect (H#82);
+  - the git state against the base pinned before any effect (H#82) — a `cwd` outside any repository (or with an unborn `HEAD`) pins no base and git evidence is omitted for that Run; any other git failure refuses the launch `GIT_EVIDENCE_UNAVAILABLE` before admission;
   - the Task digest (`objective`, `doneWhen`, `constraints`).
 
   Questions that drive actions:
@@ -453,7 +453,7 @@ Two crates. The split enforces the dependency direction, not where business rule
   - `adapters::{herdr, jev, transcript, git, config}`.
   - `mcp`: the daemon's MCP endpoint, served on its 0600 unix socket; the per-session relays forward to it (ADR-0004).
   - `daemon`: one coordinator task owns every transition. I/O runs asynchronously and returns versioned results to the coordinator.
-- **Subcommands:** `daemon`, `check-config`, `qualify`, and `relay` — the per-session stdio transport (ADR-0004).
+- **Subcommands:** `daemon`, `check-config`, `qualify`, and `relay` — the per-session stdio transport (ADR-0004). Harnesses register the standalone std-only `herdr-relay` binary, which runs the same `relay::run`, so the relay holds N4's 8 MB bound once the daemon links its Jev HTTP stack; the subcommand remains for compatibility.
 
 ### Data model
 

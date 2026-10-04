@@ -11,6 +11,8 @@ use governor_core::lifecycle::{Effect, EffectKind, EffectReceipt, EffectState, E
 use governor_core::routing::PlacementPlan;
 use governor_core::task::Envelope;
 
+use crate::adapters::config::{DaemonSettings, LoadedConfig};
+use crate::adapters::herdr::SessionSnapshot;
 use crate::daemon::paths::Paths;
 use crate::daemon::{FileRef, FollowUpBody, RenderContext, TopologyTarget};
 use crate::store::Store;
@@ -21,15 +23,17 @@ use crate::store::Store;
 /// operation (a missing outbox row, an unlanded topology leg, a body file
 /// that vanished).
 ///
-/// `JevEvaluate` renders nothing here: the question-text catalog (OQ-J's
-/// `daemon/questions.rs`) and the evidence-bearing states land with PR C;
-/// the launch evaluation's context is supplied explicitly by the admission
-/// path (B2). Run-bound asks (`review:*`, `accept:*`, `blocked:*`,
-/// `limit:*`) stay `planned` until those land.
+/// `JevEvaluate` renders the launch ask through `launch::eval_context`
+/// (B2): `State::Task` plus the question catalog over the freshest
+/// snapshot's `open_tabs`. Run-bound asks (`review:*`, `accept:*`,
+/// `blocked:*`, `limit:*`) stay `planned` until C3/C4 land theirs.
 pub(in crate::daemon) fn context_for(
     store: &Store,
     paths: &Paths,
     effect: &Effect,
+    snapshot: Option<&SessionSnapshot>,
+    loaded: &LoadedConfig,
+    daemon: &DaemonSettings,
 ) -> Option<RenderContext> {
     let suffix = super::seam::suffix_of(&effect.key).to_string();
     match effect.kind {
@@ -42,7 +46,9 @@ pub(in crate::daemon) fn context_for(
             }),
             _ => None,
         },
-        EffectKind::JevEvaluate => None,
+        EffectKind::JevEvaluate => {
+            crate::daemon::launch::eval_context(store, snapshot, effect, loaded, daemon)
+        }
     }
 }
 

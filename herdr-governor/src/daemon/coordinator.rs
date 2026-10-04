@@ -11,15 +11,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use governor_core::identity::{CallerEnvelope, ChildStatus, EffectKey, PaneId, Timestamp};
+use governor_core::identity::{
+    CallerEnvelope, ChildStatus, EffectKey, LaunchId, PaneId, Timestamp,
+};
 use governor_core::lifecycle::{self, EffectResult, Event, Transition, VersionTriple, Versioned};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::adapters::config::{DaemonSettings, LoadedConfig};
+use crate::adapters::git::GitError;
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
 use crate::store::Store;
 
-use super::api::{ToolError, ToolRequest, ToolResponse};
+use super::api::{ToolError, ToolPrepared, ToolRequest, ToolResponse};
 use super::clock::Clock;
 use super::paths::Paths;
 use super::reconcile::HerdrHealth;
@@ -60,7 +63,7 @@ pub(crate) enum Msg {
     /// A tool call that reached the listener — M2's connection task
     /// posts it with the request-time evidence it gathered; the arm
     /// resolves and binds the caller (F1) then serves the call
-    /// (`herdr_status` is PR A's only tool, §7).
+    /// (`herdr_status` answers, `herdr_launch` admits or parks — §4.5).
     Tool {
         /// The validated request.
         request: ToolRequest,
@@ -69,10 +72,13 @@ pub(crate) enum Msg {
         /// one (§4.6); an `Err` here is `DAEMON_UNAVAILABLE`, never an
         /// identity verdict. Boxed: `Tool` otherwise dwarfs `Tick`.
         snapshot: Box<Result<Observed<SessionSnapshot>, HerdrError>>,
-        /// The connection task's `canonicalize` of the envelope's
-        /// `projectRoot` — `None` when the path does not resolve (H#3).
-        resolved_root: Option<String>,
-        /// The reply slot the connection task waits on.
+        /// The connection task's request-time evidence (§4.2
+        /// `ToolPrepared`): the canonical `projectRoot`, and for a launch
+        /// the canonical `cwd` plus the pre-admission `base_commit`
+        /// probe (F6).
+        prepared: ToolPrepared,
+        /// The reply slot the connection task waits on — parked in
+        /// `launch_waiters` while a Launch is in flight.
         reply: oneshot::Sender<ToolResponse>,
     },
     /// A framed non-tool request's F1 check — `initialize`, `ping`,
@@ -140,6 +146,22 @@ pub(crate) enum Msg {
         /// The effect key the claim was taken under.
         key: EffectKey,
     },
+    /// §4.5 — a launch waiter's `launch_wait` elapsed: the parked reply
+    /// resolves `pending {launchId, runId?}` — the Launch keeps running;
+    /// the `launch_answered` mailbox event is the caller's later signal.
+    LaunchWait {
+        /// The Launch whose wait expired.
+        launch: LaunchId,
+    },
+    /// §4.5/F6 — a restart-lost admission `base_commit` pin, re-probed by
+    /// a spawned task (the coordinator performs no I/O): the verdict
+    /// resumes `on_evaluated` or abstains the Launch.
+    LaunchBase {
+        /// The Launch the probe ran for.
+        launch: LaunchId,
+        /// `api::probe_base_commit` on the Launch's cwd.
+        base: Result<Option<String>, GitError>,
+    },
     /// `SIGHUP` → reload the catalog (F27 adopt/retain); `SIGTERM`/`SIGINT`
     /// → the §4.14 shutdown.
     Signal(Signal),
@@ -189,12 +211,16 @@ pub(super) struct CoordinatorArgs {
 /// The coordinator: owns `Store`, `LoadedConfig`, `Clock`, the shutdown
 /// `watch` sender and the current `[daemon]` table; serves `Msg` until a
 /// shutdown.
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "the `launch` sibling module reaches `store`/`loaded`/`daemon`/`clock`/`runner`/`latest_snapshot`/`launch_waiters`/`launch_bases`; the seam/health/subs internals stay private"
+)]
 pub(super) struct Coordinator {
-    store: Store,
-    loaded: LoadedConfig,
-    daemon: DaemonSettings,
+    pub store: Store,
+    pub loaded: LoadedConfig,
+    pub daemon: DaemonSettings,
     catalog_path: PathBuf,
-    clock: Clock,
+    pub clock: Clock,
     seam: Option<SeamConfig>,
     /// The §4.14 step-1 flag the runner's pre-wire gate reads (`watch` —
     /// B1 subscribes receivers from this sender).
@@ -219,13 +245,27 @@ pub(super) struct Coordinator {
     config_last_error: Option<&'static str>,
     /// The runner pool's environment — `None` until `arm_runner` wires it
     /// (the mailbox `tx` exists only after `daemon::run`'s channel).
-    runner: Option<runner::RunnerEnv>,
+    pub runner: Option<runner::RunnerEnv>,
     /// The state-dir layout for `RenderContext` builds.
     paths: Paths,
     /// §4.4's per-subject serialization: subject → the in-flight effect
     /// key. One effect per subject at a time, dispatched in
     /// `planned_at, effect_id` order.
     in_flight: BTreeMap<effects::Subject, EffectKey>,
+    /// §4.5 — the freshest snapshot the coordinator has seen (the
+    /// request-time reads, the tick, an observation, the startup pass):
+    /// what `open_tabs`, placement counts and caller-pane resolution
+    /// read — fresh within `reconcile_secs`, never trusted for identity
+    /// adoption.
+    pub latest_snapshot: Option<Observed<SessionSnapshot>>,
+    /// §4.5 — parked `tools/call` replies per in-flight Launch; drained
+    /// with the terminal outcome on `done`, or `pending` on `LaunchWait`.
+    pub launch_waiters: BTreeMap<LaunchId, Vec<oneshot::Sender<ToolResponse>>>,
+    /// §4.5 — the admission-time `base_commit` per Launch (F6): held in
+    /// memory because nothing durable names it until `decided` reserves
+    /// the Run (a restart loses it → `BasePin::Probing` re-takes it);
+    /// removed when the Launch leaves `evaluating`.
+    pub launch_bases: BTreeMap<LaunchId, super::launch::BasePin>,
 }
 
 impl Coordinator {
@@ -252,6 +292,9 @@ impl Coordinator {
             runner: None,
             paths: args.paths,
             in_flight: BTreeMap::new(),
+            latest_snapshot: None,
+            launch_waiters: BTreeMap::new(),
+            launch_bases: BTreeMap::new(),
         }
     }
 
@@ -370,12 +413,16 @@ impl Coordinator {
             Msg::Tool {
                 request,
                 snapshot,
-                resolved_root,
+                prepared,
                 reply,
-            } => {
-                let response = self.tool(request, *snapshot, resolved_root.as_deref());
-                let _unused = reply.send(response);
-            }
+            } => match self.tool(request, *snapshot, prepared) {
+                crate::daemon::launch::Admission::Answer(response) => {
+                    let _unused = reply.send(response);
+                }
+                crate::daemon::launch::Admission::Park(launch) => {
+                    self.park_launch_waiter(&launch, reply);
+                }
+            },
             Msg::VerifyCaller {
                 caller,
                 snapshot,
@@ -398,6 +445,8 @@ impl Coordinator {
             } => self.on_dispatch_commit(&key, &context, reply),
             Msg::EffectResult(result) => self.on_effect_result(result).await,
             Msg::ReleaseSubject { key } => self.free(&key),
+            Msg::LaunchWait { launch } => self.launch_wait_expired(&launch),
+            Msg::LaunchBase { launch, base } => self.on_launch_base(&launch, base),
             Msg::Signal(Signal::Reload) => self.reload().await,
             Msg::Signal(Signal::Shutdown) => {
                 // Handled in `serve`'s arm — unreachable here.

@@ -17,8 +17,9 @@ use super::Coordinator;
 
 impl Coordinator {
     /// `Msg::Tick` — record health, run the §4.7 steps-0–2 pass (a hard
-    /// error is logged and dropped; the next tick resumes), then feed
-    /// the step-8 maintainer the current pane set.
+    /// error is logged and dropped; the next tick resumes), answer the
+    /// waiters of Launches it finished, then feed the step-8 maintainer
+    /// the current pane set.
     pub(super) fn on_tick(&mut self, snapshot: &Result<Observed<SessionSnapshot>, HerdrError>) {
         let now = self.clock.now();
         let panes = snapshot
@@ -26,10 +27,17 @@ impl Coordinator {
             .map_or(0, |observed| observed.value.panes.len());
         log::tick(snapshot.is_ok(), panes);
         self.health.record(snapshot, now);
+        if let Ok(observed) = snapshot {
+            self.latest_snapshot = Some(observed.clone());
+        }
+        // §4.7 step 0 — launch convergence, before any observation has
+        // settled the Runs its rows depend on (F21).
+        self.converge_launches();
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
         if let Err(error) = reconcile::pass(store, policy, now, snapshot) {
             log::apply_dropped(1, kind_of(&error));
         }
+        self.drain_done_waiters();
         self.push_subscription_specs();
     }
 
@@ -48,6 +56,7 @@ impl Coordinator {
         let Ok(observed) = snapshot else {
             return;
         };
+        self.latest_snapshot = Some(observed.clone());
         let view = reconcile::view_of(observed);
         let Some(run_id) = self.run_for_pane(pane_id, &view) else {
             return;
@@ -68,6 +77,14 @@ impl Coordinator {
     ) -> Result<(), DaemonError> {
         let now = self.clock.now();
         self.health.record(snapshot, now);
+        if let Ok(observed) = snapshot {
+            self.latest_snapshot = Some(observed.clone());
+        }
+        // §4.3 step 5's table — `evaluating`/`routed` convergence runs
+        // before any observation is derived (F21); the snapshot was
+        // just stashed, so the routed row re-resolves the caller's pane
+        // against it.
+        self.converge_launches();
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
         reconcile::pass(store, policy, now, snapshot)
     }

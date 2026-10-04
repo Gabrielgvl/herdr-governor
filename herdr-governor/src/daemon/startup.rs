@@ -48,12 +48,8 @@ pub(super) struct Prepared {
     pub daemon: DaemonSettings,
     /// The argv overrides resolved against `daemon`.
     pub resolved: Resolved,
-    /// The Jev credential (loaded at step 2 — §19's fail-fast; held for
-    /// the Jev callers).
-    #[expect(
-        dead_code,
-        reason = "the Jev lane wires in with PR C's renderable asks; the credential still loads and validates at startup"
-    )]
+    /// The Jev credential (loaded at step 2 — §19's fail-fast; the
+    /// runner env's `jev_key`).
     pub api_key: ApiKey,
     /// `<config>/catalog.toml` — the reload source.
     pub catalog_path: PathBuf,

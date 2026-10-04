@@ -12,15 +12,13 @@
 //! after the apply lands.
 
 mod herdr;
-/// `jev` — the wire leg for `RenderContext::Jev` asks. Nothing renders
-/// that variant yet (the question catalog is PR C's OQ-J, and B2's
-/// admission path supplies the context explicitly), so the shipped
-/// binary keeps no Jev client: linking the HTTP stack would grow the
-/// relay child's resident pages past N4's bound for a lane that cannot
-/// fire. The leg stays exercised by its unit tests; when contexts become
-/// producible this gate flips and `RunnerEnv` gains the client.
 #[cfg(test)]
 mod jev;
+/// `judge` — the wire leg for `RenderContext::Jev` asks: B2's
+/// `launch:*:evaluate` is the first renderable one, so the lane links
+/// live and `RunnerEnv` carries the client. Run-bound asks land with
+/// C3/C4. Its tests ride the `#[cfg(test)]` `jev` module.
+mod judge;
 mod render;
 /// `seam` — the checkpoint matcher the coordinator's `result_committed`
 /// checkpoint shares with the runner's three.
@@ -39,7 +37,7 @@ use governor_core::routing::JudgmentSet;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::adapters::herdr::Client as HerdrClient;
-use crate::adapters::jev::{QuestionSpec, wire};
+use crate::adapters::jev::{JudgeParams, QuestionSpec, wire};
 
 use super::coordinator::Msg;
 use super::seam::{Boundary, SeamConfig};
@@ -111,10 +109,6 @@ pub(crate) enum RenderContext {
     /// frame the receipt's `JudgmentRecord` stamps (F12/F20/F24). `frozen`
     /// carries the acceptance ask's handoff file — its digest is
     /// re-verified at commit (`frozen_digest_mismatch` otherwise).
-    #[expect(
-        dead_code,
-        reason = "B2's launch-admission path constructs the ask context; the wire lane is complete on this side"
-    )]
     Jev {
         /// The catalog's `jev_model` at hand-off.
         model: String,
@@ -284,6 +278,12 @@ pub(in crate::daemon) struct RunnerEnv {
     /// `agent.start`'s deadline (the server-side `timeout_ms` plus the
     /// op margin).
     pub agent_start: Duration,
+    /// The Jev wire client — `RenderContext::Jev` dispatches through it.
+    pub jev: crate::adapters::jev::Client,
+    /// The §19 credential the Jev call authenticates with.
+    pub jev_key: crate::adapters::jev::ApiKey,
+    /// The per-request Jev deadline (`JudgeParams.timeout`).
+    pub jev_timeout: Duration,
     /// The coordinator mailbox — `DispatchCommit`/`EffectResult` post here.
     pub tx: mpsc::Sender<Msg>,
     /// §4.14 step-1's flag — the pre-wire gate reads it.
@@ -345,14 +345,21 @@ pub(super) async fn drive(env: RunnerEnv, dispatch: Dispatch) {
         }
     } else {
         let resolution = match &*context {
-            // `context_for` renders no `Jev` context until PR C lands the
-            // question catalog, so this arm cannot fire — but if a
-            // dispatch ever carried one, the wire op provably never ran:
-            // `Absent` is the honest certainty.
-            RenderContext::Jev { .. } => EffectResolution::Failed {
-                certainty: EffectCertainty::Absent,
-                cause: Some(FailureCause("jev_lane_unwired".into())),
-            },
+            RenderContext::Jev {
+                model,
+                state,
+                questions,
+                set,
+                frozen: _,
+            } => {
+                let params = JudgeParams {
+                    model: model.clone(),
+                    state: state.clone(),
+                    questions: questions.clone(),
+                    timeout: env.jev_timeout,
+                };
+                judge::wire(&env.jev, &env.jev_key, &params, set).await
+            }
             RenderContext::TaskPrompt { .. }
             | RenderContext::Nudge { .. }
             | RenderContext::FollowUp { .. }

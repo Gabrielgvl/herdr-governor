@@ -1,64 +1,8 @@
-//! `runner/jev` — the runner's Jev half: one `judge` call over a frozen
-//! `JudgeParams`, the result stamped into the `JudgmentSet` frame as the
-//! `Judgments` receipt. A failed call still acknowledges — the set row
-//! *is* the honest record of the attempt, its `outcome` the
-//! `JevError::outcome()` class (F12/F24); only a dispatch that never ran
-//! (the shutdown gate, a refused commit) produces no set.
-//!
-//! Compiled under `cfg(test)` only: `context_for` renders no `Jev`
-//! context until the question catalog lands (PR C), so no production
-//! caller exists — wiring the client into `RunnerEnv` would link the
-//! whole HTTP stack into the shipped binary for a lane that cannot fire
-//! (the relay child's N4 resident bound pays for every linked page).
-//! The unit tests below drive the leg directly; the module goes live
-//! when B2/PR C makes the variant renderable and `RunnerEnv` gains
-//! `jev`/`jev_key`/`jev_timeout`.
-
-use governor_core::lifecycle::{EffectReceipt, EffectResolution};
-use governor_core::routing::{JudgmentOutcome, JudgmentRecord, JudgmentSet};
-
-use crate::adapters::jev::{ApiKey, Client as JevClient, JudgeParams};
-
-/// §4.4's Jev leg — the `JudgeParams` come straight out of the frozen
-/// context (in B1 the tests build them; the renderable variant supplies
-/// them once the catalog lands); `params.timeout` is the per-request
-/// deadline.
-async fn wire(
-    client: &JevClient,
-    key: &ApiKey,
-    params: &JudgeParams,
-    set: &JudgmentSet,
-) -> EffectResolution {
-    match client.judge(key, params).await {
-        Ok(judged) => record(
-            set,
-            JudgmentOutcome::Answered,
-            judged.model,
-            judged.judgments,
-        ),
-        Err(error) => record(set, error.outcome(), params.model.clone(), Vec::new()),
-    }
-}
-
-/// Stamp the set's two wire-resolved fields — `outcome` and the model
-/// that answered (the requested one when nothing did) — and wrap the
-/// answers in the receipt.
-fn record(
-    set: &JudgmentSet,
-    outcome: JudgmentOutcome,
-    model: String,
-    judgments: Vec<governor_core::routing::Judgment>,
-) -> EffectResolution {
-    let mut stamped = set.clone();
-    stamped.outcome = outcome;
-    stamped.model = model;
-    EffectResolution::Acknowledged {
-        receipt: Some(EffectReceipt::Judgments(JudgmentRecord {
-            set: stamped,
-            judgments,
-        })),
-    }
-}
+//! `runner/jev` — the Jev lane's tests. The lane itself lives in
+//! `runner/judge` (live since B2: `context_for` renders the launch
+//! `evaluate` ask and `RunnerEnv` carries the client, key and
+//! deadline); this module keeps its `#[cfg(test)]` gate so the lane's
+//! promotion is a module addition, not a test-gate removal (R3).
 
 #[cfg(test)]
 mod tests {
@@ -67,9 +11,11 @@ mod tests {
 
     use governor_core::config::ConfigVersion;
     use governor_core::identity::{Digest, JudgmentSetId, LaunchId};
-    use governor_core::routing::{JudgmentPurpose, JudgmentSet, QuestionVersion};
+    use governor_core::lifecycle::{EffectReceipt, EffectResolution};
+    use governor_core::routing::{JudgmentOutcome, JudgmentPurpose, JudgmentSet, QuestionVersion};
 
-    use super::*;
+    use crate::adapters::jev::{ApiKey, Client as JevClient, JudgeParams};
+    use crate::daemon::runner::judge::{record, wire};
 
     fn set() -> JudgmentSet {
         JudgmentSet {

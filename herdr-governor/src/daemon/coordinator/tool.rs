@@ -1,13 +1,14 @@
-//! `tool` — the `Msg::Tool` arm's work (F1 + F7): the caller envelope
-//! resolves over the request-time snapshot, a first-use `BindCaller`
-//! journals, and the call dispatches — `herdr_status` is PR A's only
-//! tool (§7).
+//! `tool` — the `Msg::Tool` arm's work (F1 + F7 + §4.5): the caller
+//! envelope resolves over the request-time snapshot, a first-use
+//! `BindCaller` journals, and the call dispatches — `herdr_status`
+//! answers; `herdr_launch` admits or parks.
 
 use governor_core::identity::{CallerEnvelope, CallerKey, Timestamp};
 use governor_core::lifecycle::{StateChange, Transition};
 
 use crate::adapters::herdr::{HerdrError, Observed, SessionSnapshot};
-use crate::daemon::api::{ToolCall, ToolError, ToolRequest, ToolResponse};
+use crate::daemon::api::{ToolCall, ToolError, ToolPrepared, ToolRequest};
+use crate::daemon::launch::Admission;
 use crate::daemon::{identity, status};
 
 use super::Coordinator;
@@ -16,28 +17,41 @@ use super::apply::apply_with_retry;
 impl Coordinator {
     /// The `Msg::Tool` arm's work: F1 resolves and binds the caller
     /// (`resolve_and_bind`), then the call dispatches — `herdr_status`
-    /// is PR A's only tool (§7).
+    /// answers directly; `herdr_launch` either answers (a refusal, an
+    /// idempotent terminal replay) or `Park`s, and the arm puts the
+    /// reply under the Launch's waiters.
     pub(in crate::daemon) fn tool(
         &mut self,
         request: ToolRequest,
         snapshot: Result<Observed<SessionSnapshot>, HerdrError>,
-        resolved_root: Option<&str>,
-    ) -> ToolResponse {
+        prepared: ToolPrepared,
+    ) -> Admission {
         let now = self.clock.now();
-        let caller = self.resolve_and_bind(&request.caller, snapshot, resolved_root)?;
+        let caller = match self.resolve_and_bind(
+            &request.caller,
+            snapshot,
+            prepared.resolved_root.as_deref(),
+        ) {
+            Ok(caller) => caller,
+            Err(error) => return Admission::Answer(Err(error)),
+        };
         match request.call {
-            ToolCall::Status { event, cursor } => status::page(
+            ToolCall::Status { event, cursor } => Admission::Answer(status::page(
                 &self.store,
                 &caller,
                 event.as_ref(),
                 cursor.as_deref(),
                 status::BYTE_BUDGET,
                 &self.status_view(now),
-            ),
-            ToolCall::Launch { .. } | ToolCall::Run(_) => Err(ToolError::new(
-                ToolError::TOOL_UNKNOWN,
-                "PR A serves herdr_status only",
             )),
+            ToolCall::Launch { key, task } => {
+                let project_root = request.caller.project_root.clone();
+                self.launch_admit(&caller, &key, task, &project_root, prepared)
+            }
+            ToolCall::Run(_) => Admission::Answer(Err(ToolError::new(
+                ToolError::TOOL_UNKNOWN,
+                "herdr_run lands with C2",
+            ))),
         }
     }
 
@@ -85,6 +99,9 @@ impl Coordinator {
             ));
         };
         let agents = identity::agent_rows(&observed.value);
+        // The freshest view the coordinator holds — `open_tabs`,
+        // placement counts and caller-pane resolution read it (§4.5).
+        self.latest_snapshot = Some(observed);
         let (caller, binding) = identity::resolve(&self.store, envelope, resolved_root, &agents)?;
         if let Some(fresh) = binding {
             apply_with_retry(&mut self.store, now, |_| Transition {
