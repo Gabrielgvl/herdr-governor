@@ -4,9 +4,9 @@
 //! the restart-mark counts `mark_restart` reports.
 
 use governor_core::identity::Timestamp;
-use governor_core::lifecycle::Transition;
+use governor_core::lifecycle::{StateChange, Transition};
 
-use crate::daemon::log;
+use crate::daemon::{delivery, log};
 use crate::store::{ApplyError, Store};
 
 /// The apply bound §4.2 pins: re-read and recompute ≤ 3 attempts, then log
@@ -46,13 +46,28 @@ pub(in crate::daemon) struct Marks {
 /// other `ApplyError` aborts (it is a bug or corruption, not a race).
 /// An empty transition counts as a clean `Applied` without paying a
 /// transaction.
+///
+/// §4.8's composition rule lives here rather than in each recompute: any
+/// `ExpireFollowUps` write owes its `follow_up_expired` events in the
+/// same transaction, so the hook reads the still-queued outbox rows and
+/// appends their events before every attempt — whichever arm produced
+/// the write (settle, cancel, a later node's) can never land it bare.
 pub(in crate::daemon) fn apply_with_retry(
     store: &mut Store,
     now: Timestamp,
     mut recompute: impl FnMut(&Store) -> Transition,
 ) -> Result<ApplyOutcome, ApplyError> {
     for attempt in 1..=APPLY_BOUND {
-        let transition = recompute(store);
+        let mut transition = recompute(store);
+        if transition
+            .state_changes
+            .iter()
+            .any(|change| matches!(change, StateChange::ExpireFollowUps { .. }))
+        {
+            transition
+                .events
+                .extend(delivery::expiry_events(store, &transition)?);
+        }
         let sizes = (
             transition.state_changes.len(),
             transition.events.len(),

@@ -32,6 +32,7 @@ fn f18_mailbox_event_kind_spellings() {
         (MailboxEventKind::RecoveryPending, "recovery_pending"),
         (MailboxEventKind::RecoveryBlocked, "recovery_blocked"),
         (MailboxEventKind::RecoveryDispatched, "recovery_dispatched"),
+        (MailboxEventKind::RunRetired, "run_retired"),
     ];
     for (kind, name) in cases {
         assert_eq!(
@@ -61,6 +62,7 @@ fn f18_run_scoped_dedup_key_spellings() {
             MailboxEventKind::RecoveryDispatched,
             "run:r1:recovery_dispatched",
         ),
+        (MailboxEventKind::RunRetired, "run:r1:run_retired"),
     ];
     for (kind, key) in cases {
         assert_eq!(
@@ -158,6 +160,29 @@ fn f18_launch_failed_binds_the_launch() {
     assert!(
         !MailboxEventKind::FollowUpExpired.binds_launch(),
         "run events are not launch-bound"
+    );
+}
+
+#[test]
+fn f18_run_retired_binds_a_run_without_qualifier() {
+    let kind = MailboxEventKind::RunRetired;
+    assert_eq!(kind.as_str(), "run_retired", "the F30 spelling");
+    assert!(!kind.binds_launch(), "run_retired is run-bound (F18)");
+    let subject = MailboxSubject::Run(RunId("r1".into()));
+    assert_eq!(
+        kind.dedup_key(&subject, None),
+        Some(DedupKey("run:r1:run_retired".into())),
+        "one-shot per Run (F18/F30)"
+    );
+    assert_eq!(
+        kind.dedup_key(&subject, Some(2)),
+        None,
+        "run_retired takes no qualifier"
+    );
+    assert_eq!(
+        kind.dedup_key(&MailboxSubject::Launch(LaunchId("l1".into())), None),
+        None,
+        "run_retired never binds a Launch"
     );
 }
 

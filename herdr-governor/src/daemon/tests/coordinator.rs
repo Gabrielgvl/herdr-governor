@@ -120,6 +120,7 @@ pub(super) fn launch_row(id: &str, phase: LaunchPhase) -> Launch {
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         },
         phase,
         decision: None,
@@ -211,17 +212,6 @@ pub(super) fn coordinator_with(store: Store, dir: &Path) -> Coordinator {
 
 pub(super) fn store_in(dir: &Path) -> Store {
     Store::open(&dir.join("governor.db")).expect("store opens")
-}
-
-/// A real 0600 credentials file under `dir` — `ApiKey::read_0600` is
-/// the only constructor and it verifies ownership, mode and a non-empty
-/// body, so a `RunnerEnv` needs the genuine path.
-pub(super) fn credentials_file(dir: &Path) -> PathBuf {
-    let path = dir.join("credentials");
-    std::fs::write(&path, "test-token").expect("credentials");
-    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
-        .expect("0600");
-    path
 }
 
 // — `apply_with_retry` —————————————————————————————————————————————————

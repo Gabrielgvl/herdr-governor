@@ -83,6 +83,7 @@ const MAILBOX_UNACKED: &str = "SELECT m.* FROM mailbox m \
 
 /// `owned` — the caller-scoped reads F7 composes (§4.12).
 mod owned;
+mod run;
 
 fn launch_from(row: &Row<'_>) -> Result<Launch, StoreError> {
     let caller = key_from_row(
@@ -305,6 +306,22 @@ impl Store {
         self.first(
             "SELECT * FROM mailbox WHERE event_id = ?1",
             params![id.0],
+            mailbox_from,
+        )
+    }
+
+    /// Unacked mailbox events with no `event:<id>:hint` effect journaled —
+    /// the §4.7 step-6 hint scan (F18's once-only rule: a journaled row
+    /// in any state counts as hinted, since a hint is never retried).
+    /// `created_at` order is the rate limiter's fairness order.
+    pub fn mailbox_unhinted(&self) -> Result<Vec<MailboxEvent>, StoreError> {
+        self.all(
+            "SELECT m.* FROM mailbox m \
+             WHERE m.acked_at IS NULL \
+             AND NOT EXISTS (SELECT 1 FROM effects e \
+             WHERE e.effect_key = 'event:' || m.event_id || ':hint') \
+             ORDER BY m.created_at, m.event_id",
+            [],
             mailbox_from,
         )
     }

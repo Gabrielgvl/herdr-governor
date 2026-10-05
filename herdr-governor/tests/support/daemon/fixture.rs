@@ -37,6 +37,10 @@ pub struct Catalog {
     /// (`shutdown_grace_secs = 1`, `retire_*`, `transcript_dir`,
     /// timeouts).
     pub daemon_extra: String,
+    /// Extra `[policy]` keys, verbatim TOML lines (`judgment_window_secs
+    /// = 3`, `repair_window_secs`, `idle_window_secs`) — the supervision
+    /// suites' short windows.
+    pub policy_extra: String,
 }
 
 impl Catalog {
@@ -53,6 +57,7 @@ impl Catalog {
             tiers: vec!["fast".to_owned()],
             points_toml: "operating_points = []".to_owned(),
             daemon_extra: String::new(),
+            policy_extra: String::new(),
         }
     }
 
@@ -78,10 +83,11 @@ impl Catalog {
             .join(", ");
         format!(
             "[policy]\ntiers = [{tiers}]\nprovider_limit_threshold = 0.6\n\
-             cooldown_secs = {cooldown}\n\n[catalog]\n{points}\n\n[daemon]\n\
+             cooldown_secs = {cooldown}\n{policy_extra}\n[catalog]\n{points}\n\n[daemon]\n\
              herdr_socket = \"{sock}\"\njev_base_url = \"{jev}\"\n\
              jev_model = \"{model}\"\nreconcile_secs = {reconcile}\n{extra}",
             cooldown = self.cooldown_secs,
+            policy_extra = self.policy_extra,
             points = self.points_toml,
             sock = self.herdr_socket.display(),
             jev = self.jev_base_url,

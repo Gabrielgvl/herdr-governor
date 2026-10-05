@@ -11,7 +11,7 @@ use governor_core::identity::{LaunchId, RunId, Timestamp};
 use governor_core::lifecycle::{EffectKind, EffectOutcome, EffectState, Event, transition};
 use governor_core::task::{AbstainReason, LaunchOutcome, LaunchPhase};
 
-use crate::daemon::reconcile;
+use crate::daemon::delivery;
 use crate::daemon::{DaemonError, log};
 
 use super::apply::{ApplyOutcome, Marks, apply_with_retry};
@@ -33,8 +33,8 @@ impl Coordinator {
     ///
     /// Per-subject applies — one bad row drops only its own mark. The
     /// [r2] outbox `Unconfirmed` resolution composes in the same
-    /// transition through `reconcile::linked_outbox_resolution` (B3's
-    /// private copy; C2's shared helper replaces it).
+    /// transition through `delivery::linked_outbox_resolution` (C2's
+    /// shared helper).
     pub(in crate::daemon) fn mark_restart(&mut self, now: Timestamp) -> Result<Marks, DaemonError> {
         let dispatching = self.store.effects_in_state(EffectState::Dispatching)?;
         let mut marks = Marks {
@@ -75,7 +75,7 @@ impl Coordinator {
                 // `follow_up_unconfirmed` event with it).
                 for effect in &journal {
                     if effect.state == EffectState::Dispatching
-                        && let Some((write, event)) = reconcile::linked_outbox_resolution(
+                        && let Some((write, event)) = delivery::linked_outbox_resolution(
                             st,
                             effect,
                             EffectOutcome::Unconfirmed,

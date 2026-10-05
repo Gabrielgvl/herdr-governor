@@ -28,8 +28,8 @@ use crate::daemon::{CommitVerdict, FileRef, FollowUpBody, RenderContext};
 use crate::store::Store;
 
 use super::coordinator::{
-    NOW, bind_caller, caller, changes, coordinator_with, credentials_file, effect, launch_row,
-    plan, policy, run_row, seed_run, store_in,
+    NOW, bind_caller, caller, changes, coordinator_with, effect, launch_row, plan, policy, run_row,
+    seed_run, store_in,
 };
 
 fn child_identity() -> ChildIdentity {
@@ -427,16 +427,15 @@ async fn hand_out_holds_one_effect_per_subject() {
 
     let mut coordinator = coordinator_with(store, tmp.path());
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
-    // The Jev leg never fires here, but the env values stay real.
-    let credentials = credentials_file(tmp.path());
+    // The Jev leg never fires here — the effects under test are all
+    // Herdr legs — but the env fields are real values.
+    let (jev, jev_key) = super::jev_env(tmp.path()).await;
     coordinator.arm_runner(RunnerEnv {
         herdr: crate::adapters::herdr::Client::new(tmp.path().join("no.sock")),
         herdr_op: Duration::from_millis(50),
         agent_start: Duration::from_millis(50),
-        jev: crate::adapters::jev::Client::new("http://127.0.0.1:9").expect("jev client"),
-        jev_key: crate::adapters::jev::ApiKey::read_0600(&credentials)
-            .await
-            .expect("test credential reads"),
+        jev,
+        jev_key,
         jev_timeout: Duration::from_millis(50),
         tx,
         shutdown: coordinator.shutdown_receiver(),

@@ -72,8 +72,8 @@ async fn s30_relay_round_trip_against_the_real_daemon() {
         .collect();
     assert_eq!(
         names,
-        ["herdr_status", "herdr_launch"],
-        "B2 lists status + launch"
+        ["herdr_status", "herdr_launch", "herdr_run"],
+        "the served surface lists every tool this build answers"
     );
 
     let page = status_page(&replies[2]);
@@ -151,8 +151,8 @@ async fn s31_strict_schemas_refuse_through_the_relay() {
     );
     assert_eq!(
         refused(&replies[4], 14),
-        "TOOL_UNKNOWN",
-        "declared but unserved in PR B"
+        "REQUEST_INVALID",
+        "herdr_run is served — empty arguments fail its strict DTO"
     );
     assert_eq!(replies[5]["id"], 15);
     assert_eq!(

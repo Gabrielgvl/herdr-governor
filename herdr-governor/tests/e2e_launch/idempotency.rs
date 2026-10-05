@@ -52,7 +52,7 @@ async fn f11_same_key_same_digest_returns_stored_or_pending() {
     assert_eq!(replay, launched, "the stored outcome replays verbatim");
 
     assert_eq!(all_launches(&world.store()).len(), 2, "one row per key");
-    assert_eq!(world.jev().requests().len(), 2, "one evaluation per key");
+    assert_eq!(world.evals().len(), 2, "one evaluation per key");
     assert_eq!(wire_calls(world.fake(), "agent.start").len(), 1);
     world.shutdown().await;
 }
@@ -122,7 +122,7 @@ async fn f11_different_digest_conflicts() {
     let conflicted = world.launch(&launch_args(&other, "k1")).await;
     assert_eq!(tool_code(&conflicted), "IDEMPOTENCY_KEY_CONFLICT");
     assert_eq!(all_launches(&world.store()).len(), 1);
-    assert_eq!(world.jev().requests().len(), 1);
+    assert_eq!(world.evals().len(), 1);
     world.shutdown().await;
 }
 
@@ -182,7 +182,7 @@ async fn f11_launch_recorded_before_any_effect() {
         Some(head.as_str()),
         "the restart re-took the base"
     );
-    assert_eq!(world.jev().requests().len(), 1, "evaluated exactly once");
+    assert_eq!(world.evals().len(), 1, "evaluated exactly once");
     world.shutdown().await;
 }
 

@@ -208,7 +208,7 @@ fn tool_reply(
         },
     ) {
         Admission::Answer(response) => response,
-        Admission::Park(_launch) => panic!("a status call never parks"),
+        Admission::Park(_) | Admission::ParkClose(_) => panic!("a status call never parks"),
     }
 }
 
@@ -393,7 +393,8 @@ async fn tool_status_reports_tick_health() {
 
 /// The refusals surface as typed `ToolError` codes: an envelope that
 /// cannot resolve, a `projectRoot` that fails the realpath check, a
-/// failed request-time snapshot, and a tool PR A does not serve.
+/// failed request-time snapshot, and a `herdr_run` action C4 does not
+/// serve.
 #[test]
 fn tool_refusals_are_typed() {
     let tmp = tempfile::tempdir().expect("tmp");
@@ -436,19 +437,24 @@ fn tool_refusals_are_typed() {
         "an internal fault is never an identity verdict"
     );
 
-    let unknown = tool_reply(
+    // Every `ToolCall` variant and every `herdr_run` action is served —
+    // the probe now exercises the served lane's own refusal: an adopt
+    // naming a Run that does not exist is `NOT_OWNER`, never an
+    // existence oracle (F4).
+    let unserved = tool_reply(
         &mut coordinator,
         ToolRequest {
             caller: envelope("w1:p1", &root),
-            call: ToolCall::Run(RunAction::Adopt { runs: Vec::new() }),
+            call: ToolCall::Run(RunAction::Adopt {
+                runs: Vec::from([governor_core::identity::RunId("run-gone".into())]),
+            }),
         },
         Ok(observed(snapshot(vec![agent("w1:p1", Some("sess-1"))]))),
         Some(&root),
     )
-    .expect_err("a non-status tool refuses");
+    .expect_err("an adopt of an unknown Run refuses");
     assert_eq!(
-        unknown.code,
-        ToolError::TOOL_UNKNOWN,
-        "PR A serves herdr_status only"
+        unserved.code, "NOT_OWNER",
+        "herdr_run is served; its refusal vocabulary answers"
     );
 }

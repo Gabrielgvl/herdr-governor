@@ -37,6 +37,28 @@ pub const CONSTRAINTS_MAX_ITEMS: usize = 8;
 /// F5/N5 — the rendered Task is bounded at 64 KiB.
 pub const RENDERED_TASK_MAX_BYTES: usize = 64 * 1024;
 
+/// F30 — whether an `accepted` Run's pane retires automatically once the
+/// proof chain holds. `retire` is the default; `keep` is the per-launch
+/// opt-out (§4.16 check 1). The stored and wire spellings are the spec's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retention {
+    /// `retire` — the pane closes automatically (the default).
+    Retire,
+    /// `keep` — the pane stays open.
+    Keep,
+}
+
+impl Retention {
+    /// The stored spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Retire => "retire",
+            Self::Keep => "keep",
+        }
+    }
+}
+
 /// F5 — the caller-authored work unit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
@@ -61,6 +83,12 @@ pub struct Task {
     /// caller's `projectRoot`, else the Launch fails (F5). Absent means the
     /// project root.
     pub cwd: Option<String>,
+    /// F30 — the retirement opt-out: absent or `retire` means the accepted
+    /// Run's pane closes automatically once the proof chain holds; `keep`
+    /// keeps it. Caller/routing data like `tier` — digested (a different
+    /// retention is a different request, OQ-W) but never rendered,
+    /// prompted or shown to Jev.
+    pub retention: Option<Retention>,
 }
 
 /// F5 — a Task text field is non-empty and carries no NUL byte (the rendered
@@ -154,12 +182,20 @@ impl Task {
         out
     }
 
-    /// F11/F15 — `launches.task_digest`: SHA-256 over `render()`. Two Tasks
-    /// differing only in `label` digest alike, so a label change replays the
-    /// stored admission result instead of conflicting (H#41).
+    /// F11/F15 — `launches.task_digest`: SHA-256 over `render()`, with the
+    /// retention's non-default spelling appended (F30/OQ-W): a `keep`
+    /// Task is a different request from a `retire` one, while `retire` —
+    /// explicit or defaulted — digests exactly like the plain render.
+    /// Two Tasks differing only in `label` digest alike, so a label
+    /// change replays the stored admission result instead of conflicting
+    /// (H#41).
     #[must_use]
     pub fn digest(&self) -> Digest {
-        let hashed = Sha256::digest(self.render().as_bytes());
+        let mut input = self.render();
+        if self.retention == Some(Retention::Keep) {
+            input.push_str(&field_line("retention", "keep"));
+        }
+        let hashed = Sha256::digest(input.as_bytes());
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(hashed.as_ref());
         Digest(bytes)
@@ -279,7 +315,7 @@ mod tests {
 
     use super::{
         AbstainReason, CONSTRAINTS_MAX_ITEMS, DONE_WHEN_MAX_ITEMS, DONE_WHEN_MIN_ITEMS,
-        LaunchPhase, RENDERED_TASK_MAX_BYTES, Refusal,
+        LaunchPhase, RENDERED_TASK_MAX_BYTES, Refusal, Retention, Task,
     };
 
     #[test]
@@ -293,6 +329,78 @@ mod tests {
         assert_eq!(
             RENDERED_TASK_MAX_BYTES, 65_536,
             "rendered Task bound is 64 KiB (N5)"
+        );
+    }
+
+    #[test]
+    fn f5_retention_defaults_to_retire_and_is_digested() {
+        use alloc::vec::Vec;
+
+        use crate::identity::{
+            AgentKind, CallerKey, DeliveryId, Digest, NativeSession, PaneId, RunId,
+        };
+        use sha2::{Digest as _, Sha256};
+
+        assert_eq!(Retention::Retire.as_str(), "retire");
+        assert_eq!(Retention::Keep.as_str(), "keep");
+        let base = Task {
+            objective: "o".into(),
+            scope: "s".into(),
+            done_when: Vec::from(["d".into()]),
+            constraints: Vec::new(),
+            tier: None,
+            recovery_of: None,
+            label: None,
+            cwd: None,
+            retention: None,
+        };
+        let explicit = Task {
+            retention: Some(Retention::Retire),
+            ..base.clone()
+        };
+        let kept = Task {
+            retention: Some(Retention::Keep),
+            ..base.clone()
+        };
+        assert_eq!(
+            explicit.digest(),
+            base.digest(),
+            "absent and explicit retire digest alike — the default (F30)"
+        );
+        assert_ne!(
+            kept.digest(),
+            base.digest(),
+            "a keep Task is a different request (OQ-W)"
+        );
+        let hashed =
+            Sha256::digest(alloc::format!("{}retention=4:keep\n", base.render()).as_bytes());
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(hashed.as_ref());
+        assert_eq!(
+            kept.digest(),
+            Digest(bytes),
+            "keep digests the render plus the framed retention line"
+        );
+        assert_eq!(
+            kept.render(),
+            base.render(),
+            "retention never enters the canonical render (F5)"
+        );
+        let prompt = kept
+            .render_prompt(
+                &DeliveryId("d".into()),
+                &CallerKey {
+                    agent_kind: AgentKind("k".into()),
+                    native_session: NativeSession("s".into()),
+                },
+                &PaneId("p".into()),
+                &RunId("r".into()),
+                "/h.md",
+            )
+            .expect("a valid task renders a prompt");
+        assert!(
+            !prompt.contains("retention") && !prompt.contains("keep"),
+            "retention never reaches the child (F16/F30): {prompt:?}"
         );
     }
 

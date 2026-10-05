@@ -90,6 +90,7 @@ pub(super) fn task() -> Task {
         recovery_of: None,
         label: Some("label".into()),
         cwd: None,
+        retention: Some(governor_core::task::Retention::Keep),
     }
 }
 

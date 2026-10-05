@@ -12,10 +12,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use governor_core::identity::{
-    CallerEnvelope, ChildStatus, EffectKey, LaunchId, PaneId, Timestamp,
+    CallerEnvelope, CallerKey, ChildStatus, EffectKey, LaunchId, PaneId, RunId, Timestamp,
 };
 use governor_core::lifecycle::{self, EffectResult, Event, Transition, VersionTriple, Versioned};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 
 use crate::adapters::config::{DaemonSettings, LoadedConfig};
 use crate::adapters::git::GitError;
@@ -39,6 +39,11 @@ mod effects;
 mod reload;
 /// `restart` — §4.3 step 5's `mark_restart` arm `daemon::run` drives.
 mod restart;
+/// `serve` — the message loop, the §4.14 drain and the shutdown arm.
+mod serve;
+/// `supervise` — §4.7 step 4: the evidence gathers the tick schedules,
+/// the `Msg::Evidence` arm, and the per-tick acceptance retry (C3).
+mod supervise;
 /// `tick` — the `Msg::Tick`/`Msg::Observation` arms (§4.7).
 mod tick;
 /// `tool` — the `Msg::Tool` arm's implementation (F1 + F7).
@@ -154,6 +159,13 @@ pub(crate) enum Msg {
         /// The Launch whose wait expired.
         launch: LaunchId,
     },
+    /// F20 — a `closePane` waiter's bound elapsed: the parked `cancel`
+    /// reply resolves with the close row's state as it stands — `false`
+    /// confirmed while the close is still in flight, never a hang.
+    CloseWait {
+        /// The close effect key whose wait expired.
+        key: EffectKey,
+    },
     /// §4.5/F6 — a restart-lost admission `base_commit` pin, re-probed by
     /// a spawned task (the coordinator performs no I/O): the verdict
     /// resumes `on_evaluated` or abstains the Launch.
@@ -163,6 +175,10 @@ pub(crate) enum Msg {
         /// `api::probe_base_commit` on the Launch's cwd.
         base: Result<Option<String>, GitError>,
     },
+    /// §4.7 step 4 — a finished evidence gather (§4.9): the advanced
+    /// tail, the terminal fallback and the git evidence. Boxed — the
+    /// tail dwarfs the other variants.
+    Evidence(Box<super::evidence::Gathered>),
     /// `SIGHUP` → reload the catalog (F27 adopt/retain); `SIGTERM`/`SIGINT`
     /// → the §4.14 shutdown.
     Signal(Signal),
@@ -214,7 +230,7 @@ pub(super) struct CoordinatorArgs {
 /// shutdown.
 #[expect(
     clippy::partial_pub_fields,
-    reason = "the `launch` sibling module reaches `store`/`loaded`/`daemon`/`clock`/`runner`/`latest_snapshot`/`launch_waiters`/`launch_bases`; the seam/health/subs internals stay private"
+    reason = "the `launch`/`run_tool` sibling modules reach `store`/`loaded`/`daemon`/`clock`/`runner`/`latest_snapshot`/`launch_waiters`/`close_waiters`/`launch_bases`; the seam/health/subs internals stay private"
 )]
 pub(super) struct Coordinator {
     pub store: Store,
@@ -262,11 +278,26 @@ pub(super) struct Coordinator {
     /// §4.5 — parked `tools/call` replies per in-flight Launch; drained
     /// with the terminal outcome on `done`, or `pending` on `LaunchWait`.
     pub launch_waiters: BTreeMap<LaunchId, Vec<oneshot::Sender<ToolResponse>>>,
+    /// F20 — parked `cancel` replies per in-flight close effect key;
+    /// drained with the close's first committed result/refusal, or the
+    /// row's current state on `CloseWait`.
+    pub close_waiters: BTreeMap<EffectKey, Vec<oneshot::Sender<ToolResponse>>>,
     /// §4.5 — the admission-time `base_commit` per Launch (F6): held in
     /// memory because nothing durable names it until `decided` reserves
     /// the Run (a restart loses it → `BasePin::Probing` re-takes it);
     /// removed when the Launch leaves `evaluating`.
     pub launch_bases: BTreeMap<LaunchId, super::launch::BasePin>,
+    /// F18 — the last hint time per owner, the `HINT_MIN_INTERVAL` rate
+    /// limit's clock. In-memory like §4.8's stated ceiling: a restart
+    /// resets it (the interval can only lengthen across restarts).
+    last_hint_at: BTreeMap<CallerKey, Timestamp>,
+    /// F17/H#64 — when each Run's child identity was first observed
+    /// `absent`, the retention sweep's `absent_since` clock. In-memory,
+    /// the same stated ceiling.
+    followup_absent_since: BTreeMap<RunId, Timestamp>,
+    /// §4.9 — each supervised Run's accumulated evidence tail and
+    /// bundle. In-memory: a restart rebuilds it from `Cursor::START`.
+    evidence: BTreeMap<RunId, super::evidence::EvidenceTail>,
 }
 
 impl Coordinator {
@@ -295,7 +326,11 @@ impl Coordinator {
             in_flight: BTreeMap::new(),
             latest_snapshot: None,
             launch_waiters: BTreeMap::new(),
+            close_waiters: BTreeMap::new(),
             launch_bases: BTreeMap::new(),
+            last_hint_at: BTreeMap::new(),
+            followup_absent_since: BTreeMap::new(),
+            evidence: BTreeMap::new(),
         }
     }
 
@@ -319,100 +354,6 @@ impl Coordinator {
         &self.health
     }
 
-    /// The message loop: process `Msg`s to completion until
-    /// `Signal::Shutdown`, the `shutdown` oneshot, or every sender
-    /// dropping — then hand back `self` so teardown drops fields in order.
-    #[expect(
-        clippy::integer_division_remainder_used,
-        reason = "tokio::select! expands to an internal `%` index over its arms; the written arms have no arithmetic"
-    )]
-    pub(super) async fn serve(
-        mut self,
-        mut rx: mpsc::Receiver<Msg>,
-        mut shutdown: Option<oneshot::Receiver<()>>,
-    ) -> (Self, Stop) {
-        // §4.7 step 8 — the maintainer arms on the set at bind time;
-        // every tick/observation pushes the current set after it.
-        self.push_subscription_specs();
-        // §4.4 — a restart leaves `planned` rows behind: offer them before
-        // the first message so the pipeline resumes without waiting on a
-        // tick.
-        self.hand_out();
-        let stop = loop {
-            tokio::select! {
-                // The oneshot wins over a queued Msg (biased): a stop
-                // request is never starved by a full mailbox.
-                biased;
-                fired = async {
-                    match shutdown.as_mut() {
-                        Some(stop_rx) => stop_rx.await.is_ok(),
-                        // `pending` when no oneshot was given — the arm
-                        // never completes.
-                        None => std::future::pending::<bool>().await,
-                    }
-                } => {
-                    if fired {
-                        break self.begin_shutdown(Stop::Requested);
-                    }
-                    // The sender dropped without firing — disarm so the
-                    // completed arm can't spin the loop.
-                    shutdown = None;
-                }
-                incoming = rx.recv() => {
-                    match incoming {
-                        Some(Msg::Signal(Signal::Shutdown)) => {
-                            break self.begin_shutdown(Stop::Signalled);
-                        }
-                        Some(msg) => {
-                            // Every arm is also a dispatch trigger: an
-                            // apply that planned an effect hands it out.
-                            // A hold is not (F4/F10) — re-offering the
-                            // row it left unchanged would spin its runner
-                            // at round-trip speed; the next tick,
-                            // observation or other arm re-offers it.
-                            if self.handle(msg).await {
-                                self.hand_out();
-                            }
-                        }
-                        None => break self.begin_shutdown(Stop::Requested),
-                    }
-                }
-            }
-        };
-        self.drain(&mut rx).await;
-        (self, stop)
-    }
-
-    /// §4.14 step 2 — the in-flight drain: after the watch is set, serve
-    /// `EffectResult`s (the wire answers runners still post) for
-    /// `shutdown_grace`; `DispatchCommit`s are refused `Skip` (a row left
-    /// `planned` re-dispatches at the next start — far more honest than a
-    /// `dispatching` row the wire never saw). Everything else is dropped —
-    /// the gate is closed, admission is over.
-    async fn drain(&mut self, rx: &mut mpsc::Receiver<Msg>) {
-        let deadline = tokio::time::Instant::now()
-            .checked_add(self.daemon.shutdown_grace)
-            .unwrap_or_else(tokio::time::Instant::now);
-        while let Ok(incoming) = tokio::time::timeout_at(deadline, rx.recv()).await {
-            match incoming {
-                Some(Msg::EffectResult(result)) => self.on_effect_result(result).await,
-                Some(Msg::DispatchCommit { reply, .. }) => {
-                    let _gone = reply.send(CommitVerdict::Skip);
-                }
-                Some(_) => {}
-                None => break,
-            }
-        }
-    }
-
-    /// §4.14 step 1 — stop admission: set the watch *before* anything else
-    /// so a runner's pre-wire gate sees it; in-flight effects are B1's
-    /// concern (A1 runs none).
-    fn begin_shutdown(&mut self, stop: Stop) -> Stop {
-        let _unused = self.shutdown_watch.send(true);
-        stop
-    }
-
     /// One `Msg` to completion — `false` for a hold: a `ReleaseSubject`
     /// or a `Skip` commit, which leaves its effect exactly as the
     /// hand-off offered it, so `serve` must not re-offer it (F4/F10).
@@ -429,6 +370,9 @@ impl Coordinator {
                 }
                 crate::daemon::launch::Admission::Park(launch) => {
                     self.park_launch_waiter(&launch, reply);
+                }
+                crate::daemon::launch::Admission::ParkClose(key) => {
+                    self.park_close_waiter(&key, reply);
                 }
             },
             Msg::VerifyCaller {
@@ -457,7 +401,9 @@ impl Coordinator {
                 return false;
             }
             Msg::LaunchWait { launch } => self.launch_wait_expired(&launch),
+            Msg::CloseWait { key } => self.close_wait_expired(&key),
             Msg::LaunchBase { launch, base } => self.on_launch_base(&launch, base),
+            Msg::Evidence(gathered) => self.on_evidence(*gathered),
             Msg::Signal(Signal::Reload) => self.reload().await,
             Msg::Signal(Signal::Shutdown) => {
                 // Handled in `serve`'s arm — unreachable here.

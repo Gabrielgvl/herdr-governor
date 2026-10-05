@@ -286,8 +286,7 @@ fn answered_body(outcome: &LaunchOutcome) -> String {
 /// Constructed inputs for `launch_row_tests` (hosted here by the 500-line cap).
 #[cfg(test)]
 pub(in crate::task) mod fixtures {
-    use alloc::format;
-    use alloc::vec::Vec;
+    use alloc::{format, vec::Vec};
     use core::time::Duration;
 
     use super::finish;
@@ -333,6 +332,7 @@ pub(in crate::task) mod fixtures {
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         }
     }
 

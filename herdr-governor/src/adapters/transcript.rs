@@ -6,6 +6,8 @@
 
 mod claude_jsonl;
 mod devin_atif;
+mod devin_composer;
+mod devin_log;
 mod error;
 mod pi_jsonl;
 mod pointer;
@@ -14,6 +16,7 @@ mod window;
 #[cfg(test)]
 mod tests;
 
+pub use devin_log::{LimitRecord, default_dir as devin_log_default_dir, limit_record};
 pub use error::TranscriptError;
 pub use pointer::{ResolvedSource, SessionPointer, TranscriptRoots, resolve};
-pub use window::{Cursor, EventKind, TranscriptEvent, Window, read_window};
+pub use window::{BoundedTail, Cursor, EventKind, TranscriptEvent, Window, read_window};

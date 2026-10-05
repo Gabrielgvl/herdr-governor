@@ -27,7 +27,8 @@ pub enum EffectKind {
     /// hints (F9/F16–F18/F23).
     Prompt,
     /// `close` — close a pane; only ever on an explicit `cancel
-    /// {closePane}` (F20 — panes are never closed automatically).
+    /// {closePane}` (F20) or the F30 retirement's verified close of an
+    /// `accepted` Run's pane (`run:<id>:retire[:<n>]`).
     Close,
 }
 

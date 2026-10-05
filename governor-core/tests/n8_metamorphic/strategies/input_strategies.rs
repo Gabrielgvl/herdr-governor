@@ -202,6 +202,7 @@ pub(crate) fn launch(config: &Config) -> BoxedStrategy<Launch> {
                 recovery_of,
                 label: None,
                 cwd: None,
+                retention: None,
             }),
         named(&["ik-0", "ik-1", "ik-2", "ik-3"], IdempotencyKey),
     )

@@ -13,8 +13,9 @@
 //! surface), `startup`/`serve`/`shutdown` (bring-up incl. the §4.3
 //! steps-6–7 pass, the reconcile tick, teardown — the MCP listener is
 //! `mcp::serve`), `reconcile` (the §4.7 machinery — convergence,
-//! observations, deadlines, the subscription maintainer, `HerdrHealth`)
-//! and `coordinator` (the store owner).
+//! observations, deadlines, the subscription maintainer, `HerdrHealth`),
+//! `delivery`/`run_tool` (§4.8's follow-up dispatch, hints, publication
+//! and the `herdr_run` tool arm) and `coordinator` (the store owner).
 
 pub mod api;
 pub mod identity;
@@ -23,18 +24,25 @@ pub mod status;
 
 mod clock;
 mod coordinator;
+mod delivery;
+mod evidence;
+mod handoff;
 mod launch;
 mod lock;
 mod log;
 mod paths;
 mod questions;
 mod reconcile;
+mod recovery;
+mod retire;
+mod run_tool;
 mod runner;
 mod seam;
 mod serve;
 mod settings;
 mod shutdown;
 mod startup;
+mod supervision;
 
 #[cfg(test)]
 mod tests;

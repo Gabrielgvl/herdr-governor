@@ -35,6 +35,7 @@ pub(crate) fn seeded_task(objective: &str) -> Task {
         recovery_of: None,
         label: None,
         cwd: None,
+        retention: None,
     }
 }
 

@@ -171,6 +171,9 @@ impl ToolError {
     pub const GIT_EVIDENCE_UNAVAILABLE: &'static str = "GIT_EVIDENCE_UNAVAILABLE";
     /// `RESULT_TOO_LARGE` — a result would exceed the response bound (N5).
     pub const RESULT_TOO_LARGE: &'static str = "RESULT_TOO_LARGE";
+    /// `FOLLOWUP_PUBLISH_FAILED` — the body file could not be written
+    /// verified (F17/H#62–64); nothing was enqueued.
+    pub const FOLLOWUP_PUBLISH_FAILED: &'static str = "FOLLOWUP_PUBLISH_FAILED";
     /// `TOOL_UNKNOWN` — `tools/call` named a tool the daemon does not serve.
     pub const TOOL_UNKNOWN: &'static str = "TOOL_UNKNOWN";
     /// `REQUEST_INVALID` — the JSON-RPC call could not be decoded or its

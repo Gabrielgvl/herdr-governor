@@ -151,8 +151,9 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - `objective` and `scope` are required;
     - `doneWhen` has 1 to 8 items;
     - `constraints` is optional, 0 to 8 items;
-    - `tier`, `recoveryOf`, `label` and `cwd` are optional.
+    - `tier`, `recoveryOf`, `label`, `cwd` and `retention` are optional.
   - **`cwd`:** must be realpath-canonical and resolve inside `projectRoot`.
+  - **`retention`:** `"retire"` (the default when absent) or `"keep"` — whether F30 retirement may close the pane once the Run settles `accepted`. `keep` opts the Run out permanently. Like `tier` it is caller/routing data: part of the Task digest, never rendered to the child and never shown to Jev.
   - **Size:** the rendered Task is at most 64 KiB (H#40).
   - **`label`:** presentation only. It never enters Jev input or routing (H#41).
   - **Outcomes:**
@@ -215,7 +216,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   1. Validate the judgments.
   2. Apply the policy adjustments: a Task with no file changes and no security boundary caps the tier; a security boundary raises the floor; broad changes raise the floor.
   3. Apply the caller's uplift: at most one tier above the floor, never lower (H#49).
-  4. Apply the recovery minimum and exclusions (F21): at least one tier above the predecessor's start, and none of the predecessor's provider's operating points. If that is impossible at the top tier, abstain `no_higher_tier`.
+  4. Apply the recovery minimum and exclusions (F21): at least one tier above the predecessor's start — except a `provider_limited` predecessor, whose minimum is its own start tier — and none of the predecessor's provider's operating points. If that is impossible at the top tier, abstain `no_higher_tier`; a provider-limit predecessor already at the top tier recovers through another provider's point at that tier, and abstains only when no eligible candidate exists.
   5. Apply exploration. It applies only when the Task changes no files, touches no security boundary, is not a recovery, and `sha256(caller ‖ idempotencyKey)` falls below the policy rate (default 5%). It lowers the start by one tier, but never below the recovery minimum or the lowest tier.
   6. Select candidates:
      - a candidate is at or above the start tier, offers every required capability with a current qualification (F26), and belongs to a provider that is not cooling down;
@@ -264,7 +265,8 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
     - prompt or follow-up unconfirmed;
     - follow-up expired;
     - cooldown hit;
-    - a recovery pending, blocked or dispatched.
+    - a recovery pending, blocked or dispatched;
+    - run retired — the accepted Run's pane was closed by F30 retirement (Run-bound, one per Run).
   - **Destination:** always the Run's current owner, or for launch-only events (`launch_answered`, `launch_failed`) the Launch's caller, derived when read. Adoption therefore redirects unread events automatically (H#84, H#91).
   - **Hints:** after an event commits, one hint prompt effect goes to the owner's pane.
     - Conditions: the pane is fresh and `unique`, idle or done, and still holds the owner's native session, and its harness has a qualified `hint_consumption` capability.
@@ -284,14 +286,14 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   - **Async results:** every async result carries the `(version, work_generation, evidence_generation)` it was requested against. Jev results — `judgment` and `provider_limited` events, and `JevEvaluate` effect results carrying `Judgments` receipts — are stale only when `work_generation` or `evidence_generation` moved; `version` stays the conditional write's compare-and-swap guard (retried by the shell on conflict) and is never a staleness test for them. A stale envelope applies nothing; a stale receipt journals its set marked `stale` and applies nothing else. `obs`, `handoff`, `deadline` and `evidence` keep the full triple: any moved field drops the result.
   - **`cancel {runId, closePane?}`:** settles an unsettled Run `cancelled`. With `closePane`, it dispatches a verified close effect (F10) and reports whether it was confirmed. On a settled Run it only closes the pane.
   - **Settlements:** `accepted`, `rejected`, `no_handoff`, `pane_lost`, `cancelled`, `provider_limited`, `unresolved(reason)`.
-  - **Panes:** never closed automatically.
+  - **Panes:** never closed automatically, except by F30 retirement — which closes only an `accepted` Run's pane, after its proof chain holds.
 - **F21 Recovery (ADR-0003).**
   - **Trigger:** when Herdr reports a Run `blocked`, and Jev's `provider_limited` answer clears the policy threshold, the Run settles `provider_limited`.
   - **In the same transaction:**
-    - every operating point of that provider enters cooldown, and cooldowns only ever lengthen;
+    - every operating point of that provider enters cooldown until the policy cooldown ends — or the stated reset instant when the typed limit record or the answer's evidence carries one, whichever is later; a stated reset never shortens the policy floor, and cooldowns only ever lengthen;
     - a unique recovery obligation is recorded as `pending`;
     - an event tells the owner that closing the pane (`cancel` with `closePane`) triggers recovery.
-  - **Dispatch** happens once a fresh snapshot shows the predecessor's identity `absent`. It creates a Launch keyed `recovery:<predecessorRunId>` that carries the predecessor's Task plus a preamble: continue from the observed git and transcript state, and don't repeat side effects that already happened.
+  - **Dispatch** happens once a fresh snapshot shows the predecessor's identity `absent`. It creates a Launch keyed `recovery:<predecessorRunId>` that carries the predecessor's Task plus a preamble: continue from the observed git and transcript state, and don't repeat side effects that already happened. A `provider_limited` predecessor recovers at its own start tier (F13 step 4); every other recovery routes at least one tier above it.
   - **Status:** `pending` → `dispatched` when the successor's routing decision persists (with the successor reference), `blocked` when the successor abstains, or `failed`. A successor Launch may exist while the obligation is `pending`, bound by its key `recovery:<predecessorRunId>`. An obligation still pending after the policy expiry (default 24 h) fails `expired`.
   - **Caller-requested recovery (`recoveryOf`):**
     - it requires the predecessor to be settled — an unsettled predecessor is refused `RECOVERY_PREDECESSOR_UNSETTLED`;
@@ -308,7 +310,7 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   Questions that drive actions:
   - `blocked_on_input` → event.
   - `no_recent_progress` → one nudge per episode. An episode ends when the child works again, and stall and idle share the same episode.
-  - `provider_limited` (asked when Herdr reports blocked) → F21. A blocked episode opens at a `blocked` report after a non-blocked one and ends when an observation reports `working`, `idle` or `done`; the ask is once per episode (`run:<id>:blocked:<episode>`) in `active`, `repair` and `judging`, and a blocked child is never prompted.
+  - `provider_limited` (asked when Herdr reports blocked, or when a typed provider-limit record is observed in the child's native evidence — F31) → F21. A blocked episode opens at a `blocked` report after a non-blocked one and ends when an observation reports `working`, `idle` or `done`; the ask is once per episode (`run:<id>:blocked:<episode>`) in `active`, `repair` and `judging`, and a blocked child is never prompted.
   - `outside_scope`, which also receives `scope` → event.
 
   Other rules:
@@ -372,6 +374,20 @@ Strict schemas apply to every tool and every action: unknown fields are refused,
   4. Close the listener.
   5. Release the lock.
   6. Make no Herdr writes during shutdown.
+
+### 6.8 Pane retirement and provider-limit records
+
+- **F30 Retirement.** Once a Run settles `accepted`, the daemon may close the child's pane after `retire_grace_secs` (default 900 s) of continuous idle/done stability, when a fail-closed proof chain holds. Default on (`retire_enabled`); the Launch opts out with `retention: "keep"` (F5). Only `accepted` Runs are candidates — `rejected`, `no_handoff`, `pane_lost`, `cancelled`, `provider_limited` and `unresolved(*)` are never retired, and a `provider_limited` Run's pane is never closed automatically.
+  - **The proof chain** evaluates every check each sweep and every failure names a fixed reason, never free text: the Launch did not opt out (`kept`); the child binds to a captured identity with a `native_session` whose harness kind has a positional transcript reader (`identity_unbound`, `trace_unsupported_kind`); the freeze-time retirement anchor — the marked file's mtime and the transcript cursor at freeze-time EOF — exists for the current work generation and judging digest, and the freeze-time tail held no user turn at or after it (`trace_anchor_missing`, `trace_history_missing`, `trace_follow_up`); the snapshot classifies the child `Unique` and `idle`/`done` — `Absent` records `skipped{child_absent}` (nothing left to close), and `Working`/`Blocked`/`Invalid` defers and resets the stability clock; the pane is not a bound caller's pane, and the child's own caller key owns no unsettled Run or unacked event (`pane_is_caller`, `child_is_caller`); the stability clock — the child's `state_change_seq` and the digest of its detection screen, stable for `retire_grace_secs` continuously — holds (`watching{stableForSecs}`; any change or a truncated read resets it, and a daemon restart re-observes from zero); the marked handoff file still digests to `judging_digest` and the frozen copy still hashes (`artifact_changed`, `artifact_missing`); the transcript still extends the freeze-time fingerprint with no user turn appended, no rewrite or truncation below it, no malformed or over-budget source and no pending unterminated tail (`trace_source_rewritten`, `trace_source_exceeds_budget`, `trace_source_malformed`, `trace_pending_tail`, `trace_ambiguous:*`; an unreadable source only defers, `trace_source_unreadable`); and a child whose composer can queue input shows no queued row or draft (`composer_queued`, `composer_draft`, `composer_unreadable`).
+  - **Terminal decisions** — `retired`, `failed`, `kept`, `skipped` and every permanent refusal above — are never re-swept; a new acceptance (a new freeze and anchor) resets them. Other lanes re-run the heavy checks only when a cheap probe changed: the child seq/status, the transcript and marked-file stats, the detection digest and the composer frame.
+  - **Dry run:** `retire_enabled = false` runs the whole chain, records `disabled` and journals `would_retire` once per decision change, and closes nothing — deploy disabled, drill, then enable.
+  - **The close** is the ordinary F8 `close` effect keyed `run:<id>:retire[:<n>]`, planned by the core only when every check holds. `Failed`/`Unconfirmed` results re-plan under `retire:<n>`, bounded at three attempts, then the lane records `failed`. The runner applies F10 fresh verification like any close — `Unique` captured identity, `idle`/`done` status, the clock's `state_change_seq`, and the trace proof re-run at the dispatch commit; a `reconciled` absence after a failed close records `skipped{child_absent}`, never `retired`.
+  - **`Acknowledged`** records `retired` and emits the `run_retired` event (F18) to the Run's owner in the same transaction; `herdr_status` reports tracked accepted Runs under `runs[].retire`.
+  - **Journal:** one line per decision change — `retire run=<id> decision=<state> reason=<reason>` — the fixed vocabulary, counts and offsets only (§12/§13).
+- **F31 Typed provider-limit records.** A provider-limit record observed in the child's *native* evidence plans the `provider_limited` ask (F23) with the record attached as `limitRecord` evidence — even when Herdr reports the child `idle`, `done` or `working`. The record never settles anything by itself (ADR-0003): Jev's answer drives cooldown and recovery exactly as when Herdr reports `blocked`.
+  - **Record sources:** the Claude session transcript's typed quota record (`apiErrorStatus == 429` with a non-empty `requestId`), and the Devin CLI's plain-text process log (never `.gz` archives — a session whose log is absent among the plain logs yields no record, fail closed). Each source yields `{source, observedAt, resetAt?}`; `resetAt` comes from the record's typed reset fields or its stated reset text, and bounds the cooldown per F21.
+  - **Trust rules:** a record is read from a regular, no-follow, daemon-uid-owned, not-world-writable file bound to the Run's `native_session`; only observations at or after the Run's `cycle_start` — the task prompt's `dispatched_at`, the first cycle's anchor — count.
+  - **The ask** is keyed `run:<id>:limit:<record_id>` (`record_id` = `<source>:<observedAtMs>`) — once per record for the Run's lifetime, across every work and evidence generation; a `failed`, `stale` or otherwise unanswered attempt re-asks under `:<n>` like every ask family, and at most one ask of the family is in flight. It is planned in `active`, `judging` and `repair`. When Herdr reports `blocked` in the same pass, the ordinary `blocked:<episode>` ask carries the record as `limitRecord` evidence and the record's own ask is skipped — one ask per pass.
 
 ## 7. Non-Functional Requirements
 
@@ -683,7 +699,7 @@ Phases 0 and 1 run in parallel. Every later phase starts only after the previous
 
 ## 12. Observability and Operations
 
-- **Logs:** `tracing` writes to stderr, which lands in the journal. No bodies are logged, only IDs, paths, sizes and digests (H#67).
+- **Logs:** `tracing` writes to stderr, which lands in the journal. No bodies are logged, only IDs, paths, sizes and digests (H#67); retirement and limit-detection lines carry the fixed vocabulary, counts and offsets — never trace or log-line content.
 - **`herdr_status`** reports health, config validity and the time of the last good config, Herdr connection freshness, cooldowns, pending recoveries and unsettled Runs.
 - **`docs/operations.md`** holds:
   - `sqlite3` queries over the `outcomes` view: tier distribution, first-review acceptance by tier and point, explored against routed (by assignment and by execution), time to settle, nudge effectiveness;
@@ -986,7 +1002,7 @@ BEGIN SELECT RAISE(ABORT, 'settlement is immutable'); END;
 
 CREATE TABLE effects (
   effect_id         TEXT PRIMARY KEY,
-  effect_key        TEXT NOT NULL UNIQUE,   -- e.g. run:<id>:prompt:task, run:<id>:outbox:<seq>, run:<id>:nudge:<episode>, event:<id>:hint
+  effect_key        TEXT NOT NULL UNIQUE,   -- e.g. run:<id>:prompt:task, run:<id>:outbox:<seq>, run:<id>:nudge:<episode>, run:<id>:retire:<n>, run:<id>:limit:<record_id>, event:<id>:hint
   kind              TEXT NOT NULL CHECK (kind IN ('jev_evaluate','tab_create','pane_split','agent_start','prompt','close')),
   subject_launch_id TEXT REFERENCES launches(launch_id),
   subject_run_id    TEXT REFERENCES runs(run_id),
@@ -1023,7 +1039,7 @@ CREATE TABLE outbox (
 
 CREATE TABLE mailbox (
   event_id   TEXT PRIMARY KEY,
-  dedup_key  TEXT NOT NULL UNIQUE,          -- e.g. run:<id>:settled, run:<id>:stalled:<episode>
+  dedup_key  TEXT NOT NULL UNIQUE,          -- e.g. run:<id>:settled, run:<id>:stalled:<episode>, run:<id>:run_retired
   launch_id  TEXT REFERENCES launches(launch_id),
   run_id     TEXT REFERENCES runs(run_id),
   kind       TEXT NOT NULL,
@@ -1121,6 +1137,23 @@ LEFT JOIN recoveries rc ON rc.predecessor_run_id = r.run_id;
 
 Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mailbox rows or judgments in v1.
 
+Schema v2 (F30) adds the retirement anchor table, one row per tracked accepted Run:
+
+```sql
+CREATE TABLE retirements (
+  run_id            TEXT PRIMARY KEY REFERENCES runs(run_id),
+  work_generation   INTEGER NOT NULL,
+  digest            TEXT NOT NULL,            -- the frozen handoff digest this anchor belongs to
+  anchor_mtime      TEXT NOT NULL,            -- the marked file's mtime at freeze (RFC3339 ms)
+  trace_fingerprint TEXT,                     -- JSON {kind, position, anchor}: the transcript cursor at freeze-time EOF; NULL = capture failed
+  follow_up_seen    INTEGER NOT NULL,         -- 1 when a user turn timestamped >= anchor_mtime was in the freeze-time tail
+  state             TEXT NOT NULL CHECK (state IN ('watching','deferred','refused','eligible','retired','failed','kept','disabled','skipped')),
+  reason            TEXT,                     -- the bounded refusal vocabulary only, never free text
+  terminal          INTEGER NOT NULL,         -- 1 = the sweep never re-evaluates this Run
+  updated_at        TEXT NOT NULL
+);
+```
+
 **Transactions.** Each one below is a single `store::apply(Transition)`; none spans I/O.
 
 | Transition | Rows written atomically |
@@ -1139,6 +1172,8 @@ Foreign keys never cascade deletes. Nothing deletes launches, runs, effects, mai
 | Recovery dispatch | successor Launch admission (the obligation stays `pending`); `pending` → `dispatched` rides the successor's Route transaction |
 | Freeze a handoff | the handoff row, `evidence_generation+1`, and `judgment_deadline` if not already set |
 | Record evidence | the run row (`evidence_digest`, `evidence_generation+1`); in `judging` the re-planned acceptance ask rides the same write — no second freeze row |
+| Record a retirement anchor or state | the `retirements` row — the anchor upsert at freeze (before the freeze transition writes), or the sweep's decision change |
+| Retire a pane (F30) | the `close` effect result commit (`retire` family), `retirements.state = 'retired'` and the `run_retired` mailbox event, in one transaction on `acknowledged` |
 
 ## Appendix C — Lifecycle transition rules
 

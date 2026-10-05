@@ -26,6 +26,9 @@ pub mod identity;
 pub mod lifecycle;
 /// F21 — recovery obligations and provider cooldowns (ADR-0003).
 pub mod recovery;
+/// F30 — the retirement proof and the bounded `retire` close planning
+/// (accepted Runs only).
+pub mod retirement;
 /// F12 — judgments and question kinds; F13 — the persisted decision; F14 —
 /// the placement plan.
 pub mod routing;

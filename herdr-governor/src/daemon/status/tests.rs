@@ -15,9 +15,8 @@ use governor_core::task::{Launch, LaunchPhase, Task};
 
 use serde_json::Value;
 
-use crate::daemon::api::ToolError;
 use crate::daemon::status::{self, BYTE_BUDGET, ConfigHealth, HerdrHealth, Section, StatusView};
-use crate::store::Store;
+use crate::{daemon::api::ToolError, store::Store};
 
 const NOW: Timestamp = Timestamp(1_790_812_800_000);
 const RELAY: &str = "abababababababababababababababababababab";
@@ -95,6 +94,7 @@ fn launch_row(id: &str, caller: &CallerKey, phase: LaunchPhase) -> Launch {
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         },
         phase,
         decision: None,

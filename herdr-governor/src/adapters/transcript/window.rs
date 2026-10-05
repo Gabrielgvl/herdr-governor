@@ -76,6 +76,12 @@ pub enum EventKind {
     Error,
     /// Any other record the format carries.
     Meta,
+    /// A prompt the user submitted — the per-kind rules of
+    /// `trace-tail.ts:137-170` (`§4.9`; the F30 trace proof scans for it).
+    UserTurn,
+    /// A record the trace scan cannot place (a compaction) — C7 refuses
+    /// `trace_ambiguous` on it in the post-anchor delta.
+    Ambiguous,
 }
 
 /// One normalized record — supervision fields only (ADR-0002):
@@ -90,6 +96,68 @@ pub struct TranscriptEvent {
     pub kind: EventKind,
     /// Progress text — message/step text, or the error name.
     pub text: Option<String>,
+    /// Source bytes the record spans — the reader sets it at the push
+    /// site, where the serialized length is already known (normalizers
+    /// leave `0`).
+    pub source_bytes: u64,
+}
+
+/// The shared ≤ `WINDOW_MAX_BYTES` tail accumulator (§4.9 `[r3]` → F40):
+/// one rule — append, then drop whole records from the front while the
+/// tail exceeds the window — used by both readers and the daemon's
+/// `EvidenceTail`, so an accumulated tail and one rebuilt from
+/// `Cursor::START` are byte-identical.
+#[derive(Debug, Clone, Default)]
+pub struct BoundedTail {
+    events: VecDeque<TranscriptEvent>,
+    bytes: u64,
+}
+
+impl BoundedTail {
+    /// An empty tail.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append `event` (its `source_bytes` set) and trim from the front
+    /// until the tail fits. The newest record always stays — an event
+    /// alone exceeding the window is the caller's
+    /// `record_exceeds_budget` path, never pushed here.
+    pub fn push(&mut self, event: TranscriptEvent) {
+        self.bytes = self.bytes.saturating_add(event.source_bytes);
+        self.events.push_back(event);
+        while self.bytes > WINDOW_MAX_BYTES && self.events.len() > 1 {
+            if let Some(dropped) = self.events.pop_front() {
+                self.bytes = self.bytes.saturating_sub(dropped.source_bytes);
+            }
+        }
+    }
+
+    /// `push` over an iterator — the same trim after every append.
+    pub fn extend(&mut self, events: impl IntoIterator<Item = TranscriptEvent>) {
+        for event in events {
+            self.push(event);
+        }
+    }
+
+    /// The retained events, oldest → newest.
+    #[must_use]
+    pub fn events(&self) -> &VecDeque<TranscriptEvent> {
+        &self.events
+    }
+
+    /// Source bytes the retained events span.
+    #[must_use]
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    /// The retained events as a `Window`'s list, oldest → newest.
+    #[must_use]
+    pub fn into_events(self) -> Vec<TranscriptEvent> {
+        self.events.into()
+    }
 }
 
 /// One read: the tail events, their combined source bytes, and the
@@ -222,8 +290,7 @@ fn scan_lines(
     record_id_key: Option<&str>,
     normalize: fn(&Value) -> TranscriptEvent,
 ) -> Result<Scanned, TranscriptError> {
-    let mut emitted: VecDeque<(TranscriptEvent, u64)> = VecDeque::new();
-    let mut emitted_bytes = 0_u64;
+    let mut tail = BoundedTail::new();
     let mut off = 0_usize;
     while let Some(rest) = buf.get(off..) {
         if rest.is_empty() {
@@ -236,7 +303,7 @@ fn scan_lines(
         let bytes = u64::try_from(line_len).unwrap_or(u64::MAX);
         let offset = base.saturating_add(u64::try_from(off).unwrap_or(u64::MAX));
         if bytes > WINDOW_MAX_BYTES {
-            if emitted.is_empty() {
+            if tail.events().is_empty() {
                 return Err(TranscriptError::RecordExceedsBudget {
                     offset,
                     bytes,
@@ -255,19 +322,15 @@ fn scan_lines(
                 reason: "invalid_json",
             })?;
         check_identity(&record, offset, expected_id, session_header, record_id_key)?;
-        emitted.push_back((normalize(&record), bytes));
-        emitted_bytes = emitted_bytes.saturating_add(bytes);
-        while emitted_bytes > WINDOW_MAX_BYTES && emitted.len() > 1 {
-            if let Some((_, dropped)) = emitted.pop_front() {
-                emitted_bytes = emitted_bytes.saturating_sub(dropped);
-            }
-        }
+        let mut event = normalize(&record);
+        event.source_bytes = bytes;
+        tail.push(event);
         off = off.saturating_add(line_len);
     }
     Ok(Scanned {
-        events: emitted.into_iter().map(|(event, _)| event).collect(),
+        byte_count: tail.bytes(),
+        events: tail.into_events(),
         consumed: u64::try_from(off).unwrap_or(u64::MAX),
-        byte_count: emitted_bytes,
     })
 }
 

@@ -142,6 +142,7 @@ fn launch_row(id: &str, phase: LaunchPhase) -> Launch {
             recovery_of: None,
             label: None,
             cwd: None,
+            retention: None,
         },
         phase,
         decision: None,

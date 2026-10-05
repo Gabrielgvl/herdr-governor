@@ -9,8 +9,9 @@ use std::io;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
-/// Unix `0700` — owner rwx only.
-const DIR_MODE: u32 = 0o700;
+/// Unix `0700` — owner rwx only (the layout's dirs; `delivery::publish`
+/// pins the same mode on a follow-up's per-run dir).
+pub(super) const DIR_MODE: u32 = 0o700;
 /// Unix `0600` — owner rw only (the lock file).
 pub(super) const FILE_MODE: u32 = 0o600;
 

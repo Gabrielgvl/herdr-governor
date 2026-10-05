@@ -22,7 +22,9 @@ pub(in crate::daemon) use decide::apply_decided;
 
 use tokio::sync::oneshot;
 
-use governor_core::identity::{CallerKey, IdempotencyKey, LaunchId, ProjectRoot, Timestamp};
+use governor_core::identity::{
+    CallerKey, EffectKey, IdempotencyKey, LaunchId, ProjectRoot, Timestamp,
+};
 use governor_core::lifecycle::{EffectReceipt, EffectState};
 use governor_core::recovery::{RecoveryObligation, successor_key, successor_task};
 use governor_core::routing::{cooling_down, evaluation_verdict, route, validate_evaluation};
@@ -45,6 +47,9 @@ pub(in crate::daemon) enum Admission {
     Answer(ToolResponse),
     /// Park the reply behind `launch_waiters` for this Launch.
     Park(LaunchId),
+    /// Park the reply behind `close_waiters` for this close effect —
+    /// `herdr_run{cancel, closePane}` waits on F20's close confirmation.
+    ParkClose(EffectKey),
 }
 
 impl Coordinator {
@@ -256,13 +261,11 @@ impl Coordinator {
                 "a recovery already exists for the predecessor",
             ));
         }
-        let obligation = self
-            .store
-            .recoveries_by_state(governor_core::recovery::RecoveryStatus::Pending)
-            .ok()
-            .unwrap_or_default()
-            .into_iter()
-            .find(|obligation| obligation.predecessor == *predecessor_id);
+        // Any-state read, not pending-only: a `blocked`/`failed` row is
+        // still the one recovery this predecessor is allowed —
+        // `caller_admission` answers `RECOVERY_EXISTS` for it rather
+        // than falling through to a `RecordRecovery` upsert conflict.
+        let obligation = self.store.recovery_for_run(predecessor_id).ok().flatten();
         let observation = match (&predecessor.identity, &self.latest_snapshot) {
             (Some(child), Some(observed)) => governor_core::identity::classify(
                 child,

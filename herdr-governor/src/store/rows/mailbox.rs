@@ -31,6 +31,7 @@ const KINDS: &[MailboxEventKind] = &[
     MailboxEventKind::RecoveryPending,
     MailboxEventKind::RecoveryBlocked,
     MailboxEventKind::RecoveryDispatched,
+    MailboxEventKind::RunRetired,
 ];
 
 /// The `mailbox` row.

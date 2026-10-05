@@ -286,7 +286,14 @@ fn sessionless_identity_settles_only_on_valid_foreign_incarnation() {
     let foreign = identified_run("r-foreign", None, "99:1.1");
     seed_run(&mut store, &foreign);
     let snapshot = view(Vec::new(), 7);
-    reconcile::observe_run(&mut store, &policy(), NOW, &foreign.id, &snapshot).expect("observe");
+    reconcile::observe_run(
+        &mut store,
+        (&policy(), &paths_in(tmp.path())),
+        NOW,
+        &foreign.id,
+        &snapshot,
+    )
+    .expect("observe");
     let settled = store.run(&foreign.id).expect("read").expect("row");
     assert_eq!(
         settled.settlement,
@@ -301,7 +308,14 @@ fn sessionless_identity_settles_only_on_valid_foreign_incarnation() {
     // pane-lost settlement path, NOT identity_unprovable.
     let same = identified_run("r-same", None, "7:1700000000.000000042");
     seed_run(&mut store, &same);
-    reconcile::observe_run(&mut store, &policy(), NOW, &same.id, &snapshot).expect("observe");
+    reconcile::observe_run(
+        &mut store,
+        (&policy(), &paths_in(tmp.path())),
+        NOW,
+        &same.id,
+        &snapshot,
+    )
+    .expect("observe");
     let same_after = store.run(&same.id).expect("read").expect("row");
     assert_ne!(
         same_after.settlement,
@@ -331,8 +345,14 @@ fn f3_invalid_snapshot_never_settles() {
         ],
         7,
     );
-    reconcile::observe_run(&mut store, &policy(), NOW, &sessionless.id, &snapshot)
-        .expect("observe");
+    reconcile::observe_run(
+        &mut store,
+        (&policy(), &paths_in(tmp.path())),
+        NOW,
+        &sessionless.id,
+        &snapshot,
+    )
+    .expect("observe");
     let after = store.run(&sessionless.id).expect("read").expect("row");
     assert!(
         after.settlement.is_none(),
@@ -347,7 +367,14 @@ fn f3_invalid_snapshot_never_settles() {
     starting.state = State::Starting;
     seed_run(&mut store, &starting);
     seed_failed_leg(&mut store, "run:r-2:start", "r-2");
-    reconcile::observe_run(&mut store, &policy(), NOW, &starting.id, &snapshot).expect("observe");
+    reconcile::observe_run(
+        &mut store,
+        (&policy(), &paths_in(tmp.path())),
+        NOW,
+        &starting.id,
+        &snapshot,
+    )
+    .expect("observe");
     let starting_after = store.run(&starting.id).expect("read").expect("row");
     assert!(
         starting_after.settlement.is_none() && starting_after.state == State::Starting,
@@ -462,4 +489,10 @@ fn identity_less_settles_after_restart_marks_the_leg_unconfirmed() {
         }),
         "the restarted starting run settles launch_failed"
     );
+}
+
+/// The state-dir layout under `dir` — `observe_run`'s one-shot read
+/// looks for marked files there (none exist in these cases).
+fn paths_in(dir: &std::path::Path) -> crate::daemon::paths::Paths {
+    crate::daemon::paths::Paths::create(dir).expect("paths")
 }

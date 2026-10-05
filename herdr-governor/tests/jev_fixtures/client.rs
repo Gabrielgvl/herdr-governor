@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 
 use herdr_governor::adapters::jev::client::{JudgeParams, Judged, QuestionSpec};
 use herdr_governor::adapters::jev::error::JevError;
-use herdr_governor::adapters::jev::wire::{JEV_RESPONSE_MAX_BYTES, Kind, State, TaskState};
+use herdr_governor::adapters::jev::wire::{
+    AcceptanceState, JEV_RESPONSE_MAX_BYTES, Kind, State, TaskDigest, TaskState,
+};
 
 use crate::support::{
     Captured, FAKE_KEY, Reply, fake_key, fixture, json as parse, respond, serve_once, server,
@@ -316,6 +318,38 @@ async fn error_response_over_bound() {
     let err = fail(respond(200, &body)).await;
     assert_eq!(err.outcome(), JudgmentOutcome::InvalidResponse);
     assert_eq!(err.component(), "response_too_large");
+}
+
+/// An `acceptance` state over the bound hits the same client gate: an
+/// oversized frozen handoff is `TooLarge` with no socket write (F24/N5).
+#[tokio::test(start_paused = true)]
+async fn acceptance_over_96k_is_too_large_without_socket_write() {
+    let (listener, client) = server().await;
+    let (_dir, key) = fake_key().await;
+    let mut p = params();
+    p.state = State::Acceptance(AcceptanceState {
+        task: TaskDigest {
+            objective: "x".to_owned(),
+            done_when: Vec::new(),
+            constraints: Vec::new(),
+        },
+        handoff: "x".repeat(JEV_REQUEST_MAX_BYTES),
+        transcript: Vec::new(),
+        terminal: None,
+        git: None,
+    });
+    let err = client.judge(&key, &p).await.expect_err("too large");
+    assert!(
+        matches!(err, JevError::TooLarge { bytes } if bytes > JEV_REQUEST_MAX_BYTES),
+        "{err}"
+    );
+    assert_eq!(err.outcome(), JudgmentOutcome::TooLarge);
+    assert_eq!(err.component(), "request_too_large");
+    let accepted = tokio::time::timeout(Duration::from_secs(1), listener.accept()).await;
+    assert!(
+        accepted.is_err(),
+        "a socket was written for an oversize request"
+    );
 }
 
 /// `oversize-client-side`: a body over `JEV_REQUEST_MAX_BYTES` is

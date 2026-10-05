@@ -6,6 +6,7 @@
 mod admission;
 mod cooldown;
 mod obligation;
+mod orphan;
 mod settle;
 
 use alloc::string::String;
@@ -15,6 +16,7 @@ pub use admission::{
 };
 pub use cooldown::Cooldown;
 pub use obligation::{RecoveryObligation, RecoveryOrigin, RecoveryStatus};
+pub use orphan::orphan_close;
 pub use settle::provider_limited;
 
 /// Minimal JSON string escaping for mailbox `body_json` interpolation —
@@ -48,4 +50,5 @@ mod tests {
     mod f21_cooldown;
     mod f21_obligation;
     mod f21_settle;
+    mod orphan;
 }

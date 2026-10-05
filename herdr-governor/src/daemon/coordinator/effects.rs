@@ -10,6 +10,8 @@ mod gate;
 
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
 use governor_core::config::Policy;
 use governor_core::delivery::FollowUpWrite;
 use governor_core::identity::{EffectKey, LaunchId, RunId, Timestamp};
@@ -17,13 +19,17 @@ use governor_core::lifecycle::{
     Effect, EffectKind, EffectResolution, EffectResult, EffectState, EffectWrite, Event,
     JudgmentVerdict, StateChange, Transition, VersionTriple, Versioned, transition,
 };
+use governor_core::recovery::Cooldown;
+use governor_core::recovery::orphan_close;
 use tokio::sync::oneshot;
 
+use crate::daemon::delivery;
+use crate::daemon::evidence::EvidenceTail;
 use crate::daemon::launch::launched_on_start;
 use crate::daemon::log;
-use crate::daemon::reconcile;
 use crate::daemon::runner::{self, Dispatch};
 use crate::daemon::seam::Boundary;
+use crate::daemon::supervision;
 use crate::daemon::{CommitVerdict, RenderContext};
 use crate::store::Store;
 
@@ -75,16 +81,27 @@ impl Coordinator {
             if self.in_flight.contains_key(&subject) {
                 continue;
             }
-            let Some(context) = runner::context_for(
-                &self.store,
-                &self.paths,
-                &effect,
-                self.latest_snapshot
-                    .as_ref()
-                    .map(|observed| &observed.value),
-                &self.loaded,
-                &self.daemon,
-            ) else {
+            // §4.9 — a Run-bound ask renders from the evidence the
+            // coordinator holds; every other effect from the store.
+            let ask = supervision::AskEnv {
+                loaded: &self.loaded,
+                daemon: &self.daemon,
+                evidence: &self.evidence,
+            };
+            let Some(context) =
+                supervision::ask_context(&self.store, &ask, &effect).or_else(|| {
+                    runner::context_for(
+                        &self.store,
+                        &self.paths,
+                        &effect,
+                        self.latest_snapshot
+                            .as_ref()
+                            .map(|observed| &observed.value),
+                        &self.loaded,
+                        &self.daemon,
+                    )
+                })
+            else {
                 continue;
             };
             self.in_flight.insert(subject, effect.key.clone());
@@ -138,6 +155,7 @@ impl Coordinator {
     pub(super) async fn on_effect_result(&mut self, result: Box<EffectResult>) {
         let now = self.clock.now();
         let outcome = result.resolution.outcome();
+        let evidence = &self.evidence;
         let (store, policy) = (&mut self.store, &self.loaded.config.policy);
         let applied = apply_with_retry(store, now, |st| {
             let Some(row) = st.effect(&result.key).ok().flatten() else {
@@ -147,7 +165,14 @@ impl Coordinator {
                 return empty();
             }
             let mut applied = match row.subject_run.clone() {
-                Some(run_id) => run_bound(st, &run_id, &result, now, policy),
+                Some(run_id) => run_bound(
+                    st,
+                    &run_id,
+                    &result,
+                    now,
+                    policy,
+                    limit_reset(evidence, &run_id),
+                ),
                 // Launch-bound results (the admission lane's `evaluate`)
                 // journal the result write directly — no Run exists to
                 // transition against; B2's admission consumes the set.
@@ -162,7 +187,7 @@ impl Coordinator {
             };
             // §4.8 — an outbox-linked effect's terminal outcome resolves
             // its entry in the same transaction.
-            if let Some((write, event)) = reconcile::linked_outbox_resolution(st, &row, outcome) {
+            if let Some((write, event)) = delivery::linked_outbox_resolution(st, &row, outcome) {
                 applied.state_changes.push(write);
                 if let Some(mailbox) = event {
                     applied.events.push(mailbox);
@@ -176,6 +201,9 @@ impl Coordinator {
                 // A committed launch-bound result drives §4.5 step 6;
                 // a run-bound one may have finished its Launch (the
                 // `Launched` compose) — drain the waiters either way.
+                // A `closePane` waiter's close just committed its first
+                // result too (F20) — same drain key, a no-op otherwise.
+                self.drain_close_waiters(&result.key);
                 if let Some(row) = self.store.effect(&result.key).ok().flatten() {
                     if let Some(launch_id) = row.subject_launch.clone() {
                         self.on_evaluated(&launch_id);
@@ -305,8 +333,15 @@ impl Coordinator {
                 ),
             }
         });
-        if let Err(_error) = applied {
-            log::apply_dropped(3, "refused_apply");
+        match applied {
+            Ok(ApplyOutcome::Applied { .. }) => {
+                // F20 — a refused close is a terminal answer for its
+                // parked `cancel` reply (`confirmed: false`).
+                self.drain_close_waiters(key);
+            }
+            Ok(ApplyOutcome::Dropped { .. }) | Err(_) => {
+                log::apply_dropped(3, "refused_apply");
+            }
         }
     }
 }
@@ -353,6 +388,13 @@ fn acceptance_lift(
     })
 }
 
+/// OQ-X — the Run's newest typed provider-limit record's `reset_at`,
+/// when one was observed: the daemon's input to the provider-limited
+/// cooldown (`recovery/settle.rs` names this seam the caller's).
+fn limit_reset(evidence: &BTreeMap<RunId, EvidenceTail>, run: &RunId) -> Option<Timestamp> {
+    evidence.get(run)?.latest_limit()?.reset_at
+}
+
 /// The run-bound result lane: the core's `Event::EffectResult` against
 /// the Run's durable state, the F24 acceptance lift and the §4.5 start
 /// ack's `finish(Launched)` composed into the same commit.
@@ -362,6 +404,7 @@ fn run_bound(
     result: &EffectResult,
     now: Timestamp,
     policy: &Policy,
+    reset_at: Option<Timestamp>,
 ) -> Transition {
     let Some(run) = st.run(run_id).ok().flatten() else {
         return empty();
@@ -389,5 +432,38 @@ fn run_bound(
     if let Some(done) = launched_on_start(launch.as_ref(), &run, &emitted, now, policy) {
         emitted = concat(emitted, [done]);
     }
+    // OQ-X — the settle wrote the provider's cooldown at the policy
+    // window; a typed record's later stated reset extends it in the same
+    // transaction (`Cooldown::limited` recomputes `max(policy, reset)`
+    // and the row upsert only lengthens).
+    if let Some(reset) = reset_at
+        && let Some(provider) = &run.provider
+        && let Some(written) = emitted.state_changes.iter().find_map(|change| {
+            if let StateChange::SetCooldown(cooldown) = change
+                && cooldown.source_run.as_ref() == Some(&run.id)
+            {
+                Some(cooldown.until)
+            } else {
+                None
+            }
+        })
+        && reset > written
+    {
+        emitted
+            .state_changes
+            .push(StateChange::SetCooldown(Cooldown::limited(
+                provider.clone(),
+                run.id.clone(),
+                now,
+                policy.cooldown,
+                Some(reset),
+            )));
+    }
+    // §17 — a start ack on a settled Run may carry an orphan child
+    // identity nothing else closes; the verified `<start>:close` plans
+    // ride the same commit (the journal sees them for dedup next time).
+    emitted
+        .effects
+        .extend(orphan_close(&run, journal.as_slice(), result));
     emitted
 }

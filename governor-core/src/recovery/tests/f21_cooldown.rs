@@ -14,6 +14,7 @@ fn f21_cooldown_limited_fields() {
         RunId("run-1".into()),
         Timestamp(1_000),
         Duration::from_hours(1),
+        None,
     );
     assert_eq!(cooldown.provider, Provider("prov-1".into()), "provider");
     assert_eq!(
@@ -90,5 +91,78 @@ fn f21_cooldowns_only_lengthen() {
         merged_longer.source_run,
         Some(RunId("run-2".into())),
         "the extending exclusion's source rides with it"
+    );
+}
+
+#[test]
+fn f21_cooldown_without_reset_is_the_policy_window() {
+    let cooldown = Cooldown::limited(
+        Provider("prov-1".into()),
+        RunId("run-1".into()),
+        Timestamp(1_000),
+        Duration::from_hours(1),
+        None,
+    );
+    assert_eq!(
+        cooldown.until,
+        Timestamp(1_000 + 3_600_000),
+        "no stated reset — the policy window alone (OQ-X)"
+    );
+}
+
+#[test]
+fn f21_cooldown_reset_inside_the_window_keeps_the_policy_end() {
+    let cooldown = Cooldown::limited(
+        Provider("prov-1".into()),
+        RunId("run-1".into()),
+        Timestamp(1_000),
+        Duration::from_hours(1),
+        Some(Timestamp(1_000 + 60_000)),
+    );
+    assert_eq!(
+        cooldown.until,
+        Timestamp(1_000 + 3_600_000),
+        "a reset before the policy end never shortens the cooldown"
+    );
+    let at_the_end = Cooldown::limited(
+        Provider("prov-1".into()),
+        RunId("run-1".into()),
+        Timestamp(1_000),
+        Duration::from_hours(1),
+        Some(Timestamp(1_000 + 3_600_000)),
+    );
+    assert_eq!(
+        at_the_end.until,
+        Timestamp(1_000 + 3_600_000),
+        "a reset exactly at the policy end changes nothing"
+    );
+}
+
+#[test]
+fn f21_cooldown_reset_beyond_the_window_runs_until_the_reset() {
+    let cooldown = Cooldown::limited(
+        Provider("prov-1".into()),
+        RunId("run-1".into()),
+        Timestamp(1_000),
+        Duration::from_hours(1),
+        Some(Timestamp(1_000 + 7_200_000)),
+    );
+    assert_eq!(
+        cooldown.until,
+        Timestamp(1_000 + 7_200_000),
+        "a stated reset later than the policy end is the cooldown's until (OQ-X)"
+    );
+    // The lengthened candidate still merges only upward.
+    let existing = Cooldown {
+        provider: Provider("prov-1".into()),
+        until: Timestamp(1_000 + 9_000_000),
+        reason: "first".into(),
+        source_run: Some(RunId("run-0".into())),
+    };
+    let merged = existing.merged(cooldown);
+    assert_eq!(
+        merged.until,
+        Timestamp(1_000 + 9_000_000),
+        "a longer existing exclusion still wins the merge"
     );
 }

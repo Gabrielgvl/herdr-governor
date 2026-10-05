@@ -5,7 +5,6 @@
 //! (`a5_cursor_rewrite_detected`). A partial document is `invalid_json`
 //! and retryable (`a5_devin_partial_document_retryable`).
 
-use std::collections::VecDeque;
 use std::io::SeekFrom;
 
 use serde_json::Value;
@@ -15,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncSeekExt as _};
 use super::error::{TranscriptError, unreadable};
 use super::pointer::ResolvedSource;
 use super::window::{
-    Cursor, EventKind, TranscriptEvent, WINDOW_MAX_BYTES, Window, fnv1a, text_field,
+    BoundedTail, Cursor, EventKind, TranscriptEvent, WINDOW_MAX_BYTES, Window, fnv1a, text_field,
 };
 
 /// A5 — the per-source ceiling (`DEVIN_SOURCE_MAX_BYTES`); the document
@@ -121,8 +120,7 @@ fn emit_tail(
     session_id: Option<&str>,
     cursor: Cursor,
 ) -> Result<Window, TranscriptError> {
-    let mut emitted: VecDeque<(TranscriptEvent, u64)> = VecDeque::new();
-    let mut emitted_bytes = 0_u64;
+    let mut tail = BoundedTail::new();
     let mut consumed = pos;
     for (i, step) in steps.iter().enumerate().skip(pos) {
         let ser = serde_json::to_vec(step).map_err(|_json| malformed_json())?;
@@ -140,13 +138,9 @@ fn emit_tail(
             }
             break;
         }
-        emitted.push_back((normalize_step(step), bytes));
-        emitted_bytes = emitted_bytes.saturating_add(bytes);
-        while emitted_bytes > WINDOW_MAX_BYTES && emitted.len() > 1 {
-            if let Some((_, dropped)) = emitted.pop_front() {
-                emitted_bytes = emitted_bytes.saturating_sub(dropped);
-            }
-        }
+        let mut event = normalize_step(step);
+        event.source_bytes = bytes;
+        tail.push(event);
         consumed = i.saturating_add(1);
     }
     let anchor = if consumed == pos {
@@ -158,8 +152,8 @@ fn emit_tail(
         }
     };
     Ok(Window {
-        events: emitted.into_iter().map(|(event, _)| event).collect(),
-        byte_count: emitted_bytes,
+        byte_count: tail.bytes(),
+        events: tail.into_events(),
         cursor: Cursor {
             position: u64::try_from(consumed).unwrap_or(u64::MAX),
             anchor,
@@ -168,20 +162,25 @@ fn emit_tail(
 }
 
 /// A step → its supervision event: `source` is the role, `message` the
-/// progress text, a non-empty `tool_calls` the tool marker.
+/// progress text, a non-empty `tool_calls` the tool marker; `source
+/// "user"` is the user turn (`trace-tail.ts:165-170`).
 fn normalize_step(step: &Value) -> TranscriptEvent {
     let has_tool_calls = step
         .get("tool_calls")
         .and_then(Value::as_array)
         .is_some_and(|c| !c.is_empty());
+    let role = text_field(step, "source");
     TranscriptEvent {
         timestamp: text_field(step, "timestamp"),
-        role: text_field(step, "source"),
-        kind: if has_tool_calls {
+        kind: if role.as_deref() == Some("user") {
+            EventKind::UserTurn
+        } else if has_tool_calls {
             EventKind::ToolCall
         } else {
             EventKind::Message
         },
+        role,
         text: text_field(step, "message"),
+        source_bytes: 0,
     }
 }
