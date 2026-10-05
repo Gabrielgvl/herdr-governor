@@ -6,7 +6,7 @@
 
 use alloc::vec::Vec;
 
-use super::builders::{caller, child, closed, run, started};
+use super::builders::{caller, child, closed, prompted, run, started};
 use crate::identity::EffectKey;
 use crate::lifecycle::{
     EffectKind, EffectReceipt, EffectResolution, EffectResult, EffectTarget, State,
@@ -98,4 +98,37 @@ fn journaled_close_is_not_replanned() {
     ]);
     let result = start_result("run:run-1:start", None);
     assert!(orphan_close(&run, &journal, &result).is_empty());
+}
+
+/// The by-target dedupe keys on the *child*, not the effect key: a
+/// close already journaled for the orphan under a different key — the
+/// cancel path's `run:<id>:close` — suppresses the `<start>:close` the
+/// orphan lane would mint.
+#[test]
+fn differently_keyed_close_is_not_replanned() {
+    let run = run("run-1", &caller(), None);
+    let identity = child("p9");
+    let journal = Vec::from([
+        started(&run.id, "start", &identity),
+        closed(&run.id, "close", &identity),
+    ]);
+    let result = start_result("run:run-1:start", None);
+    assert!(orphan_close(&run, &journal, &result).is_empty());
+}
+
+/// The dedupe is a *close* aimed at the child, not any effect aimed at
+/// it: a journaled `prompt` to the orphan leaves the `<start>:close`
+/// owed.
+#[test]
+fn journaled_prompt_does_not_suppress_the_close() {
+    let run = run("run-1", &caller(), None);
+    let identity = child("p9");
+    let journal = Vec::from([
+        started(&run.id, "start", &identity),
+        prompted(&run.id, "prompt:task", &identity),
+    ]);
+    let result = start_result("run:run-1:start", None);
+    let planned = orphan_close(&run, &journal, &result);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].target, Some(EffectTarget::Child(identity)));
 }

@@ -151,6 +151,17 @@ pub(super) fn started(run: &RunId, key: &str, identity: &ChildIdentity) -> Effec
     }
 }
 
+/// A journaled `prompt` row aimed at `identity` — traffic to the child
+/// that is not a close.
+pub(super) fn prompted(run: &RunId, key: &str, identity: &ChildIdentity) -> Effect {
+    Effect {
+        kind: EffectKind::Prompt,
+        target: Some(EffectTarget::Child(identity.clone())),
+        receipt: None,
+        ..started(run, key, identity)
+    }
+}
+
 /// A journaled `close` row aimed at `identity` — proof the orphan close
 /// already ran.
 pub(super) fn closed(run: &RunId, key: &str, identity: &ChildIdentity) -> Effect {
