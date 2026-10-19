@@ -17,7 +17,7 @@ governor-core = { path = "../governor-core", version = "0.1.0" }
 # choice. rustls-webpki still pin-locks its optional `ring` dep (unused);
 # see the P4.D0 report for the residual windows-sys conflict.
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider", "json"] }
-rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 rustix = { version = "1.1.5", features = ["fs", "process", "time"] }
 rustls = { version = "0.23.45", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
